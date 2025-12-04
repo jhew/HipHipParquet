@@ -31,8 +31,8 @@
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_View">
-                <MenuItem Header="Toggle _Schema Pane"/>
-                <MenuItem Header="Toggle _Filter Row"/>
+                <MenuItem Header="Toggle _Schema Pane" Click="OnToggleSchemaPaneClick" IsCheckable="True" IsChecked="True"/>
+                <MenuItem Header="Toggle _Filter Row" Click="OnToggleFilterRowClick" IsCheckable="True" IsChecked="True"/>
                 <Separator/>
                 <MenuItem Header="_View Mode"/>
             </MenuItem>
@@ -47,7 +47,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Schema Pane -->
-            <Border Grid.Column="0" Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="0,0,1,0">
+            <Border x:Name="SchemaPane" Grid.Column="0" Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="0,0,1,0">
                 <ScrollViewer>
                     <StackPanel x:Name="SchemaPanel" Margin="12">
                         <TextBlock Text="Schema" FontWeight="Bold" FontSize="16" Margin="0,0,0,8"/>
@@ -59,7 +59,7 @@
             </Border>
 
             <!-- Splitter -->
-            <GridSplitter Grid.Column="1" 
+            <GridSplitter x:Name="SchemaSplitter" Grid.Column="1" 
                          HorizontalAlignment="Stretch" 
                          Background="#E0E0E0"/>
 
@@ -84,16 +84,24 @@
                 </StackPanel>
                 
                 <!-- Data Grid -->
-                <Grid x:Name="DataGridContainer" Visibility="Collapsed" Margin="12">
+                <Grid x:Name="DataGridContainer" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     
                     <!-- Search Panel -->
-                    <Border Grid.Row="0" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,5">
-                        <StackPanel x:Name="SearchPanel" Orientation="Horizontal" Margin="5"/>
-                    </Border>
+                    <ScrollViewer x:Name="SearchPanelContainer"
+                                 Grid.Row="0" 
+                                 HorizontalScrollBarVisibility="Hidden" 
+                                 VerticalScrollBarVisibility="Disabled"
+                                 Margin="12,12,12,0">
+                        <Border Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1">
+                            <StackPanel x:Name="SearchPanel" 
+                                       Orientation="Horizontal" 
+                                       Margin="0"/>
+                        </Border>
+                    </ScrollViewer>
                     
                     <!-- Data Grid -->
                     <DataGrid x:Name="DataGrid" 
@@ -104,7 +112,9 @@
                              AlternatingRowBackground="#F9F9F9"
                              CanUserAddRows="False"
                              CanUserDeleteRows="False"
-                             IsReadOnly="True"/>
+                             IsReadOnly="True"
+                             Margin="12,5,12,12"
+                             ScrollViewer.ScrollChanged="OnDataGridScrollChanged"/>
                 </Grid>
             </Grid>
         </Grid>
