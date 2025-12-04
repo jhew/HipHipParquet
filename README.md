@@ -8,7 +8,7 @@ A modern Windows desktop application for viewing and analyzing Parquet files.
 
 ## Overview
 
-Hip Hip Parquet empowers data analysts and business users to quickly view and analyze Parquet files with a clean, intuitive interface. Built with WPF and DuckDB for reliable performance.
+Hip Hip Parquet users to quickly view and analyze Parquet files with a clean, intuitive interface. Built with WPF and DuckDB.
 
 ## Features ✨
 
@@ -24,7 +24,7 @@ Hip Hip Parquet empowers data analysts and business users to quickly view and an
 
 - **Framework**: .NET 8.0 + WPF (Windows Presentation Foundation)
 - **Data Engine**: DuckDB.NET for efficient Parquet file operations
-- **Architecture**: MVVM pattern with dependency injection
+- **Architecture**: MVVM pattern
 - **Target Platform**: Windows 10/11 x64
 
 ## Getting Started
@@ -38,7 +38,7 @@ Hip Hip Parquet empowers data analysts and business users to quickly view and an
 
 ```powershell
 # Clone the repository
-git clone https://github.com/yourusername/HipHipParquet.git
+git clone https://github.com/jhew/HipHipParquet.git
 cd HipHipParquet
 
 # Build the project
