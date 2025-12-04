@@ -7,6 +7,7 @@ using System.Collections.ObjectModel;
 using HipHipParquet.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Windows.Media;
 
 namespace HipHipParquet.Views;
 
@@ -15,6 +16,7 @@ public partial class MainWindow : Window
     private DataTable? _originalData;
     private DataView? _dataView;
     private readonly List<TextBox> _searchBoxes = new();
+    private ScrollViewer? _searchScrollViewer;
     
     public MainWindow()
     {
@@ -32,6 +34,42 @@ public partial class MainWindow : Window
         if (openFileDialog.ShowDialog() == true)
         {
             await LoadFileAsync(openFileDialog.FileName);
+        }
+    }
+    
+    private void OnToggleSchemaPaneClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem)
+        {
+            if (menuItem.IsChecked)
+            {
+                // Show schema pane
+                SchemaPane.Visibility = Visibility.Visible;
+                SchemaSplitter.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // Hide schema pane
+                SchemaPane.Visibility = Visibility.Collapsed;
+                SchemaSplitter.Visibility = Visibility.Collapsed;
+            }
+        }
+    }
+    
+    private void OnToggleFilterRowClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem)
+        {
+            if (menuItem.IsChecked)
+            {
+                // Show filter row
+                SearchPanelContainer.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // Hide filter row
+                SearchPanelContainer.Visibility = Visibility.Collapsed;
+            }
         }
     }
 
@@ -136,6 +174,9 @@ public partial class MainWindow : Window
             // Add event handlers for safer sorting
             DataGrid.Sorting += OnDataGridSorting;
             
+            // Find the search ScrollViewer
+            _searchScrollViewer = FindVisualChild<ScrollViewer>(DataGridContainer);
+            
             // Display all columns
             for (int i = 0; i < dataTable.Columns.Count; i++)
             {
@@ -147,20 +188,30 @@ public partial class MainWindow : Window
                 {
                     Header = CreateColumnHeader(column.ColumnName, columnInfo?.Type ?? "unknown", i),
                     Binding = new System.Windows.Data.Binding($"[{column.ColumnName}]"),
-                    Width = 150,
+                    Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+                    MinWidth = 100,
                     CanUserSort = true,
                     SortMemberPath = column.ColumnName
                 };
                 DataGrid.Columns.Add(gridColumn);
                 
-                // Create search box
+                // Create search box that matches column width
                 var searchBox = new TextBox
                 {
-                    Width = 150,
-                    Margin = new Thickness(2),
+                    Margin = new Thickness(0, 2, 0, 2),
                     Tag = column.ColumnName,
-                    ToolTip = $"Search {column.ColumnName}..."
+                    ToolTip = $"Search {column.ColumnName}...",
+                    MinWidth = 100
                 };
+                
+                // Bind the search box width to the column width
+                var binding = new System.Windows.Data.Binding("ActualWidth")
+                {
+                    Source = gridColumn,
+                    Mode = System.Windows.Data.BindingMode.OneWay
+                };
+                searchBox.SetBinding(FrameworkElement.WidthProperty, binding);
+                
                 searchBox.TextChanged += OnSearchTextChanged;
                 _searchBoxes.Add(searchBox);
                 SearchPanel.Children.Add(searchBox);
@@ -272,6 +323,30 @@ public partial class MainWindow : Window
             _dataView.RowFilter = string.Empty;
             StatusText.Text = "Filter error - cleared";
         }
+    }
+    
+    private void OnDataGridScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        // Sync horizontal scroll between search panel and data grid
+        if (_searchScrollViewer != null && e.HorizontalChange != 0)
+        {
+            _searchScrollViewer.ScrollToHorizontalOffset(e.HorizontalOffset);
+        }
+    }
+    
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T result)
+                return result;
+            
+            var descendant = FindVisualChild<T>(child);
+            if (descendant != null)
+                return descendant;
+        }
+        return null;
     }
     
     private string GetTypeIcon(string type)
