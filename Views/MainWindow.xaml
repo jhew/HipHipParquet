@@ -1,0 +1,122 @@
+<Window x:Class="HipHipParquet.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Hip Hip Parquet" Height="700" Width="1200"
+        WindowStartupLocation="CenterScreen">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Menu Bar -->
+        <Menu Grid.Row="0">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Open..." Click="OnOpenFileClick">
+                    <MenuItem.Icon>
+                        <TextBlock Text="📂" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Save">
+                    <MenuItem.Icon>
+                        <TextBlock Text="💾" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Save _As...">
+                    <MenuItem.Icon>
+                        <TextBlock Text="📋" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="Toggle _Schema Pane"/>
+                <MenuItem Header="Toggle _Filter Row"/>
+                <Separator/>
+                <MenuItem Header="_View Mode"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250" MinWidth="200"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Schema Pane -->
+            <Border Grid.Column="0" Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="0,0,1,0">
+                <ScrollViewer>
+                    <StackPanel x:Name="SchemaPanel" Margin="12">
+                        <TextBlock Text="Schema" FontWeight="Bold" FontSize="16" Margin="0,0,0,8"/>
+                        <TextBlock x:Name="SchemaStatusText" 
+                                  Text="No file loaded" 
+                                  Foreground="Gray"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" 
+                         HorizontalAlignment="Stretch" 
+                         Background="#E0E0E0"/>
+
+            <!-- Data Grid Area -->
+            <Grid Grid.Column="2">
+                <!-- Empty State -->
+                <StackPanel x:Name="EmptyStatePanel" 
+                           HorizontalAlignment="Center" 
+                           VerticalAlignment="Center">
+                    <TextBlock Text="📊" FontSize="48" HorizontalAlignment="Center" Foreground="Gray"/>
+                    <TextBlock Text="Open a Parquet file to get started" 
+                              FontSize="18" 
+                              Foreground="Gray"
+                              Margin="0,8,0,0"
+                              HorizontalAlignment="Center"/>
+                    <Button Content="Browse Files" 
+                           Background="#512BD4"
+                           Foreground="White"
+                           Margin="0,16,0,0"
+                           Padding="16,8"
+                           Click="OnOpenFileClick"/>
+                </StackPanel>
+                
+                <!-- Data Grid -->
+                <Grid x:Name="DataGridContainer" Visibility="Collapsed" Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Search Panel -->
+                    <Border Grid.Row="0" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,5">
+                        <StackPanel x:Name="SearchPanel" Orientation="Horizontal" Margin="5"/>
+                    </Border>
+                    
+                    <!-- Data Grid -->
+                    <DataGrid x:Name="DataGrid" 
+                             Grid.Row="1"
+                             AutoGenerateColumns="False"
+                             HeadersVisibility="Column"
+                             GridLinesVisibility="All"
+                             AlternatingRowBackground="#F9F9F9"
+                             CanUserAddRows="False"
+                             CanUserDeleteRows="False"
+                             IsReadOnly="True"/>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="2">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Ready"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock Text="View Mode"/>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window>
