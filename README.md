@@ -13,11 +13,16 @@ Hip Hip Parquet users to quickly view and analyze Parquet files with a clean, in
 ## Features ✨
 
 - **📂 Open Parquet Files** - Load and view Parquet files with ease
+- **🔢 Row Numbers** - Persistent row numbers that maintain original position even when sorted
 - **🔍 Column Search** - Search and filter data in each column independently
+- **🌐 Global Search** - Search across all columns simultaneously from the status bar
 - **⬆️⬇️ Sortable Columns** - Click column headers to sort data ascending or descending
-- **📊 Schema Viewer** - View file metadata, column types, and row counts with type icons
-- **🎨 Modern UI** - Clean, Windows 11-style interface
-- **⚡ Fast Performance** - Powered by DuckDB for efficient data handling
+- **📊 Schema Viewer** - Collapsible left pane showing file metadata, column types, and row counts
+- **📋 Copy to Clipboard** - Copy selected cells as CSV or TSV for pasting into Excel/Sheets
+- **🕐 Recent Files** - Quick access to your 10 most recently opened files
+- **👁️ Toggle Views** - Show/hide schema pane and filter row for customized workspace
+- **🎨 Modern UI** - Clean, Windows 11-style interface with resizable columns
+- **⚡ Fast Performance** - Virtualized scrolling handles thousands of rows efficiently (powered by DuckDB)
 - **🛡️ Error Handling** - Graceful error messages and crash prevention
 
 ## Tech Stack
@@ -51,11 +56,14 @@ dotnet run
 ## Usage
 
 1. Launch the application
-2. Click **File → Open** to select a `.parquet` file
-3. View your data in the sortable grid
-4. Use the search boxes above each column to filter data
-5. Click column headers to sort ascending or descending
-6. View schema information in the left panel
+2. Click **File → Open** (or select from **Recent Files**) to load a `.parquet` file
+3. View your data in the sortable, virtualized grid with row numbers
+4. Use the **search boxes** above each column to filter specific columns
+5. Use the **global search** box (bottom right) to search across all columns
+6. Click **column headers** to sort data (row numbers persist to show original position)
+7. Select cells and use **Edit → Copy** to copy as CSV/TSV
+8. Toggle **Schema Pane** and **Filter Row** from the View menu to customize your workspace
+9. Resize columns and the row number column as needed
 
 ## Project Structure
 
@@ -72,12 +80,18 @@ HipHipParquet/
 
 ## Current Features (V1)
 
-- ✅ Open and view Parquet files
-- ✅ Sortable data grid with all columns
+- ✅ Open and view Parquet files (all rows, no artificial limits)
+- ✅ Persistent row numbers for easy reference
+- ✅ Sortable data grid with virtualized scrolling
 - ✅ Per-column search and filtering
-- ✅ Schema viewer with type information
+- ✅ Global search across all columns
+- ✅ Copy selection as CSV/TSV to clipboard
+- ✅ Recent files list (up to 10 files)
+- ✅ Collapsible schema pane and filter row
+- ✅ Schema viewer with type icons
+- ✅ Resizable columns including row number column
 - ✅ Error handling and crash prevention
-- ✅ Modern Windows UI
+- ✅ Modern Windows UI with custom application icon
 
 ## Roadmap 🚀
 

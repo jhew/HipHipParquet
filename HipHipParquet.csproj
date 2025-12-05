@@ -30,6 +30,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Resource Include="Assets\app.ico" />
+    </ItemGroup>
+
+    <ItemGroup>
         <!-- DuckDB for Parquet operations -->
         <PackageReference Include="DuckDB.NET.Data.Full" Version="1.1.3" />
         

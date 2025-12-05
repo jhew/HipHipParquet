@@ -8,6 +8,7 @@ using HipHipParquet.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Windows.Media;
+using System.Windows.Controls.Primitives;
 
 namespace HipHipParquet.Views;
 
@@ -17,10 +18,15 @@ public partial class MainWindow : Window
     private DataView? _dataView;
     private readonly List<TextBox> _searchBoxes = new();
     private ScrollViewer? _searchScrollViewer;
+    private readonly List<string> _recentFiles = new();
+    private const int MaxRecentFiles = 10;
+    private const string RecentFilesKey = "RecentFiles";
     
     public MainWindow()
     {
         InitializeComponent();
+        LoadRecentFiles();
+        UpdateRecentFilesMenu();
     }
 
     private async void OnOpenFileClick(object sender, RoutedEventArgs e)
@@ -46,12 +52,18 @@ public partial class MainWindow : Window
                 // Show schema pane
                 SchemaPane.Visibility = Visibility.Visible;
                 SchemaSplitter.Visibility = Visibility.Visible;
+                MainContentGrid.ColumnDefinitions[0].Width = new GridLength(250);
+                MainContentGrid.ColumnDefinitions[0].MinWidth = 200;
+                MainContentGrid.ColumnDefinitions[1].Width = new GridLength(5);
             }
             else
             {
-                // Hide schema pane
+                // Hide schema pane completely
                 SchemaPane.Visibility = Visibility.Collapsed;
                 SchemaSplitter.Visibility = Visibility.Collapsed;
+                MainContentGrid.ColumnDefinitions[0].MinWidth = 0;
+                MainContentGrid.ColumnDefinitions[0].Width = new GridLength(0);
+                MainContentGrid.ColumnDefinitions[1].Width = new GridLength(0);
             }
         }
     }
@@ -70,6 +82,141 @@ public partial class MainWindow : Window
                 // Hide filter row
                 SearchPanelContainer.Visibility = Visibility.Collapsed;
             }
+        }
+    }
+    
+    private void OnCopyClick(object sender, RoutedEventArgs e)
+    {
+        CopySelectionToClipboard("\t"); // TSV format by default
+    }
+    
+    private void OnCopyAsCsvClick(object sender, RoutedEventArgs e)
+    {
+        CopySelectionToClipboard(",");
+    }
+    
+    private void OnCopyAsTsvClick(object sender, RoutedEventArgs e)
+    {
+        CopySelectionToClipboard("\t");
+    }
+    
+    private void CopySelectionToClipboard(string delimiter)
+    {
+        try
+        {
+            var selectedCells = DataGrid.SelectedCells;
+            if (selectedCells.Count == 0)
+            {
+                StatusText.Text = "No cells selected to copy";
+                return;
+            }
+            
+            // Group cells by row
+            var rowGroups = selectedCells
+                .GroupBy(cell => DataGrid.Items.IndexOf(cell.Item))
+                .OrderBy(g => g.Key);
+            
+            var output = new System.Text.StringBuilder();
+            
+            foreach (var rowGroup in rowGroups)
+            {
+                var cellsInRow = rowGroup.OrderBy(cell => cell.Column.DisplayIndex).ToList();
+                var values = new List<string>();
+                
+                foreach (var cell in cellsInRow)
+                {
+                    var cellValue = "";
+                    if (cell.Column is DataGridBoundColumn column)
+                    {
+                        var binding = (column as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
+                        if (binding != null && cell.Item is DataRowView rowView)
+                        {
+                            var columnName = binding.Path.Path.Trim('[', ']');
+                            var value = rowView[columnName];
+                            cellValue = value?.ToString() ?? "";
+                        }
+                    }
+                    
+                    // Escape value if it contains delimiter or quotes
+                    if (delimiter == "," && (cellValue.Contains(",") || cellValue.Contains("\"") || cellValue.Contains("\n")))
+                    {
+                        cellValue = "\"" + cellValue.Replace("\"", "\"\"") + "\"";
+                    }
+                    
+                    values.Add(cellValue);
+                }
+                
+                output.AppendLine(string.Join(delimiter, values));
+            }
+            
+            Clipboard.SetText(output.ToString());
+            StatusText.Text = $"Copied {selectedCells.Count} cell(s) to clipboard";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error copying to clipboard: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Copy failed";
+        }
+    }
+    
+    private void OnGlobalSearchTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_dataView == null) return;
+        
+        var searchText = GlobalSearchBox.Text?.Trim();
+        
+        if (string.IsNullOrEmpty(searchText))
+        {
+            // Clear global filter, keep column filters
+            ApplyFilters();
+            return;
+        }
+        
+        try
+        {
+            // Build filter for all columns
+            var columnFilters = new List<string>();
+            
+            // Add column-specific filters from search boxes
+            for (int i = 0; i < _searchBoxes.Count; i++)
+            {
+                var columnSearchText = _searchBoxes[i].Text?.Trim();
+                var columnName = _searchBoxes[i].Tag?.ToString();
+                
+                if (!string.IsNullOrEmpty(columnSearchText) && !string.IsNullOrEmpty(columnName))
+                {
+                    var escapedText = columnSearchText.Replace("'", "''");
+                    columnFilters.Add($"Convert([{columnName}], 'System.String') LIKE '*{escapedText}*'");
+                }
+            }
+            
+            // Add global search filter (OR condition across all data columns)
+            if (_originalData != null)
+            {
+                var globalConditions = new List<string>();
+                var escapedGlobalText = searchText.Replace("'", "''");
+                
+                foreach (DataColumn col in _originalData.Columns)
+                {
+                    if (col.ColumnName != "__RowNumber")
+                    {
+                        globalConditions.Add($"Convert([{col.ColumnName}], 'System.String') LIKE '*{escapedGlobalText}*'");
+                    }
+                }
+                
+                if (globalConditions.Count > 0)
+                {
+                    columnFilters.Add($"({string.Join(" OR ", globalConditions)})");
+                }
+            }
+            
+            _dataView.RowFilter = columnFilters.Count > 0 ? string.Join(" AND ", columnFilters) : string.Empty;
+            StatusText.Text = columnFilters.Count > 0 ? $"Filtered by {columnFilters.Count} condition(s)" : "Ready";
+        }
+        catch
+        {
+            _dataView.RowFilter = string.Empty;
+            StatusText.Text = "Filter error - cleared";
         }
     }
 
@@ -96,6 +243,9 @@ public partial class MainWindow : Window
             // Switch UI
             EmptyStatePanel.Visibility = Visibility.Collapsed;
             DataGridContainer.Visibility = Visibility.Visible;
+            
+            // Add to recent files
+            AddToRecentFiles(filePath);
             
             StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)} - {fileInfo.RowCount:N0} rows, {fileInfo.Columns.Count} columns";
         }
@@ -166,6 +316,18 @@ public partial class MainWindow : Window
             _originalData = dataTable;
             _dataView = dataTable.DefaultView;
             
+            // Add a row number column to the DataTable
+            if (!dataTable.Columns.Contains("__RowNumber"))
+            {
+                var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
+                rowNumColumn.SetOrdinal(0); // Move to first position
+                
+                for (int i = 0; i < dataTable.Rows.Count; i++)
+                {
+                    dataTable.Rows[i]["__RowNumber"] = i + 1;
+                }
+            }
+            
             // Clear existing
             DataGrid.Columns.Clear();
             SearchPanel.Children.Clear();
@@ -177,10 +339,59 @@ public partial class MainWindow : Window
             // Find the search ScrollViewer
             _searchScrollViewer = FindVisualChild<ScrollViewer>(DataGridContainer);
             
-            // Display all columns
+            // Add row number column
+            var rowNumberColumn = new DataGridTextColumn
+            {
+                Header = "#",
+                Width = 80,
+                MinWidth = 40,
+                IsReadOnly = true,
+                CanUserSort = false,
+                CanUserResize = true,
+                Binding = new System.Windows.Data.Binding("[__RowNumber]")
+            };
+            
+            // Style the row number column
+            var headerStyle = new Style(typeof(DataGridColumnHeader));
+            headerStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(240, 240, 240))));
+            headerStyle.Setters.Add(new Setter(Control.FontWeightProperty, FontWeights.Bold));
+            headerStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+            rowNumberColumn.HeaderStyle = headerStyle;
+            
+            var cellStyle = new Style(typeof(DataGridCell));
+            cellStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(250, 250, 250))));
+            cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(Color.FromRgb(100, 100, 100))));
+            cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+            rowNumberColumn.CellStyle = cellStyle;
+            
+            DataGrid.Columns.Add(rowNumberColumn);
+            
+            // Add empty space in search panel for row number column
+            var rowNumberSpacer = new Border
+            {
+                MinWidth = 40,
+                Background = new SolidColorBrush(Color.FromRgb(248, 248, 248))
+            };
+            
+            // Bind the spacer width to the row number column width
+            var spacerBinding = new System.Windows.Data.Binding("ActualWidth")
+            {
+                Source = rowNumberColumn,
+                Mode = System.Windows.Data.BindingMode.OneWay
+            };
+            rowNumberSpacer.SetBinding(FrameworkElement.WidthProperty, spacerBinding);
+            
+            SearchPanel.Children.Add(rowNumberSpacer);
+            
+            // Display all columns (except the internal __RowNumber column)
             for (int i = 0; i < dataTable.Columns.Count; i++)
             {
                 var column = dataTable.Columns[i];
+                
+                // Skip the internal row number column
+                if (column.ColumnName == "__RowNumber")
+                    continue;
+                
                 var columnInfo = columns.FirstOrDefault(c => c.Name == column.ColumnName);
                 
                 // Create sortable DataGrid column with proper column name for sorting
@@ -317,7 +528,7 @@ public partial class MainWindow : Window
             _dataView.RowFilter = filters.Count > 0 ? string.Join(" AND ", filters) : string.Empty;
             StatusText.Text = filters.Count > 0 ? $"Filtered by {filters.Count} column(s)" : "Ready";
         }
-        catch (Exception ex)
+        catch
         {
             // If filter fails, clear it
             _dataView.RowFilter = string.Empty;
@@ -359,5 +570,114 @@ public partial class MainWindow : Window
             var t when t.Contains("bool") => "✅",
             _ => "🏷️"
         };
+    }
+    
+    private void LoadRecentFiles()
+    {
+        try
+        {
+            var recentFilesJson = Properties.Settings.Default.RecentFiles;
+            if (!string.IsNullOrEmpty(recentFilesJson))
+            {
+                var files = System.Text.Json.JsonSerializer.Deserialize<List<string>>(recentFilesJson);
+                if (files != null)
+                {
+                    _recentFiles.Clear();
+                    _recentFiles.AddRange(files.Where(f => System.IO.File.Exists(f)).Take(MaxRecentFiles));
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors loading recent files
+        }
+    }
+    
+    private void SaveRecentFiles()
+    {
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(_recentFiles);
+            Properties.Settings.Default.RecentFiles = json;
+            Properties.Settings.Default.Save();
+        }
+        catch
+        {
+            // Ignore errors saving recent files
+        }
+    }
+    
+    private void AddToRecentFiles(string filePath)
+    {
+        // Remove if already exists
+        _recentFiles.Remove(filePath);
+        
+        // Add to top
+        _recentFiles.Insert(0, filePath);
+        
+        // Limit to max
+        if (_recentFiles.Count > MaxRecentFiles)
+        {
+            _recentFiles.RemoveAt(_recentFiles.Count - 1);
+        }
+        
+        SaveRecentFiles();
+        UpdateRecentFilesMenu();
+    }
+    
+    private void UpdateRecentFilesMenu()
+    {
+        RecentFilesMenuItem.Items.Clear();
+        
+        if (_recentFiles.Count == 0)
+        {
+            var emptyItem = new MenuItem { Header = "(No recent files)", IsEnabled = false };
+            RecentFilesMenuItem.Items.Add(emptyItem);
+        }
+        else
+        {
+            for (int i = 0; i < _recentFiles.Count; i++)
+            {
+                var filePath = _recentFiles[i];
+                var fileName = System.IO.Path.GetFileName(filePath);
+                var menuItem = new MenuItem
+                {
+                    Header = $"_{i + 1}. {fileName}",
+                    ToolTip = filePath,
+                    Tag = filePath
+                };
+                menuItem.Click += OnRecentFileClick;
+                RecentFilesMenuItem.Items.Add(menuItem);
+            }
+            
+            RecentFilesMenuItem.Items.Add(new Separator());
+            
+            var clearItem = new MenuItem { Header = "Clear Recent Files" };
+            clearItem.Click += (s, e) =>
+            {
+                _recentFiles.Clear();
+                SaveRecentFiles();
+                UpdateRecentFilesMenu();
+            };
+            RecentFilesMenuItem.Items.Add(clearItem);
+        }
+    }
+    
+    private async void OnRecentFileClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem && menuItem.Tag is string filePath)
+        {
+            if (System.IO.File.Exists(filePath))
+            {
+                await LoadFileAsync(filePath);
+            }
+            else
+            {
+                MessageBox.Show($"File not found: {filePath}", "File Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _recentFiles.Remove(filePath);
+                SaveRecentFiles();
+                UpdateRecentFilesMenu();
+            }
+        }
     }
 }

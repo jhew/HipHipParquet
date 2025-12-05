@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Hip Hip Parquet" Height="700" Width="1200"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Icon="/Assets/app.ico">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -17,6 +18,10 @@
                     <MenuItem.Icon>
                         <TextBlock Text="📂" FontSize="14"/>
                     </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="RecentFilesMenuItem" Header="_Recent Files">
+                    <MenuItem Header="(No recent files)" IsEnabled="False"/>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="_Save">
@@ -36,13 +41,22 @@
                 <Separator/>
                 <MenuItem Header="_View Mode"/>
             </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem Header="_Copy" Click="OnCopyClick">
+                    <MenuItem.Icon>
+                        <TextBlock Text="📋" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Copy as _CSV" Click="OnCopyAsCsvClick"/>
+                <MenuItem Header="Copy as _TSV" Click="OnCopyAsTsvClick"/>
+            </MenuItem>
         </Menu>
 
         <!-- Main Content Area -->
-        <Grid Grid.Row="1">
+        <Grid x:Name="MainContentGrid" Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250" MinWidth="200"/>
-                <ColumnDefinition Width="5"/>
+                <ColumnDefinition x:Name="SchemaPaneColumn" Width="250" MinWidth="200"/>
+                <ColumnDefinition x:Name="SchemaSplitterColumn" Width="5"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
@@ -114,7 +128,11 @@
                              CanUserDeleteRows="False"
                              IsReadOnly="True"
                              Margin="12,5,12,12"
-                             ScrollViewer.ScrollChanged="OnDataGridScrollChanged"/>
+                             ScrollViewer.ScrollChanged="OnDataGridScrollChanged"
+                             EnableRowVirtualization="True"
+                             EnableColumnVirtualization="True"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"/>
                 </Grid>
             </Grid>
         </Grid>
@@ -125,7 +143,13 @@
                 <TextBlock x:Name="StatusText" Text="Ready"/>
             </StatusBarItem>
             <StatusBarItem HorizontalAlignment="Right">
-                <TextBlock Text="View Mode"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="🔍 Global Search:" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                    <TextBox x:Name="GlobalSearchBox" 
+                            Width="200" 
+                            TextChanged="OnGlobalSearchTextChanged"
+                            VerticalContentAlignment="Center"/>
+                </StackPanel>
             </StatusBarItem>
         </StatusBar>
     </Grid>
