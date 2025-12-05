@@ -23,11 +23,11 @@ public class ParquetService : IDisposable
             _connection = new DuckDBConnection("DataSource=:memory:");
             await _connection.OpenAsync();
             
-            // Use DuckDB to read Parquet file with limit for performance  
+            // Use DuckDB to read Parquet file
             var normalizedPath = filePath.Replace("\\", "/");
             _logger.LogInformation("Reading Parquet file: {FilePath}", normalizedPath);
             
-            var sql = $"SELECT * FROM read_parquet('{normalizedPath}') LIMIT 1000";
+            var sql = $"SELECT * FROM read_parquet('{normalizedPath}')";
             _logger.LogDebug("Executing SQL: {SQL}", sql);
             
             using var command = new DuckDBCommand(sql, _connection);
