@@ -29,6 +29,21 @@ public partial class MainWindow : Window
         UpdateRecentFilesMenu();
     }
 
+    public async Task LoadFileFromCommandLineAsync(string filePath)
+    {
+        // Wait for the window to be fully loaded
+        if (!IsLoaded)
+        {
+            await Task.Run(() =>
+            {
+                Dispatcher.Invoke(() => { });
+            });
+        }
+        
+        // Load the file
+        await LoadFileAsync(filePath);
+    }
+
     private async void OnOpenFileClick(object sender, RoutedEventArgs e)
     {
         var openFileDialog = new OpenFileDialog

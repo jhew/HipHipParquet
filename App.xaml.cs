@@ -2,6 +2,7 @@ using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using HipHipParquet.Services;
+using HipHipParquet.Views;
 
 namespace HipHipParquet;
 
@@ -16,6 +17,7 @@ public partial class App : Application
         // Add global exception handling
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         DispatcherUnhandledException += OnDispatcherUnhandledException;
+        Startup += OnStartup;
 
         try
         {
@@ -46,5 +48,20 @@ public partial class App : Application
         var ex = e.ExceptionObject as Exception;
         MessageBox.Show($"A fatal error occurred: {ex?.Message}", 
                        "Fatal Error", MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+
+    private async void OnStartup(object sender, StartupEventArgs e)
+    {
+        // Check if a file path was passed as a command-line argument
+        if (e.Args.Length > 0 && System.IO.File.Exists(e.Args[0]))
+        {
+            var filePath = e.Args[0];
+            
+            // Wait for the main window to be loaded
+            if (MainWindow is MainWindow mainWindow)
+            {
+                await mainWindow.LoadFileFromCommandLineAsync(filePath);
+            }
+        }
     }
 }
