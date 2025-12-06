@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Hip Hip Parquet" Height="700" Width="1200"
         WindowStartupLocation="CenterScreen"
-        Icon="/Assets/app.ico">
+        Icon="/Assets/app.png">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
