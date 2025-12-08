@@ -50,18 +50,31 @@ public partial class App : Application
                        "Fatal Error", MessageBoxButton.OK, MessageBoxImage.Error);
     }
 
-    private async void OnStartup(object sender, StartupEventArgs e)
+    private void OnStartup(object sender, StartupEventArgs e)
     {
-        // Check if a file path was passed as a command-line argument
-        if (e.Args.Length > 0 && System.IO.File.Exists(e.Args[0]))
+        try
         {
-            var filePath = e.Args[0];
+            // Create the main window
+            var mainWindow = new MainWindow();
             
-            // Wait for the main window to be loaded
-            if (MainWindow is MainWindow mainWindow)
+            // Check if a file path was passed as a command-line argument
+            if (e.Args.Length > 0)
             {
-                await mainWindow.LoadFileFromCommandLineAsync(filePath);
+                var filePath = e.Args[0];
+                
+                if (System.IO.File.Exists(filePath))
+                {
+                    // Set the pending file before showing the window
+                    _ = mainWindow.LoadFileFromCommandLineAsync(filePath);
+                }
             }
+            
+            // Show the window
+            mainWindow.Show();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Startup error: {ex.Message}", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }
