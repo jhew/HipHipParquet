@@ -121,19 +121,58 @@
                     <DataGrid x:Name="DataGrid" 
                              Grid.Row="1"
                              AutoGenerateColumns="False"
-                             HeadersVisibility="Column"
+                             HeadersVisibility="All"
                              GridLinesVisibility="All"
                              AlternatingRowBackground="#F9F9F9"
                              CanUserAddRows="False"
                              CanUserDeleteRows="False"
                              IsReadOnly="False"
+                             SelectionMode="Single"
+                             SelectionUnit="CellOrRowHeader"
                              Margin="12,5,12,12"
                              ScrollViewer.ScrollChanged="OnDataGridScrollChanged"
                              CellEditEnding="OnCellEditEnding"
                              EnableRowVirtualization="True"
                              EnableColumnVirtualization="True"
                              VirtualizingPanel.IsVirtualizing="True"
-                             VirtualizingPanel.VirtualizationMode="Recycling"/>
+                             VirtualizingPanel.VirtualizationMode="Recycling">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Copy" Click="OnContextCopyClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="📋" FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Copy with Headers" Click="OnContextCopyWithHeadersClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="📋" FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator/>
+                                <MenuItem Header="Copy Row(s)" Click="OnContextCopyRowsClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="➡️" FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Copy Row(s) with Headers" Click="OnContextCopyRowsWithHeadersClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="➡️" FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator/>
+                                <MenuItem Header="Copy Column(s)" Click="OnContextCopyColumnsClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="⬇️" FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Copy Column(s) with Headers" Click="OnContextCopyColumnsWithHeadersClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="⬇️" FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                    </DataGrid>
                 </Grid>
             </Grid>
         </Grid>

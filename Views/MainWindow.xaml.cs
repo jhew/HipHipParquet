@@ -34,7 +34,7 @@ public partial class MainWindow : Window
         Closing += OnWindowClosing;
     }
     
-    private void OnWindowClosing(object sender, CancelEventArgs e)
+    private void OnWindowClosing(object? sender, CancelEventArgs e)
     {
         if (_hasUnsavedChanges)
         {
@@ -89,10 +89,11 @@ public partial class MainWindow : Window
         }
     }
 
-    public async Task LoadFileFromCommandLineAsync(string filePath)
+    public Task LoadFileFromCommandLineAsync(string filePath)
     {
         // Store the file path to load after the window is loaded
         _pendingFileToLoad = filePath;
+        return Task.CompletedTask;
     }
 
     private async void OnOpenFileClick(object sender, RoutedEventArgs e)
@@ -168,6 +169,11 @@ public partial class MainWindow : Window
     
     private void CopySelectionToClipboard(string delimiter)
     {
+        CopySelectionToClipboard(delimiter, false);
+    }
+    
+    private void CopySelectionToClipboard(string delimiter, bool includeHeaders)
+    {
         try
         {
             var selectedCells = DataGrid.SelectedCells;
@@ -177,12 +183,74 @@ public partial class MainWindow : Window
                 return;
             }
             
+            // Special handling for single cell selection
+            if (selectedCells.Count == 1 && !includeHeaders)
+            {
+                var cell = selectedCells[0];
+                var cellValue = "";
+                
+                if (cell.Column is DataGridBoundColumn column)
+                {
+                    var binding = (column as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
+                    if (binding != null && cell.Item is DataRowView rowView)
+                    {
+                        var columnName = binding.Path.Path.Trim('[', ']');
+                        var value = rowView[columnName];
+                        cellValue = value?.ToString() ?? "";
+                    }
+                }
+                
+                Clipboard.SetText(cellValue);
+                StatusText.Text = "Copied cell value to clipboard";
+                return;
+            }
+            
+            // Special handling for single cell with header
+            if (selectedCells.Count == 1 && includeHeaders)
+            {
+                var cell = selectedCells[0];
+                var cellValue = "";
+                var headerText = GetColumnHeaderText(cell.Column);
+                
+                if (cell.Column is DataGridBoundColumn column)
+                {
+                    var binding = (column as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
+                    if (binding != null && cell.Item is DataRowView rowView)
+                    {
+                        var columnName = binding.Path.Path.Trim('[', ']');
+                        var value = rowView[columnName];
+                        cellValue = value?.ToString() ?? "";
+                    }
+                }
+                
+                var output = new System.Text.StringBuilder();
+                output.AppendLine(headerText);
+                output.Append(cellValue);
+                
+                Clipboard.SetText(output.ToString());
+                StatusText.Text = "Copied cell value with header to clipboard";
+                return;
+            }
+            
             // Group cells by row
             var rowGroups = selectedCells
                 .GroupBy(cell => DataGrid.Items.IndexOf(cell.Item))
                 .OrderBy(g => g.Key);
             
-            var output = new System.Text.StringBuilder();
+            var multiOutput = new System.Text.StringBuilder();
+            
+            // Add headers if requested
+            if (includeHeaders)
+            {
+                var headerColumns = selectedCells
+                    .Select(cell => cell.Column)
+                    .Distinct()
+                    .OrderBy(col => col.DisplayIndex)
+                    .ToList();
+                
+                var headers = headerColumns.Select(col => GetColumnHeaderText(col)).ToList();
+                multiOutput.AppendLine(string.Join(delimiter, headers));
+            }
             
             foreach (var rowGroup in rowGroups)
             {
@@ -212,17 +280,185 @@ public partial class MainWindow : Window
                     values.Add(cellValue);
                 }
                 
-                output.AppendLine(string.Join(delimiter, values));
+                multiOutput.AppendLine(string.Join(delimiter, values));
             }
             
-            Clipboard.SetText(output.ToString());
-            StatusText.Text = $"Copied {selectedCells.Count} cell(s) to clipboard";
+            Clipboard.SetText(multiOutput.ToString());
+            StatusText.Text = $"Copied {selectedCells.Count} cell(s) to clipboard" + (includeHeaders ? " with headers" : "");
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Error copying to clipboard: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Copy failed";
         }
+    }
+    
+    private void OnContextCopyClick(object sender, RoutedEventArgs e)
+    {
+        CopySelectionToClipboard("\t", false);
+    }
+    
+    private void OnContextCopyWithHeadersClick(object sender, RoutedEventArgs e)
+    {
+        CopySelectionToClipboard("\t", true);
+    }
+    
+    private void OnContextCopyRowsClick(object sender, RoutedEventArgs e)
+    {
+        CopyRows(false);
+    }
+    
+    private void OnContextCopyRowsWithHeadersClick(object sender, RoutedEventArgs e)
+    {
+        CopyRows(true);
+    }
+    
+    private void OnContextCopyColumnsClick(object sender, RoutedEventArgs e)
+    {
+        CopyColumns(false);
+    }
+    
+    private void OnContextCopyColumnsWithHeadersClick(object sender, RoutedEventArgs e)
+    {
+        CopyColumns(true);
+    }
+    
+    private void CopyRows(bool includeHeaders)
+    {
+        try
+        {
+            var selectedItems = DataGrid.SelectedItems;
+            if (selectedItems.Count == 0)
+            {
+                StatusText.Text = "No rows selected to copy";
+                return;
+            }
+            
+            var output = new System.Text.StringBuilder();
+            
+            // Add headers if requested
+            if (includeHeaders && DataGrid.Columns.Count > 0)
+            {
+                var headers = DataGrid.Columns
+                    .Where(col => col.Visibility == Visibility.Visible)
+                    .OrderBy(col => col.DisplayIndex)
+                    .Select(col => GetColumnHeaderText(col))
+                    .ToList();
+                output.AppendLine(string.Join("\t", headers));
+            }
+            
+            // Copy all columns for selected rows
+            foreach (var item in selectedItems)
+            {
+                if (item is DataRowView rowView)
+                {
+                    var values = new List<string>();
+                    foreach (var column in DataGrid.Columns.Where(col => col.Visibility == Visibility.Visible).OrderBy(col => col.DisplayIndex))
+                    {
+                        if (column is DataGridBoundColumn boundColumn)
+                        {
+                            var binding = (boundColumn as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
+                            if (binding != null)
+                            {
+                                var columnName = binding.Path.Path.Trim('[', ']');
+                                var value = rowView[columnName];
+                                values.Add(value?.ToString() ?? "");
+                            }
+                        }
+                    }
+                    output.AppendLine(string.Join("\t", values));
+                }
+            }
+            
+            Clipboard.SetText(output.ToString());
+            StatusText.Text = $"Copied {selectedItems.Count} row(s) to clipboard" + (includeHeaders ? " with headers" : "");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error copying rows: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Copy failed";
+        }
+    }
+    
+    private void CopyColumns(bool includeHeaders)
+    {
+        try
+        {
+            var selectedCells = DataGrid.SelectedCells;
+            if (selectedCells.Count == 0)
+            {
+                StatusText.Text = "No cells selected to copy";
+                return;
+            }
+            
+            // Get unique columns from selected cells
+            var selectedColumns = selectedCells
+                .Select(cell => cell.Column)
+                .Distinct()
+                .OrderBy(col => col.DisplayIndex)
+                .ToList();
+            
+            // Get all rows in the current view
+            var allRows = new List<DataRowView>();
+            foreach (var item in DataGrid.Items)
+            {
+                if (item is DataRowView rowView)
+                {
+                    allRows.Add(rowView);
+                }
+            }
+            
+            var output = new System.Text.StringBuilder();
+            
+            // Add headers if requested
+            if (includeHeaders)
+            {
+                var headers = selectedColumns.Select(col => GetColumnHeaderText(col)).ToList();
+                output.AppendLine(string.Join("\t", headers));
+            }
+            
+            // Copy all rows for selected columns
+            foreach (var rowView in allRows)
+            {
+                var values = new List<string>();
+                foreach (var column in selectedColumns)
+                {
+                    if (column is DataGridBoundColumn boundColumn)
+                    {
+                        var binding = (boundColumn as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
+                        if (binding != null)
+                        {
+                            var columnName = binding.Path.Path.Trim('[', ']');
+                            var value = rowView[columnName];
+                            values.Add(value?.ToString() ?? "");
+                        }
+                    }
+                }
+                output.AppendLine(string.Join("\t", values));
+            }
+            
+            Clipboard.SetText(output.ToString());
+            StatusText.Text = $"Copied {selectedColumns.Count} column(s) ({allRows.Count} rows) to clipboard" + (includeHeaders ? " with headers" : "");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error copying columns: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Copy failed";
+        }
+    }
+    
+    private string GetColumnHeaderText(DataGridColumn column)
+    {
+        if (column.Header is FrameworkElement element)
+        {
+            // Handle custom header with StackPanel (icon + text)
+            if (element is StackPanel panel)
+            {
+                var textBlock = panel.Children.OfType<TextBlock>().LastOrDefault();
+                return textBlock?.Text ?? column.Header.ToString() ?? "";
+            }
+        }
+        return column.Header?.ToString() ?? "";
     }
     
     private void OnGlobalSearchTextChanged(object sender, TextChangedEventArgs e)
