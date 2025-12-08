@@ -21,12 +21,78 @@ public partial class MainWindow : Window
     private readonly List<string> _recentFiles = new();
     private const int MaxRecentFiles = 10;
     private const string RecentFilesKey = "RecentFiles";
+    private string? _pendingFileToLoad;
+    private string? _currentFilePath;
+    private bool _hasUnsavedChanges = false;
     
     public MainWindow()
     {
         InitializeComponent();
         LoadRecentFiles();
         UpdateRecentFilesMenu();
+        Loaded += OnWindowLoaded;
+        Closing += OnWindowClosing;
+    }
+    
+    private void OnWindowClosing(object sender, CancelEventArgs e)
+    {
+        if (_hasUnsavedChanges)
+        {
+            var result = MessageBox.Show(
+                "You have unsaved changes. Do you want to save before closing?",
+                "Unsaved Changes",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Warning);
+            
+            if (result == MessageBoxResult.Yes)
+            {
+                // Save the file
+                if (string.IsNullOrEmpty(_currentFilePath))
+                {
+                    var saveFileDialog = new SaveFileDialog
+                    {
+                        Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
+                        Title = "Save Parquet File",
+                        FileName = "untitled.parquet"
+                    };
+                    
+                    if (saveFileDialog.ShowDialog() == true)
+                    {
+                        Task.Run(async () => await SaveFileAsync(saveFileDialog.FileName)).Wait();
+                    }
+                    else
+                    {
+                        e.Cancel = true; // Cancel closing if user cancels save dialog
+                    }
+                }
+                else
+                {
+                    Task.Run(async () => await SaveFileAsync(_currentFilePath)).Wait();
+                }
+            }
+            else if (result == MessageBoxResult.Cancel)
+            {
+                e.Cancel = true; // Cancel closing
+            }
+            // If No, just close without saving
+        }
+    }
+
+    private async void OnWindowLoaded(object sender, RoutedEventArgs e)
+    {
+        // If there's a pending file to load from command line, load it now
+        if (!string.IsNullOrEmpty(_pendingFileToLoad))
+        {
+            var fileToLoad = _pendingFileToLoad;
+            _pendingFileToLoad = null;
+            await LoadFileAsync(fileToLoad);
+        }
+    }
+
+    public async Task LoadFileFromCommandLineAsync(string filePath)
+    {
+        // Store the file path to load after the window is loaded
+        _pendingFileToLoad = filePath;
     }
 
     private async void OnOpenFileClick(object sender, RoutedEventArgs e)
@@ -161,63 +227,8 @@ public partial class MainWindow : Window
     
     private void OnGlobalSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_dataView == null) return;
-        
-        var searchText = GlobalSearchBox.Text?.Trim();
-        
-        if (string.IsNullOrEmpty(searchText))
-        {
-            // Clear global filter, keep column filters
-            ApplyFilters();
-            return;
-        }
-        
-        try
-        {
-            // Build filter for all columns
-            var columnFilters = new List<string>();
-            
-            // Add column-specific filters from search boxes
-            for (int i = 0; i < _searchBoxes.Count; i++)
-            {
-                var columnSearchText = _searchBoxes[i].Text?.Trim();
-                var columnName = _searchBoxes[i].Tag?.ToString();
-                
-                if (!string.IsNullOrEmpty(columnSearchText) && !string.IsNullOrEmpty(columnName))
-                {
-                    var escapedText = columnSearchText.Replace("'", "''");
-                    columnFilters.Add($"Convert([{columnName}], 'System.String') LIKE '*{escapedText}*'");
-                }
-            }
-            
-            // Add global search filter (OR condition across all data columns)
-            if (_originalData != null)
-            {
-                var globalConditions = new List<string>();
-                var escapedGlobalText = searchText.Replace("'", "''");
-                
-                foreach (DataColumn col in _originalData.Columns)
-                {
-                    if (col.ColumnName != "__RowNumber")
-                    {
-                        globalConditions.Add($"Convert([{col.ColumnName}], 'System.String') LIKE '*{escapedGlobalText}*'");
-                    }
-                }
-                
-                if (globalConditions.Count > 0)
-                {
-                    columnFilters.Add($"({string.Join(" OR ", globalConditions)})");
-                }
-            }
-            
-            _dataView.RowFilter = columnFilters.Count > 0 ? string.Join(" AND ", columnFilters) : string.Empty;
-            StatusText.Text = columnFilters.Count > 0 ? $"Filtered by {columnFilters.Count} condition(s)" : "Ready";
-        }
-        catch
-        {
-            _dataView.RowFilter = string.Empty;
-            StatusText.Text = "Filter error - cleared";
-        }
+        // Just reapply all filters (column + global)
+        ApplyFilters();
     }
 
     private async Task LoadFileAsync(string filePath)
@@ -247,6 +258,12 @@ public partial class MainWindow : Window
             // Add to recent files
             AddToRecentFiles(filePath);
             
+            // Track current file and reset unsaved changes
+            _currentFilePath = filePath;
+            _hasUnsavedChanges = false;
+            UpdateWindowTitle();
+            EnableSaveMenuItems();
+            
             StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)} - {fileInfo.RowCount:N0} rows, {fileInfo.Columns.Count} columns";
         }
         catch (Exception ex)
@@ -257,6 +274,89 @@ public partial class MainWindow : Window
             // Reset UI
             EmptyStatePanel.Visibility = Visibility.Visible;
             DataGridContainer.Visibility = Visibility.Collapsed;
+        }
+    }
+    
+    private void UpdateWindowTitle()
+    {
+        var fileName = string.IsNullOrEmpty(_currentFilePath) ? "Hip Hip Parquet" : $"{System.IO.Path.GetFileName(_currentFilePath)} - Hip Hip Parquet";
+        Title = _hasUnsavedChanges ? $"*{fileName}" : fileName;
+    }
+    
+    private void EnableSaveMenuItems()
+    {
+        bool hasFile = !string.IsNullOrEmpty(_currentFilePath) && _originalData != null;
+        SaveMenuItem.IsEnabled = hasFile;
+        SaveAsMenuItem.IsEnabled = hasFile;
+    }
+    
+    private async void OnSaveClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_currentFilePath) || _originalData == null)
+        {
+            OnSaveAsClick(sender, e);
+            return;
+        }
+        
+        await SaveFileAsync(_currentFilePath);
+    }
+    
+    private async void OnSaveAsClick(object sender, RoutedEventArgs e)
+    {
+        if (_originalData == null)
+        {
+            MessageBox.Show("No file is currently loaded.", "Save As", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        
+        var saveFileDialog = new SaveFileDialog
+        {
+            Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
+            Title = "Save Parquet File",
+            FileName = string.IsNullOrEmpty(_currentFilePath) ? "untitled.parquet" : System.IO.Path.GetFileName(_currentFilePath)
+        };
+        
+        if (saveFileDialog.ShowDialog() == true)
+        {
+            await SaveFileAsync(saveFileDialog.FileName);
+            _currentFilePath = saveFileDialog.FileName;
+            UpdateWindowTitle();
+        }
+    }
+    
+    private async Task SaveFileAsync(string filePath)
+    {
+        try
+        {
+            StatusText.Text = "Saving file...";
+            
+            // Get ParquetService from DI
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
+            var parquetService = new ParquetService(logger!);
+            
+            // Save the file
+            await parquetService.SaveParquetFileAsync(filePath, _originalData!);
+            
+            _hasUnsavedChanges = false;
+            UpdateWindowTitle();
+            
+            StatusText.Text = $"Saved {System.IO.Path.GetFileName(filePath)} - {_originalData!.Rows.Count:N0} rows";
+            
+            MessageBox.Show($"File saved successfully to:\n{filePath}", "Save Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error saving file: {ex.Message}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            StatusText.Text = "Error saving file";
+        }
+    }
+    
+    private void OnCellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
+    {
+        if (e.EditAction == DataGridEditAction.Commit)
+        {
+            _hasUnsavedChanges = true;
+            UpdateWindowTitle();
         }
     }
     
@@ -399,9 +499,10 @@ public partial class MainWindow : Window
                 {
                     Header = CreateColumnHeader(column.ColumnName, columnInfo?.Type ?? "unknown", i),
                     Binding = new System.Windows.Data.Binding($"[{column.ColumnName}]"),
-                    Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+                    Width = DataGridLength.Auto,
                     MinWidth = 100,
                     CanUserSort = true,
+                    CanUserResize = true,
                     SortMemberPath = column.ColumnName
                 };
                 DataGrid.Columns.Add(gridColumn);
@@ -510,6 +611,7 @@ public partial class MainWindow : Window
         
         var filters = new List<string>();
         
+        // Add column-specific filters from search boxes
         for (int i = 0; i < _searchBoxes.Count; i++)
         {
             var searchText = _searchBoxes[i].Text?.Trim();
@@ -523,10 +625,42 @@ public partial class MainWindow : Window
             }
         }
         
+        // Add global search filter (OR condition across all data columns)
+        var globalSearchText = GlobalSearchBox.Text?.Trim();
+        if (!string.IsNullOrEmpty(globalSearchText) && _originalData != null)
+        {
+            var globalConditions = new List<string>();
+            var escapedGlobalText = globalSearchText.Replace("'", "''");
+            
+            foreach (DataColumn col in _originalData.Columns)
+            {
+                if (col.ColumnName != "__RowNumber")
+                {
+                    globalConditions.Add($"Convert([{col.ColumnName}], 'System.String') LIKE '*{escapedGlobalText}*'");
+                }
+            }
+            
+            if (globalConditions.Count > 0)
+            {
+                filters.Add($"({string.Join(" OR ", globalConditions)})");
+            }
+        }
+        
         try
         {
             _dataView.RowFilter = filters.Count > 0 ? string.Join(" AND ", filters) : string.Empty;
-            StatusText.Text = filters.Count > 0 ? $"Filtered by {filters.Count} column(s)" : "Ready";
+            
+            var columnCount = _searchBoxes.Count(sb => !string.IsNullOrWhiteSpace(sb.Text));
+            var hasGlobal = !string.IsNullOrWhiteSpace(GlobalSearchBox.Text);
+            
+            if (columnCount > 0 && hasGlobal)
+                StatusText.Text = $"Filtered by {columnCount} column(s) + global search";
+            else if (columnCount > 0)
+                StatusText.Text = $"Filtered by {columnCount} column(s)";
+            else if (hasGlobal)
+                StatusText.Text = "Filtered by global search";
+            else
+                StatusText.Text = "Ready";
         }
         catch
         {
