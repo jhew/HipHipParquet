@@ -1,8 +1,5 @@
 {
   "profiles": {
-    "HipHipParquet (Package)": {
-      "commandName": "MsixPackage"
-    },
     "HipHipParquet (Unpackaged)": {
       "commandName": "Project"
     }
