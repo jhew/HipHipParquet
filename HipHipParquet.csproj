@@ -30,6 +30,14 @@
         <None Remove="HipHipParquet.slnx" />
     </ItemGroup>
 
+    <!-- Exclude the test project from this build -->
+    <ItemGroup>
+        <Compile Remove="Tests\**" />
+        <None Remove="Tests\**" />
+        <Content Remove="Tests\**" />
+        <EmbeddedResource Remove="Tests\**" />
+    </ItemGroup>
+
     <ItemGroup>
         <Resource Include="Assets\app.png" />
         <Resource Include="Assets\app.ico" />
