@@ -2,6 +2,7 @@ using DuckDB.NET.Data;
 using System.Data;
 using System.IO;
 using Microsoft.Extensions.Logging;
+using HipHipParquet.Models;
 
 namespace HipHipParquet.Services;
 
@@ -239,7 +240,398 @@ public class ParquetService : IDisposable
         if (dotNetType == typeof(byte[])) return "BLOB";
         return "VARCHAR"; // Default to VARCHAR for unknown types
     }
-    
+
+    // ── Analytics Methods ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Generates a comprehensive FileProfile with per-column statistics using DuckDB aggregate SQL.
+    /// </summary>
+    public async Task<FileProfile> GetFileProfileAsync(string filePath)
+    {
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            var normalizedPath = filePath.Replace("\\", "/");
+            _logger.LogInformation("Profiling Parquet file: {FilePath}", normalizedPath);
+
+            // Get schema
+            var columns = new List<(string Name, string Type)>();
+            var describeSql = $"DESCRIBE SELECT * FROM read_parquet('{normalizedPath}')";
+            using (var cmd = new DuckDBCommand(describeSql, connection))
+            using (var reader = await cmd.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    columns.Add((reader.GetString("column_name"), reader.GetString("column_type")));
+                }
+            }
+
+            // Get row count
+            long rowCount;
+            using (var cmd = new DuckDBCommand($"SELECT COUNT(*) FROM read_parquet('{normalizedPath}')", connection))
+            {
+                rowCount = Convert.ToInt64(await cmd.ExecuteScalarAsync());
+            }
+
+            var columnProfiles = new List<ColumnProfile>();
+
+            foreach (var (colName, colType) in columns)
+            {
+                var profile = await ProfileColumnAsync(connection, normalizedPath, colName, colType, rowCount);
+                columnProfiles.Add(profile);
+            }
+
+            var fileProfile = new FileProfile
+            {
+                FilePath = filePath,
+                FileName = Path.GetFileName(filePath),
+                RowCount = rowCount,
+                ColumnCount = columns.Count,
+                FileSizeBytes = new System.IO.FileInfo(filePath).Length,
+                AnalyzedAt = DateTime.Now,
+                Columns = columnProfiles
+            };
+
+            return fileProfile;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to profile parquet file: {FilePath}", filePath);
+            throw new InvalidOperationException($"Failed to profile Parquet file '{Path.GetFileName(filePath)}': {ex.Message}", ex);
+        }
+    }
+
+    private async Task<ColumnProfile> ProfileColumnAsync(DuckDBConnection connection, string filePath, string colName, string colType, long totalRows)
+    {
+        var category = CategorizeColumn(colType);
+        var escapedCol = $"\"{colName}\"";
+        var src = $"read_parquet('{filePath}')";
+
+        var profile = new ColumnProfile
+        {
+            Name = colName,
+            DuckDbType = colType,
+            Category = category,
+            TotalRows = totalRows
+        };
+
+        try
+        {
+            // Universal stats: null count, distinct count
+            var universalSql = $"SELECT COUNT(*) - COUNT({escapedCol}) AS null_count, COUNT(DISTINCT {escapedCol}) AS distinct_count FROM {src}";
+            using (var cmd = new DuckDBCommand(universalSql, connection))
+            using (var reader = await cmd.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync())
+                {
+                    profile.NullCount = Convert.ToInt64(reader["null_count"]);
+                    profile.DistinctCount = Convert.ToInt64(reader["distinct_count"]);
+                }
+            }
+
+            switch (category)
+            {
+                case ColumnCategory.Numeric:
+                    await ProfileNumericColumnAsync(connection, src, escapedCol, profile);
+                    break;
+                case ColumnCategory.String:
+                    await ProfileStringColumnAsync(connection, src, escapedCol, profile);
+                    break;
+                case ColumnCategory.Boolean:
+                    await ProfileBooleanColumnAsync(connection, src, escapedCol, profile);
+                    break;
+                case ColumnCategory.DateTime:
+                    await ProfileDateTimeColumnAsync(connection, src, escapedCol, profile);
+                    break;
+            }
+
+            // Top values (for all column types)
+            await GetTopValuesAsync(connection, src, escapedCol, profile);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error profiling column {Column}, some stats may be missing", colName);
+        }
+
+        return profile;
+    }
+
+    private async Task ProfileNumericColumnAsync(DuckDBConnection connection, string src, string col, ColumnProfile profile)
+    {
+        var sql = $@"SELECT 
+            MIN({col})::DOUBLE AS min_val,
+            MAX({col})::DOUBLE AS max_val,
+            AVG({col})::DOUBLE AS mean_val,
+            MEDIAN({col})::DOUBLE AS median_val,
+            STDDEV_SAMP({col})::DOUBLE AS stddev_val,
+            SUM({col})::DOUBLE AS sum_val,
+            QUANTILE_CONT({col}, 0.25)::DOUBLE AS q1_val,
+            QUANTILE_CONT({col}, 0.75)::DOUBLE AS q3_val
+            FROM {src}
+            WHERE {col} IS NOT NULL";
+
+        using var cmd = new DuckDBCommand(sql, connection);
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            profile.Min = reader.IsDBNull(reader.GetOrdinal("min_val")) ? null : Convert.ToDouble(reader["min_val"]);
+            profile.Max = reader.IsDBNull(reader.GetOrdinal("max_val")) ? null : Convert.ToDouble(reader["max_val"]);
+            profile.Mean = reader.IsDBNull(reader.GetOrdinal("mean_val")) ? null : Convert.ToDouble(reader["mean_val"]);
+            profile.Median = reader.IsDBNull(reader.GetOrdinal("median_val")) ? null : Convert.ToDouble(reader["median_val"]);
+            profile.StdDev = reader.IsDBNull(reader.GetOrdinal("stddev_val")) ? null : Convert.ToDouble(reader["stddev_val"]);
+            profile.Sum = reader.IsDBNull(reader.GetOrdinal("sum_val")) ? null : Convert.ToDouble(reader["sum_val"]);
+            profile.Q1 = reader.IsDBNull(reader.GetOrdinal("q1_val")) ? null : Convert.ToDouble(reader["q1_val"]);
+            profile.Q3 = reader.IsDBNull(reader.GetOrdinal("q3_val")) ? null : Convert.ToDouble(reader["q3_val"]);
+        }
+
+        // Outlier count (beyond 1.5 × IQR)
+        if (profile.Q1.HasValue && profile.Q3.HasValue && profile.IQR > 0)
+        {
+            var lowerBound = profile.Q1.Value - 1.5 * profile.IQR.Value;
+            var upperBound = profile.Q3.Value + 1.5 * profile.IQR.Value;
+            var outlierSql = $"SELECT COUNT(*) FROM {src} WHERE {col} IS NOT NULL AND ({col}::DOUBLE < {lowerBound} OR {col}::DOUBLE > {upperBound})";
+            using var outlierCmd = new DuckDBCommand(outlierSql, connection);
+            profile.OutlierCount = Convert.ToInt64(await outlierCmd.ExecuteScalarAsync());
+        }
+
+        // Histogram (10 buckets)
+        await GetHistogramAsync(connection, src, col, profile);
+    }
+
+    private async Task ProfileStringColumnAsync(DuckDBConnection connection, string src, string col, ColumnProfile profile)
+    {
+        var sql = $@"SELECT 
+            MIN(LENGTH({col})) AS min_len,
+            MAX(LENGTH({col})) AS max_len,
+            AVG(LENGTH({col}))::DOUBLE AS avg_len,
+            SUM(CASE WHEN {col} = '' THEN 1 ELSE 0 END) AS empty_count
+            FROM {src}
+            WHERE {col} IS NOT NULL";
+
+        using var cmd = new DuckDBCommand(sql, connection);
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            profile.MinLength = reader.IsDBNull(reader.GetOrdinal("min_len")) ? null : Convert.ToInt32(reader["min_len"]);
+            profile.MaxLength = reader.IsDBNull(reader.GetOrdinal("max_len")) ? null : Convert.ToInt32(reader["max_len"]);
+            profile.AvgLength = reader.IsDBNull(reader.GetOrdinal("avg_len")) ? null : Convert.ToDouble(reader["avg_len"]);
+            profile.EmptyStringCount = reader.IsDBNull(reader.GetOrdinal("empty_count")) ? null : Convert.ToInt32(reader["empty_count"]);
+        }
+    }
+
+    private async Task ProfileBooleanColumnAsync(DuckDBConnection connection, string src, string col, ColumnProfile profile)
+    {
+        var sql = $@"SELECT 
+            SUM(CASE WHEN {col} = TRUE THEN 1 ELSE 0 END) AS true_count,
+            SUM(CASE WHEN {col} = FALSE THEN 1 ELSE 0 END) AS false_count
+            FROM {src}
+            WHERE {col} IS NOT NULL";
+
+        using var cmd = new DuckDBCommand(sql, connection);
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            profile.TrueCount = reader.IsDBNull(reader.GetOrdinal("true_count")) ? null : Convert.ToInt64(reader["true_count"]);
+            profile.FalseCount = reader.IsDBNull(reader.GetOrdinal("false_count")) ? null : Convert.ToInt64(reader["false_count"]);
+        }
+    }
+
+    private async Task ProfileDateTimeColumnAsync(DuckDBConnection connection, string src, string col, ColumnProfile profile)
+    {
+        var sql = $@"SELECT 
+            MIN({col})::VARCHAR AS min_date,
+            MAX({col})::VARCHAR AS max_date
+            FROM {src}
+            WHERE {col} IS NOT NULL";
+
+        using var cmd = new DuckDBCommand(sql, connection);
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            profile.MinDate = reader.IsDBNull(reader.GetOrdinal("min_date")) ? null : reader["min_date"]?.ToString();
+            profile.MaxDate = reader.IsDBNull(reader.GetOrdinal("max_date")) ? null : reader["max_date"]?.ToString();
+        }
+    }
+
+    private async Task GetTopValuesAsync(DuckDBConnection connection, string src, string col, ColumnProfile profile, int topN = 5)
+    {
+        var sql = $@"SELECT {col}::VARCHAR AS val, COUNT(*) AS cnt 
+            FROM {src} 
+            WHERE {col} IS NOT NULL 
+            GROUP BY {col} 
+            ORDER BY cnt DESC 
+            LIMIT {topN}";
+
+        using var cmd = new DuckDBCommand(sql, connection);
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var count = Convert.ToInt64(reader["cnt"]);
+            profile.TopValues.Add(new ValueFrequency
+            {
+                Value = reader["val"]?.ToString() ?? "(null)",
+                Count = count,
+                Percentage = profile.NonNullCount == 0 ? 0 : Math.Round((double)count / profile.NonNullCount * 100, 2)
+            });
+        }
+    }
+
+    private async Task GetHistogramAsync(DuckDBConnection connection, string src, string col, ColumnProfile profile, int buckets = 10)
+    {
+        if (!profile.Min.HasValue || !profile.Max.HasValue || profile.Min.Value == profile.Max.Value)
+            return;
+
+        var range = profile.Max.Value - profile.Min.Value;
+        var bucketSize = range / buckets;
+
+        var sql = $@"SELECT 
+            WIDTH_BUCKET({col}::DOUBLE, {profile.Min.Value}, {profile.Max.Value + 0.001}, {buckets}) AS bucket,
+            COUNT(*) AS cnt
+            FROM {src}
+            WHERE {col} IS NOT NULL
+            GROUP BY bucket
+            ORDER BY bucket";
+
+        using var cmd = new DuckDBCommand(sql, connection);
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var bucketIndex = Convert.ToInt32(reader["bucket"]);
+            if (bucketIndex < 1 || bucketIndex > buckets) continue;
+
+            var lowerBound = profile.Min.Value + (bucketIndex - 1) * bucketSize;
+            var upperBound = profile.Min.Value + bucketIndex * bucketSize;
+
+            profile.Histogram.Add(new HistogramBucket
+            {
+                LowerBound = lowerBound,
+                UpperBound = upperBound,
+                Count = Convert.ToInt64(reader["cnt"])
+            });
+        }
+    }
+
+    /// <summary>
+    /// Generates grouped statistics for a file, grouped by the specified dimension columns.
+    /// Returns a dictionary mapping group key strings to their FileProfile.
+    /// </summary>
+    public async Task<Dictionary<string, FileProfile>> GetGroupedStatisticsAsync(string filePath, List<string> groupByColumns)
+    {
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            var normalizedPath = filePath.Replace("\\", "/");
+            var src = $"read_parquet('{normalizedPath}')";
+            var groupByCols = string.Join(", ", groupByColumns.Select(c => $"\"{c}\""));
+
+            // Get distinct group values
+            var groupSql = $"SELECT {groupByCols}, COUNT(*) AS group_count FROM {src} GROUP BY {groupByCols} ORDER BY group_count DESC LIMIT 100";
+            var groups = new List<(string Key, long Count)>();
+
+            using (var cmd = new DuckDBCommand(groupSql, connection))
+            using (var reader = await cmd.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    var keyParts = new List<string>();
+                    for (int i = 0; i < groupByColumns.Count; i++)
+                    {
+                        keyParts.Add(reader.IsDBNull(i) ? "(null)" : reader.GetValue(i)?.ToString() ?? "(null)");
+                    }
+                    var key = string.Join(" | ", keyParts);
+                    var count = Convert.ToInt64(reader["group_count"]);
+                    groups.Add((key, count));
+                }
+            }
+
+            // Get schema
+            var columns = new List<(string Name, string Type)>();
+            var describeSql = $"DESCRIBE SELECT * FROM {src}";
+            using (var cmd = new DuckDBCommand(describeSql, connection))
+            using (var reader = await cmd.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    var name = reader.GetString("column_name");
+                    if (!groupByColumns.Contains(name))
+                    {
+                        columns.Add((name, reader.GetString("column_type")));
+                    }
+                }
+            }
+
+            var result = new Dictionary<string, FileProfile>();
+
+            foreach (var (groupKey, groupCount) in groups)
+            {
+                var groupProfile = new FileProfile
+                {
+                    FilePath = filePath,
+                    FileName = groupKey,
+                    RowCount = groupCount,
+                    ColumnCount = columns.Count
+                };
+
+                // Build WHERE clause for this group
+                var keyParts = groupKey.Split(" | ");
+                var whereClauses = new List<string>();
+                for (int i = 0; i < groupByColumns.Count; i++)
+                {
+                    var val = keyParts[i];
+                    if (val == "(null)")
+                        whereClauses.Add($"\"{groupByColumns[i]}\" IS NULL");
+                    else
+                        whereClauses.Add($"\"{groupByColumns[i]}\"::VARCHAR = '{val.Replace("'", "''")}'");
+                }
+                var whereClause = string.Join(" AND ", whereClauses);
+                var filteredSrc = $"(SELECT * FROM {src} WHERE {whereClause})";
+
+                foreach (var (colName, colType) in columns)
+                {
+                    var profile = await ProfileColumnAsync(connection, filteredSrc.TrimStart('(').TrimEnd(')'), $"\"{colName}\"", colType, groupCount);
+                    profile.Name = colName;
+                    groupProfile.Columns.Add(profile);
+                }
+
+                result[groupKey] = groupProfile;
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get grouped statistics for: {FilePath}", filePath);
+            throw;
+        }
+    }
+
+    private static ColumnCategory CategorizeColumn(string duckDbType)
+    {
+        var upper = duckDbType.ToUpperInvariant();
+        if (upper.Contains("INT") || upper.Contains("FLOAT") || upper.Contains("DOUBLE") ||
+            upper.Contains("DECIMAL") || upper.Contains("NUMERIC") || upper == "REAL" ||
+            upper == "SMALLINT" || upper == "TINYINT" || upper == "BIGINT" ||
+            upper == "HUGEINT" || upper == "UINTEGER" || upper == "UBIGINT" ||
+            upper == "USMALLINT" || upper == "UTINYINT" || upper == "UHUGEINT")
+            return ColumnCategory.Numeric;
+
+        if (upper.Contains("BOOL"))
+            return ColumnCategory.Boolean;
+
+        if (upper.Contains("DATE") || upper.Contains("TIME") || upper.Contains("TIMESTAMP") || upper.Contains("INTERVAL"))
+            return ColumnCategory.DateTime;
+
+        if (upper.Contains("VARCHAR") || upper.Contains("TEXT") || upper.Contains("CHAR") ||
+            upper.Contains("STRING") || upper == "BLOB" || upper == "UUID")
+            return ColumnCategory.String;
+
+        return ColumnCategory.Other;
+    }
+
     public void Dispose()
     {
         Dispose(true);

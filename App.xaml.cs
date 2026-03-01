@@ -26,6 +26,9 @@ public partial class App : Application
                 .ConfigureServices((context, services) =>
                 {
                     services.AddSingleton<ParquetService>();
+                    services.AddSingleton<QualityScoreService>();
+                    services.AddSingleton<NarrativeService>();
+                    services.AddSingleton<ReportService>();
                 })
                 .Build();
         }
