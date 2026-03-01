@@ -184,12 +184,13 @@ public partial class MainWindow : Window
     {
         try
         {
-            var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
             var qualityScoreService = App.Current.Services.GetService<QualityScoreService>() ?? new QualityScoreService();
             var narrativeService = App.Current.Services.GetService<NarrativeService>() ?? new NarrativeService();
             var reportService = App.Current.Services.GetService<ReportService>() ?? new ReportService();
 
-            _qaViewModel = new QaReviewViewModel(logger!, qualityScoreService, narrativeService, reportService);
+            _qaViewModel = new QaReviewViewModel(logger, qualityScoreService, narrativeService, reportService);
             QaReviewPanel.SetViewModel(_qaViewModel);
         }
         catch (Exception ex)

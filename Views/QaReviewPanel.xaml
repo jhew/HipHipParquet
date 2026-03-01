@@ -115,6 +115,7 @@
                             <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,6,6">
                                 <TextBlock FontSize="10" Foreground="Gray">
                                     <Run Text="Completeness"/>
+                                    <Run Text=" "/>
                                     <Run Text="{Binding CompletenessScore, StringFormat={}{0:F1}/25, Mode=OneWay}"/>
                                 </TextBlock>
                                 <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding CompletenessScore}"/>
@@ -123,6 +124,7 @@
                             <StackPanel Grid.Row="0" Grid.Column="1" Margin="6,0,0,6">
                                 <TextBlock FontSize="10" Foreground="Gray">
                                     <Run Text="Uniqueness"/>
+                                    <Run Text=" "/>
                                     <Run Text="{Binding UniquenessScore, StringFormat={}{0:F1}/25, Mode=OneWay}"/>
                                 </TextBlock>
                                 <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding UniquenessScore}"/>
@@ -131,6 +133,7 @@
                             <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,6,0">
                                 <TextBlock FontSize="10" Foreground="Gray">
                                     <Run Text="Validity"/>
+                                    <Run Text=" "/>
                                     <Run Text="{Binding ValidityScore, StringFormat={}{0:F1}/25, Mode=OneWay}"/>
                                 </TextBlock>
                                 <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding ValidityScore}"/>
@@ -139,6 +142,7 @@
                             <StackPanel Grid.Row="1" Grid.Column="1" Margin="6,0,0,0">
                                 <TextBlock FontSize="10" Foreground="Gray">
                                     <Run Text="Distribution"/>
+                                    <Run Text=" "/>
                                     <Run Text="{Binding DistributionScore, StringFormat={}{0:F1}/25, Mode=OneWay}"/>
                                 </TextBlock>
                                 <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding DistributionScore}"/>
@@ -225,7 +229,7 @@
                             <ComboBox ItemsSource="{Binding FilterableMetrics}" 
                                       SelectedItem="{Binding FilterColumn}"
                                       Width="100" Margin="0,0,4,0" FontSize="11"/>
-                            <ComboBox SelectedItem="{Binding FilterOperator}" Width="45" Margin="0,0,4,0" FontSize="11">
+                            <ComboBox SelectedValue="{Binding FilterOperator}" SelectedValuePath="Content" Width="45" Margin="0,0,4,0" FontSize="11">
                                 <ComboBoxItem Content="&gt;"/>
                                 <ComboBoxItem Content="&lt;"/>
                                 <ComboBoxItem Content="="/>

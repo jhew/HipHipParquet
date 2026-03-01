@@ -254,32 +254,35 @@ public class ParquetService : IDisposable
             await connection.OpenAsync();
 
             var normalizedPath = filePath.Replace("\\", "/");
+            var escapedPath = normalizedPath.Replace("'", "''");
             _logger.LogInformation("Profiling Parquet file: {FilePath}", normalizedPath);
 
             // Get schema
-            var columns = new List<(string Name, string Type)>();
-            var describeSql = $"DESCRIBE SELECT * FROM read_parquet('{normalizedPath}')";
+            var columns = new List<(string Name, string Type, bool IsNullable)>();
+            var describeSql = $"DESCRIBE SELECT * FROM read_parquet('{escapedPath}')";
             using (var cmd = new DuckDBCommand(describeSql, connection))
             using (var reader = await cmd.ExecuteReaderAsync())
             {
                 while (await reader.ReadAsync())
                 {
-                    columns.Add((reader.GetString("column_name"), reader.GetString("column_type")));
+                    var nullable = reader["null"]?.ToString()?.Equals("YES", StringComparison.OrdinalIgnoreCase) ?? true;
+                    columns.Add((reader.GetString("column_name"), reader.GetString("column_type"), nullable));
                 }
             }
 
             // Get row count
             long rowCount;
-            using (var cmd = new DuckDBCommand($"SELECT COUNT(*) FROM read_parquet('{normalizedPath}')", connection))
+            using (var cmd = new DuckDBCommand($"SELECT COUNT(*) FROM read_parquet('{escapedPath}')", connection))
             {
                 rowCount = Convert.ToInt64(await cmd.ExecuteScalarAsync());
             }
 
             var columnProfiles = new List<ColumnProfile>();
+            var fileSrc = $"read_parquet('{escapedPath}')";
 
-            foreach (var (colName, colType) in columns)
+            foreach (var (colName, colType, isNullable) in columns)
             {
-                var profile = await ProfileColumnAsync(connection, normalizedPath, colName, colType, rowCount);
+                var profile = await ProfileColumnAsync(connection, fileSrc, colName, colType, rowCount, isNullable);
                 columnProfiles.Add(profile);
             }
 
@@ -303,18 +306,18 @@ public class ParquetService : IDisposable
         }
     }
 
-    private async Task<ColumnProfile> ProfileColumnAsync(DuckDBConnection connection, string filePath, string colName, string colType, long totalRows)
+    private async Task<ColumnProfile> ProfileColumnAsync(DuckDBConnection connection, string src, string colName, string colType, long totalRows, bool isNullable = true)
     {
         var category = CategorizeColumn(colType);
         var escapedCol = $"\"{colName}\"";
-        var src = $"read_parquet('{filePath}')";
 
         var profile = new ColumnProfile
         {
             Name = colName,
             DuckDbType = colType,
             Category = category,
-            TotalRows = totalRows
+            TotalRows = totalRows,
+            IsNullable = isNullable
         };
 
         try
@@ -525,7 +528,8 @@ public class ParquetService : IDisposable
             await connection.OpenAsync();
 
             var normalizedPath = filePath.Replace("\\", "/");
-            var src = $"read_parquet('{normalizedPath}')";
+            var escapedPath = normalizedPath.Replace("'", "''");
+            var src = $"read_parquet('{escapedPath}')";
             var groupByCols = string.Join(", ", groupByColumns.Select(c => $"\"{c}\""));
 
             // Get distinct group values
@@ -549,7 +553,7 @@ public class ParquetService : IDisposable
             }
 
             // Get schema
-            var columns = new List<(string Name, string Type)>();
+            var columns = new List<(string Name, string Type, bool IsNullable)>();
             var describeSql = $"DESCRIBE SELECT * FROM {src}";
             using (var cmd = new DuckDBCommand(describeSql, connection))
             using (var reader = await cmd.ExecuteReaderAsync())
@@ -559,7 +563,8 @@ public class ParquetService : IDisposable
                     var name = reader.GetString("column_name");
                     if (!groupByColumns.Contains(name))
                     {
-                        columns.Add((name, reader.GetString("column_type")));
+                        var nullable = reader["null"]?.ToString()?.Equals("YES", StringComparison.OrdinalIgnoreCase) ?? true;
+                        columns.Add((name, reader.GetString("column_type"), nullable));
                     }
                 }
             }
@@ -590,9 +595,9 @@ public class ParquetService : IDisposable
                 var whereClause = string.Join(" AND ", whereClauses);
                 var filteredSrc = $"(SELECT * FROM {src} WHERE {whereClause})";
 
-                foreach (var (colName, colType) in columns)
+                foreach (var (colName, colType, isNullable) in columns)
                 {
-                    var profile = await ProfileColumnAsync(connection, filteredSrc.TrimStart('(').TrimEnd(')'), $"\"{colName}\"", colType, groupCount);
+                    var profile = await ProfileColumnAsync(connection, filteredSrc, colName, colType, groupCount, isNullable);
                     profile.Name = colName;
                     groupProfile.Columns.Add(profile);
                 }

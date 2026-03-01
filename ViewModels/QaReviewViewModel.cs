@@ -143,7 +143,7 @@ public partial class QaReviewViewModel : ObservableObject
 
         try
         {
-            var parquetService = new ParquetService(_logger);
+            using var parquetService = new ParquetService(_logger);
             AnalysisProgress = 10;
 
             var profile = await parquetService.GetFileProfileAsync(CurrentFilePath);
@@ -216,7 +216,7 @@ public partial class QaReviewViewModel : ObservableObject
             var compPath = openFileDialog.FileName;
             ComparisonFileName = System.IO.Path.GetFileName(compPath);
 
-            var parquetService = new ParquetService(_logger);
+            using var parquetService = new ParquetService(_logger);
             var compProfile = await parquetService.GetFileProfileAsync(compPath);
             _qualityScoreService.ScoreFileProfile(compProfile);
 
@@ -271,7 +271,7 @@ public partial class QaReviewViewModel : ObservableObject
 
         try
         {
-            var parquetService = new ParquetService(_logger);
+            using var parquetService = new ParquetService(_logger);
             var grouped = await parquetService.GetGroupedStatisticsAsync(CurrentFilePath, selectedDimensions);
 
             GroupedResults.Clear();

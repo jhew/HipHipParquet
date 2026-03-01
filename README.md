@@ -186,7 +186,7 @@ Apply metric-based filters to column profiles:
 1. Select a metric (Null %, Quality Score, Distinct Count, Outlier %)
 2. Choose an operator (>, <, =, >=, <=)
 3. Enter a threshold value
-4. Click **Apply Filter**
+4. Click **Go**
 5. View filtered columns; click **Clear Filter** to reset
 
 
