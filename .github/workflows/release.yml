@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.rid }}
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            artifact: HipHipParquet-win-x64
+          - rid: win-arm64
+            artifact: HipHipParquet-win-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish ${{ matrix.rid }}
+        run: |
+          dotnet publish HipHipParquet.csproj `
+            --configuration Release `
+            --runtime ${{ matrix.rid }} `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none `
+            -p:DebugSymbols=false `
+            --output ./publish/${{ matrix.rid }}
+
+      - name: Zip artifact
+        run: |
+          Compress-Archive `
+            -Path "./publish/${{ matrix.rid }}/*" `
+            -DestinationPath "./${{ matrix.artifact }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Hip Hip Parquet ${{ github.ref_name }}"
+          body: |
+            ## Hip Hip Parquet ${{ github.ref_name }}
+
+            ### Download
+
+            | Platform | File |
+            |----------|------|
+            | Windows x64 (most PCs) | `HipHipParquet-win-x64.zip` |
+            | Windows ARM64 (Surface Pro X, Snapdragon) | `HipHipParquet-win-arm64.zip` |
+
+            ### Installation
+
+            1. Download the zip for your platform
+            2. Extract to any folder
+            3. Run `HipHipParquet.exe`
+
+            No .NET installation required — the runtime is bundled.
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            artifacts/HipHipParquet-win-x64/HipHipParquet-win-x64.zip
+            artifacts/HipHipParquet-win-arm64/HipHipParquet-win-arm64.zip
+          generate_release_notes: true

@@ -101,8 +101,9 @@ $RECYCLE.BIN/
 
 # Publishing
 publish/
-*.pubxml
 *.publishproj
+# Allow publish profiles to be committed
+!Properties/PublishProfiles/*.pubxml
 
 # Microsoft Azure Web App publish settings
 *.PublishSettings
