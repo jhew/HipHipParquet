@@ -1,0 +1,6 @@
+<UserControl x:Class="HipHipParquet.Controls.SparklineControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Height="30" MinWidth="80">
+    <Canvas x:Name="SparklineCanvas" ClipToBounds="True"/>
+</UserControl>

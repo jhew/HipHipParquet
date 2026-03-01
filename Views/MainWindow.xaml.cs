@@ -5,6 +5,7 @@ using Microsoft.Win32;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using HipHipParquet.Services;
+using HipHipParquet.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Windows.Media;
@@ -24,10 +25,12 @@ public partial class MainWindow : Window
     private string? _pendingFileToLoad;
     private string? _currentFilePath;
     private bool _hasUnsavedChanges = false;
+    private QaReviewViewModel? _qaViewModel;
     
     public MainWindow()
     {
         InitializeComponent();
+        InitializeQaPanel();
         LoadRecentFiles();
         UpdateRecentFilesMenu();
         Loaded += OnWindowLoaded;
@@ -149,6 +152,50 @@ public partial class MainWindow : Window
                 // Hide filter row
                 SearchPanelContainer.Visibility = Visibility.Collapsed;
             }
+        }
+    }
+
+    private void OnToggleQaPanelClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem)
+        {
+            if (menuItem.IsChecked)
+            {
+                // Show QA panel
+                QaReviewPanel.Visibility = Visibility.Visible;
+                QaSplitter.Visibility = Visibility.Visible;
+                MainContentGrid.ColumnDefinitions[3].Width = new GridLength(5);
+                MainContentGrid.ColumnDefinitions[4].MinWidth = 300;
+                MainContentGrid.ColumnDefinitions[4].Width = new GridLength(420);
+            }
+            else
+            {
+                // Hide QA panel
+                QaReviewPanel.Visibility = Visibility.Collapsed;
+                QaSplitter.Visibility = Visibility.Collapsed;
+                MainContentGrid.ColumnDefinitions[3].Width = new GridLength(0);
+                MainContentGrid.ColumnDefinitions[4].MinWidth = 0;
+                MainContentGrid.ColumnDefinitions[4].Width = new GridLength(0);
+            }
+        }
+    }
+
+    private void InitializeQaPanel()
+    {
+        try
+        {
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+            var qualityScoreService = App.Current.Services.GetService<QualityScoreService>() ?? new QualityScoreService();
+            var narrativeService = App.Current.Services.GetService<NarrativeService>() ?? new NarrativeService();
+            var reportService = App.Current.Services.GetService<ReportService>() ?? new ReportService();
+
+            _qaViewModel = new QaReviewViewModel(logger, qualityScoreService, narrativeService, reportService);
+            QaReviewPanel.SetViewModel(_qaViewModel);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to initialize QA panel: {ex.Message}");
         }
     }
     
@@ -499,6 +546,9 @@ public partial class MainWindow : Window
             _hasUnsavedChanges = false;
             UpdateWindowTitle();
             EnableSaveMenuItems();
+
+            // Notify QA panel of new file
+            _qaViewModel?.SetFilePath(filePath);
             
             StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)} - {fileInfo.RowCount:N0} rows, {fileInfo.Columns.Count} columns";
         }
