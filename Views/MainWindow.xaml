@@ -41,7 +41,7 @@
                 <MenuItem Header="Toggle _Filter Row" Click="OnToggleFilterRowClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem x:Name="ToggleQaPanelMenuItem" Header="Toggle _QA Review Panel" Click="OnToggleQaPanelClick" IsCheckable="True" IsChecked="True"/>
             </MenuItem>
-            <MenuItem Header="_Edit" SubmenuOpened="OnEditMenuOpened">
+            <MenuItem Header="_Edit" SubmenuOpened="OnEditMenuOpened" SubmenuClosed="OnEditMenuClosed">
                 <MenuItem Header="_Copy" Click="OnCopyClick">
                     <MenuItem.Icon>
                         <TextBlock Text="📋" FontSize="14"/>

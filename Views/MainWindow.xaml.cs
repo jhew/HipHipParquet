@@ -207,6 +207,12 @@ public partial class MainWindow : Window
         _savedSelectedItems = DataGrid.SelectedItems.Cast<object>().ToList();
     }
 
+    private void OnEditMenuClosed(object sender, RoutedEventArgs e)
+    {
+        _savedSelectedCells = null;
+        _savedSelectedItems = null;
+    }
+
     private void OnCopyClick(object sender, RoutedEventArgs e)
     {
         CopySelectionToClipboard("\t"); // TSV format by default

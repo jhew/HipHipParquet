@@ -25,15 +25,30 @@ public class InverseBooleanToVisibilityConverter : IValueConverter
 
 /// <summary>
 /// Converts a hex color string (e.g. "#4CAF50") to a WPF SolidColorBrush.
+/// Brushes are cached and frozen to avoid repeated allocations during binding.
 /// </summary>
 public class StringToBrushConverter : IValueConverter
 {
+    private static readonly Dictionary<string, SolidColorBrush> _cache = new(StringComparer.OrdinalIgnoreCase);
+
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         if (value is string hex)
         {
-            try { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
-            catch { }
+            if (_cache.TryGetValue(hex, out var cached))
+                return cached;
+
+            try
+            {
+                var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+                brush.Freeze();
+                _cache[hex] = brush;
+                return brush;
+            }
+            catch
+            {
+                System.Diagnostics.Debug.WriteLine($"[StringToBrushConverter] Invalid hex color: '{hex}'");
+            }
         }
         return Brushes.Gray;
     }

@@ -8,7 +8,7 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <local:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
-        <local:StringToBrushConverter x:Key="StringToColorConverter"/>
+        <local:StringToBrushConverter x:Key="StringToBrushConverter"/>
         
         <!-- Card style for sections -->
         <Style x:Key="SectionCard" TargetType="Border">
@@ -242,7 +242,7 @@
                                         <StackPanel>
                                             <StackPanel Orientation="Horizontal">
                                                 <Ellipse Width="10" Height="10" Margin="0,1,6,0" VerticalAlignment="Center"
-                                                         Fill="{Binding SeverityColor, Converter={StaticResource StringToColorConverter}}"/>
+                                                         Fill="{Binding SeverityColor, Converter={StaticResource StringToBrushConverter}}"/>
                                                 <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="11"
                                                            TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
