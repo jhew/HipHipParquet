@@ -8,6 +8,7 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <local:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
+        <local:StringToBrushConverter x:Key="StringToBrushConverter"/>
         
         <!-- Card style for sections -->
         <Style x:Key="SectionCard" TargetType="Border">
@@ -83,11 +84,44 @@
                 <Border Style="{StaticResource SectionCard}"
                         Visibility="{Binding HasProfile, Converter={StaticResource InverseBoolToVis}}">
                     <StackPanel HorizontalAlignment="Center" Margin="0,20">
-                        <TextBlock Text="📊" FontSize="36" HorizontalAlignment="Center"/>
-                        <TextBlock Text="No analysis yet" FontSize="14" Foreground="Gray" 
-                                   HorizontalAlignment="Center" Margin="0,8,0,0"/>
-                        <TextBlock Text="Load a parquet file and click Analyze" FontSize="11" Foreground="Gray"
-                                   HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        <TextBlock FontSize="36" HorizontalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="📂"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasFile}" Value="True">
+                                            <Setter Property="Text" Value="🔍"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock FontSize="14" Foreground="Gray"
+                                   HorizontalAlignment="Center" Margin="0,8,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="No file loaded"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasFile}" Value="True">
+                                            <Setter Property="Text" Value="Ready to analyze"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock FontSize="11" Foreground="Gray"
+                                   HorizontalAlignment="Center" Margin="0,4,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Open a parquet file to begin"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasFile}" Value="True">
+                                            <Setter Property="Text" Value="Click Analyze to profile this file"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
                 </Border>
                 
@@ -172,13 +206,14 @@
                                     <Run FontWeight="SemiBold" Text="Distribution"/>
                                     <Run Text="— Measures data spread. Penalizes high outlier rates, extreme skew, and single-value dominance."/>
                                 </TextBlock>
-                                <TextBlock FontSize="9" Foreground="#999" Margin="0,6,0,0">
-                                    <Run Text="🟢 80–100 Good"/>
-                                    <Run Text="  "/>
-                                    <Run Text="🟡 60–79 Fair"/>
-                                    <Run Text="  "/>
-                                    <Run Text="🔴 &lt;60 Needs Review"/>
-                                </TextBlock>
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <Ellipse Width="9" Height="9" Fill="#4CAF50" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock Text="80–100 Good" FontSize="9" Foreground="#999" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <Ellipse Width="9" Height="9" Fill="#FF9800" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock Text="60–79 Fair" FontSize="9" Foreground="#999" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <Ellipse Width="9" Height="9" Fill="#F44336" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock Text="&lt;60 Needs Review" FontSize="9" Foreground="#999" VerticalAlignment="Center"/>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -206,7 +241,8 @@
                                         </Border.Style>
                                         <StackPanel>
                                             <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding Icon}" FontSize="12" Margin="0,0,6,0"/>
+                                                <Ellipse Width="10" Height="10" Margin="0,1,6,0" VerticalAlignment="Center"
+                                                         Fill="{Binding SeverityColor, Converter={StaticResource StringToBrushConverter}}"/>
                                                 <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="11"
                                                            TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
@@ -251,12 +287,45 @@
                 <Border Style="{StaticResource SectionCard}"
                         Visibility="{Binding HasProfile, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
-                        <TextBlock FontWeight="Bold" FontSize="13" Margin="0,0,0,6">
-                            <Run Text="📊 Column Profiles"/>
-                            <Run Text="{Binding DisplayedColumns.Count, StringFormat='({0})', Mode=OneWay}" Foreground="Gray"/>
-                        </TextBlock>
-                        
+                        <!-- Toggle header -->
+                        <Button Command="{Binding ToggleColumnProfilesExpandedCommand}"
+                                Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                Cursor="Hand" Padding="0" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock FontWeight="Bold" FontSize="13">
+                                    <Run Text="📊 Column Profiles"/>
+                                    <Run Text="{Binding DisplayedColumns.Count, StringFormat='({0})', Mode=OneWay}" Foreground="Gray"/>
+                                </TextBlock>
+                                <TextBlock Grid.Column="1" FontSize="12" Foreground="#512BD4" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="▶ Expand"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsColumnProfilesExpanded}" Value="True">
+                                                    <Setter Property="Text" Value="▼ Collapse"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </Button>
+
                         <ItemsControl ItemsSource="{Binding DisplayedColumns}">
+                            <ItemsControl.Style>
+                                <Style TargetType="ItemsControl">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsColumnProfilesExpanded}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ItemsControl.Style>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Background="White" BorderBrush="#E8E8E8" BorderThickness="1"

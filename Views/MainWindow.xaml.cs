@@ -26,6 +26,8 @@ public partial class MainWindow : Window
     private string? _currentFilePath;
     private bool _hasUnsavedChanges = false;
     private QaReviewViewModel? _qaViewModel;
+    private List<DataGridCellInfo>? _savedSelectedCells;
+    private List<object>? _savedSelectedItems;
     
     public MainWindow()
     {
@@ -199,6 +201,18 @@ public partial class MainWindow : Window
         }
     }
     
+    private void OnEditMenuOpened(object sender, RoutedEventArgs e)
+    {
+        _savedSelectedCells = DataGrid.SelectedCells.ToList();
+        _savedSelectedItems = DataGrid.SelectedItems.Cast<object>().ToList();
+    }
+
+    private void OnEditMenuClosed(object sender, RoutedEventArgs e)
+    {
+        _savedSelectedCells = null;
+        _savedSelectedItems = null;
+    }
+
     private void OnCopyClick(object sender, RoutedEventArgs e)
     {
         CopySelectionToClipboard("\t"); // TSV format by default
@@ -223,7 +237,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var selectedCells = DataGrid.SelectedCells;
+            var selectedCells = _savedSelectedCells ?? DataGrid.SelectedCells.ToList();
             if (selectedCells.Count == 0)
             {
                 StatusText.Text = "No cells selected to copy";
@@ -374,7 +388,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var selectedItems = DataGrid.SelectedItems;
+            var selectedItems = _savedSelectedItems ?? DataGrid.SelectedItems.Cast<object>().ToList();
             if (selectedItems.Count == 0)
             {
                 StatusText.Text = "No rows selected to copy";
@@ -431,7 +445,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var selectedCells = DataGrid.SelectedCells;
+            var selectedCells = _savedSelectedCells ?? DataGrid.SelectedCells.ToList();
             if (selectedCells.Count == 0)
             {
                 StatusText.Text = "No cells selected to copy";
