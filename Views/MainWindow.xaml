@@ -39,11 +39,9 @@
             <MenuItem Header="_View">
                 <MenuItem Header="Toggle _Schema Pane" Click="OnToggleSchemaPaneClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem Header="Toggle _Filter Row" Click="OnToggleFilterRowClick" IsCheckable="True" IsChecked="True"/>
-                <MenuItem x:Name="ToggleQaPanelMenuItem" Header="Toggle _QA Review Panel" Click="OnToggleQaPanelClick" IsCheckable="True" IsChecked="False"/>
-                <Separator/>
-                <MenuItem Header="_View Mode"/>
+                <MenuItem x:Name="ToggleQaPanelMenuItem" Header="Toggle _QA Review Panel" Click="OnToggleQaPanelClick" IsCheckable="True" IsChecked="True"/>
             </MenuItem>
-            <MenuItem Header="_Edit">
+            <MenuItem Header="_Edit" SubmenuOpened="OnEditMenuOpened">
                 <MenuItem Header="_Copy" Click="OnCopyClick">
                     <MenuItem.Icon>
                         <TextBlock Text="📋" FontSize="14"/>
@@ -60,8 +58,8 @@
                 <ColumnDefinition x:Name="SchemaPaneColumn" Width="250" MinWidth="200"/>
                 <ColumnDefinition x:Name="SchemaSplitterColumn" Width="5"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition x:Name="QaSplitterColumn" Width="0"/>
-                <ColumnDefinition x:Name="QaPaneColumn" Width="0" MinWidth="0"/>
+                <ColumnDefinition x:Name="QaSplitterColumn" Width="5"/>
+                <ColumnDefinition x:Name="QaPaneColumn" Width="420" MinWidth="300"/>
             </Grid.ColumnDefinitions>
 
             <!-- Schema Pane -->
@@ -184,11 +182,11 @@
             <GridSplitter x:Name="QaSplitter" Grid.Column="3" 
                          HorizontalAlignment="Stretch" 
                          Background="#E0E0E0"
-                         Visibility="Collapsed"/>
+                         Visibility="Visible"/>
 
             <!-- QA Review Panel -->
             <views:QaReviewPanel x:Name="QaReviewPanel" Grid.Column="4" 
-                                 Visibility="Collapsed"/>
+                                 Visibility="Visible"/>
         </Grid>
 
         <!-- Status Bar -->

@@ -28,6 +28,9 @@ public partial class QaReviewViewModel : ObservableObject
     private bool _hasProfile;
 
     [ObservableProperty]
+    private bool _hasFile;
+
+    [ObservableProperty]
     private bool _hasComparison;
 
     [ObservableProperty]
@@ -91,6 +94,9 @@ public partial class QaReviewViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isGroupByExpanded;
+
+    [ObservableProperty]
+    private bool _isColumnProfilesExpanded = true;
 
     [ObservableProperty]
     private string _groupByStatusMessage = "";
@@ -253,6 +259,12 @@ public partial class QaReviewViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ToggleColumnProfilesExpanded()
+    {
+        IsColumnProfilesExpanded = !IsColumnProfilesExpanded;
+    }
+
+    [RelayCommand]
     private async Task ApplyGroupByAsync()
     {
         var selectedDimensions = AvailableDimensions.Where(d => d.IsSelected).Select(d => d.Name).ToList();
@@ -409,6 +421,7 @@ public partial class QaReviewViewModel : ObservableObject
     public void SetFilePath(string filePath)
     {
         CurrentFilePath = filePath;
+        HasFile = true;
         HasProfile = false;
         HasComparison = false;
         Comparison = null;
@@ -417,6 +430,7 @@ public partial class QaReviewViewModel : ObservableObject
         GroupedResults.Clear();
         HasGroupedResults = false;
         IsGroupByExpanded = false;
+        IsColumnProfilesExpanded = true;
         GroupByStatusMessage = "";
         StatusMessage = "File loaded. Click Analyze to profile.";
         AnalyzeCommand.NotifyCanExecuteChanged();

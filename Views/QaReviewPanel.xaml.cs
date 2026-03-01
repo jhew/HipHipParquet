@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Media;
 using HipHipParquet.ViewModels;
 
 namespace HipHipParquet.Views;
@@ -20,6 +21,25 @@ public class InverseBooleanToVisibilityConverter : IValueConverter
     {
         return value is Visibility.Collapsed;
     }
+}
+
+/// <summary>
+/// Converts a hex color string (e.g. "#4CAF50") to a WPF SolidColorBrush.
+/// </summary>
+public class StringToBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is string hex)
+        {
+            try { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
+            catch { }
+        }
+        return Brushes.Gray;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotImplementedException();
 }
 
 /// <summary>
