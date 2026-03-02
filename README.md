@@ -50,8 +50,12 @@ CSV and TSV files support configurable import options (delimiter, header detecti
 ## Installation
 
 ### Pre-built Release
-1. Download the latest release from the [Releases](https://github.com/jhew/HipHipParquet/releases) page
-2. Extract the archive and run `HipHipParquet.exe`
+
+Download from the [Releases](https://github.com/jhew/HipHipParquet/releases) page.
+
+**Installer (recommended):** Download `HipHipParquet-x.x.x-Setup.exe` and run it. The wizard installs the app and creates Start Menu and optional desktop shortcuts. Requires the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime?runtime=desktop&os=windows&arch=x64) — the installer will prompt to download it if not present.
+
+**Portable:** Download `HipHipParquet-x.x.x-Portable.zip`, extract to any folder, and run `HipHipParquet.exe`. Requires the .NET 8 Desktop Runtime.
 
 ### Build from Source
 
