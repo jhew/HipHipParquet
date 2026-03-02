@@ -4,12 +4,14 @@ using System.Data;
 using Microsoft.Win32;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
+using HipHipParquet.Models;
 using HipHipParquet.Services;
 using HipHipParquet.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Windows.Media;
 using System.Windows.Controls.Primitives;
+using System.IO;
 
 namespace HipHipParquet.Views;
 
@@ -25,14 +27,27 @@ public partial class MainWindow : Window
     private string? _pendingFileToLoad;
     private string? _currentFilePath;
     private bool _hasUnsavedChanges = false;
-    private QaReviewViewModel? _qaViewModel;
+    private QualityReviewViewModel? _qualityViewModel;
     private List<DataGridCellInfo>? _savedSelectedCells;
     private List<object>? _savedSelectedItems;
+
+    // ── Row limiting ─────────────────────────────────────────────────────
+    private const int RowLimitBatch = 50_000;
+    private int _currentRowLimit = RowLimitBatch;
+    private long _totalRowCount;
+    private CsvImportOptions? _activeCsvOptions;
+    private SupportedFileFormat _currentFormat;
+
+    // ── File watcher ─────────────────────────────────────────────────────
+    private FileSystemWatcher? _fileWatcher;
+
+    // ── Stored service reference for reuse ───────────────────────────────
+    private ParquetService? _parquetService;
     
     public MainWindow()
     {
         InitializeComponent();
-        InitializeQaPanel();
+        InitializeQualityPanel();
         LoadRecentFiles();
         UpdateRecentFilesMenu();
         Loaded += OnWindowLoaded;
@@ -56,8 +71,8 @@ public partial class MainWindow : Window
                 {
                     var saveFileDialog = new SaveFileDialog
                     {
-                        Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
-                        Title = "Save Parquet File",
+                        Filter = Services.FileFormatDetector.GetSaveFileDialogFilter(),
+                        Title = "Save Data File",
                         FileName = "untitled.parquet"
                     };
                     
@@ -81,6 +96,10 @@ public partial class MainWindow : Window
             }
             // If No, just close without saving
         }
+
+        // Dispose stored services
+        _parquetService?.Dispose();
+        _fileWatcher?.Dispose();
     }
 
     private async void OnWindowLoaded(object sender, RoutedEventArgs e)
@@ -105,8 +124,8 @@ public partial class MainWindow : Window
     {
         var openFileDialog = new OpenFileDialog
         {
-            Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
-            Title = "Select Parquet File"
+            Filter = Services.FileFormatDetector.GetOpenFileDialogFilter(),
+            Title = "Select Data File"
         };
 
         if (openFileDialog.ShowDialog() == true)
@@ -157,47 +176,49 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnToggleQaPanelClick(object sender, RoutedEventArgs e)
+    private void OnToggleQualityPanelClick(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem menuItem)
         {
             if (menuItem.IsChecked)
             {
-                // Show QA panel
-                QaReviewPanel.Visibility = Visibility.Visible;
-                QaSplitter.Visibility = Visibility.Visible;
-                MainContentGrid.ColumnDefinitions[3].Width = new GridLength(5);
-                MainContentGrid.ColumnDefinitions[4].MinWidth = 300;
-                MainContentGrid.ColumnDefinitions[4].Width = new GridLength(420);
+                // Show Quality panel
+                QualityReviewPanel.Visibility = Visibility.Visible;
+                QualitySplitter.Visibility = Visibility.Visible;
+                QualitySplitterColumn.Width = new GridLength(5);
+                QualityPaneColumn.MinWidth = 300;
+                QualityPaneColumn.Width = new GridLength(420);
             }
             else
             {
-                // Hide QA panel
-                QaReviewPanel.Visibility = Visibility.Collapsed;
-                QaSplitter.Visibility = Visibility.Collapsed;
-                MainContentGrid.ColumnDefinitions[3].Width = new GridLength(0);
-                MainContentGrid.ColumnDefinitions[4].MinWidth = 0;
-                MainContentGrid.ColumnDefinitions[4].Width = new GridLength(0);
+                // Hide Quality panel
+                QualityReviewPanel.Visibility = Visibility.Collapsed;
+                QualitySplitter.Visibility = Visibility.Collapsed;
+                QualitySplitterColumn.Width = new GridLength(0);
+                QualityPaneColumn.MinWidth = 0;
+                QualityPaneColumn.Width = new GridLength(0);
             }
         }
     }
 
-    private void InitializeQaPanel()
+    private void InitializeQualityPanel()
     {
         try
         {
-            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
-                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+            var logger = App.Current.Services.GetService<ILogger<QualityReviewViewModel>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<QualityReviewViewModel>.Instance;
             var qualityScoreService = App.Current.Services.GetService<QualityScoreService>() ?? new QualityScoreService();
             var narrativeService = App.Current.Services.GetService<NarrativeService>() ?? new NarrativeService();
             var reportService = App.Current.Services.GetService<ReportService>() ?? new ReportService();
 
-            _qaViewModel = new QaReviewViewModel(logger, qualityScoreService, narrativeService, reportService);
-            QaReviewPanel.SetViewModel(_qaViewModel);
+            _qualityViewModel = new QualityReviewViewModel(logger, qualityScoreService, narrativeService, reportService);
+            QualityReviewPanel.SetViewModel(_qualityViewModel);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to initialize QA panel: {ex.Message}");
+            // Surface the failure in the status bar rather than silently swallowing it
+            StatusText.Text = $"Quality panel unavailable: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"Failed to initialize Quality panel: {ex.Message}");
         }
     }
     
@@ -528,19 +549,37 @@ public partial class MainWindow : Window
         ApplyFilters();
     }
 
-    private async Task LoadFileAsync(string filePath)
+    private async Task LoadFileAsync(string filePath, CsvImportOptions? csvOptions = null, int? rowLimit = null)
     {
         try
         {
-            StatusText.Text = "Loading file...";
-            
-            // Get ParquetService from DI
+            // Show loading overlay
+            ShowLoading("Loading file...");
+
+            var format = Services.FileFormatDetector.DetectFormat(filePath);
+            _currentFormat = format;
+            _activeCsvOptions = csvOptions;
+
+            // Show info bar for unknown extensions defaulting to CSV (saved for after the main status line)
+            bool isUnknownExtension = Services.FileFormatDetector.IsUnknownExtension(filePath);
+            var unknownExt = isUnknownExtension ? System.IO.Path.GetExtension(filePath) : null;
+
+            // Determine row limit
+            var effectiveLimit = rowLimit ?? RowLimitBatch;
+            _currentRowLimit = effectiveLimit;
+
+            // Get ParquetService
             var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
-            var parquetService = new ParquetService(logger!);
+            _parquetService?.Dispose();
+            _parquetService = new ParquetService(logger!);
             
-            // Load file info and data
-            var fileInfo = await parquetService.GetFileInfoAsync(filePath);
-            var dataTable = await parquetService.LoadParquetFileAsync(filePath);
+            // Load file info and data (with row limit)
+            var fileInfo = await _parquetService.GetFileInfoAsync(filePath, csvOptions);
+            _totalRowCount = fileInfo.RowCount;
+
+            ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
+            var dataTable = await _parquetService.LoadFileAsync(filePath, csvOptions, 
+                _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null);
             
             // Update schema panel
             UpdateSchemaPanel(filePath, fileInfo);
@@ -551,6 +590,9 @@ public partial class MainWindow : Window
             // Switch UI
             EmptyStatePanel.Visibility = Visibility.Collapsed;
             DataGridContainer.Visibility = Visibility.Visible;
+
+            // Update load-more banner
+            UpdateLoadMoreBanner(dataTable.Rows.Count);
             
             // Add to recent files
             AddToRecentFiles(filePath);
@@ -561,10 +603,20 @@ public partial class MainWindow : Window
             UpdateWindowTitle();
             EnableSaveMenuItems();
 
-            // Notify QA panel of new file
-            _qaViewModel?.SetFilePath(filePath);
+            // Update format badge
+            UpdateFormatBadge(format);
+
+            // Setup file watcher
+            SetupFileWatcher(filePath);
+
+            // Notify Quality panel of new file
+            _qualityViewModel?.SetFilePath(filePath, csvOptions);
             
-            StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)} - {fileInfo.RowCount:N0} rows, {fileInfo.Columns.Count} columns";
+            StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
+
+            // Append unknown-extension notice after the main status message
+            if (unknownExt != null)
+                StatusText.Text += $" — unknown extension '{unknownExt}' treated as CSV";
         }
         catch (Exception ex)
         {
@@ -575,11 +627,16 @@ public partial class MainWindow : Window
             EmptyStatePanel.Visibility = Visibility.Visible;
             DataGridContainer.Visibility = Visibility.Collapsed;
         }
+        finally
+        {
+            HideLoading();
+        }
     }
     
     private void UpdateWindowTitle()
     {
-        var fileName = string.IsNullOrEmpty(_currentFilePath) ? "Hip Hip Parquet" : $"{System.IO.Path.GetFileName(_currentFilePath)} - Hip Hip Parquet";
+        const string appTitle = "HipHipParquet \u2014 Data Quality Viewer";
+        var fileName = string.IsNullOrEmpty(_currentFilePath) ? appTitle : $"{System.IO.Path.GetFileName(_currentFilePath)} - {appTitle}";
         Title = _hasUnsavedChanges ? $"*{fileName}" : fileName;
     }
     
@@ -588,6 +645,10 @@ public partial class MainWindow : Window
         bool hasFile = !string.IsNullOrEmpty(_currentFilePath) && _originalData != null;
         SaveMenuItem.IsEnabled = hasFile;
         SaveAsMenuItem.IsEnabled = hasFile;
+        ExportAsMenuItem.IsEnabled = hasFile;
+        ImportOptionsMenuItem.IsEnabled = hasFile && 
+            (_currentFormat == SupportedFileFormat.Csv || _currentFormat == SupportedFileFormat.Tsv);
+        FlattenJsonMenuItem.IsEnabled = hasFile && _currentFormat == SupportedFileFormat.Json;
     }
     
     private async void OnSaveClick(object sender, RoutedEventArgs e)
@@ -611,8 +672,8 @@ public partial class MainWindow : Window
         
         var saveFileDialog = new SaveFileDialog
         {
-            Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
-            Title = "Save Parquet File",
+            Filter = Services.FileFormatDetector.GetSaveFileDialogFilter(),
+            Title = "Save Data File",
             FileName = string.IsNullOrEmpty(_currentFilePath) ? "untitled.parquet" : System.IO.Path.GetFileName(_currentFilePath)
         };
         
@@ -628,19 +689,22 @@ public partial class MainWindow : Window
     {
         try
         {
-            StatusText.Text = "Saving file...";
+            ShowLoading("Saving file...");
             
-            // Get ParquetService from DI
-            var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
-            var parquetService = new ParquetService(logger!);
+            // Reuse stored service, or create one
+            if (_parquetService == null)
+            {
+                var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
+                _parquetService = new ParquetService(logger!);
+            }
             
             // Save the file
-            await parquetService.SaveParquetFileAsync(filePath, _originalData!);
+            await _parquetService.SaveFileAsync(filePath, _originalData!);
             
             _hasUnsavedChanges = false;
             UpdateWindowTitle();
             
-            StatusText.Text = $"Saved {System.IO.Path.GetFileName(filePath)} - {_originalData!.Rows.Count:N0} rows";
+            StatusText.Text = $"Saved {System.IO.Path.GetFileName(filePath)} — {_originalData!.Rows.Count:N0} rows";
             
             MessageBox.Show($"File saved successfully to:\n{filePath}", "Save Complete", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -648,6 +712,10 @@ public partial class MainWindow : Window
         {
             MessageBox.Show($"Error saving file: {ex.Message}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
             StatusText.Text = "Error saving file";
+        }
+        finally
+        {
+            HideLoading();
         }
     }
     
@@ -659,8 +727,62 @@ public partial class MainWindow : Window
             UpdateWindowTitle();
         }
     }
+
+    private async void OnExportAsClick(object sender, RoutedEventArgs e)
+    {
+        if (_originalData == null)
+        {
+            MessageBox.Show("No file is currently loaded.", "Export As", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var saveFileDialog = new SaveFileDialog
+        {
+            Filter = Services.FileFormatDetector.GetSaveFileDialogFilter(),
+            Title = "Export As...",
+            FileName = string.IsNullOrEmpty(_currentFilePath)
+                ? "export"
+                : System.IO.Path.GetFileNameWithoutExtension(_currentFilePath)
+        };
+
+        if (saveFileDialog.ShowDialog() == true)
+        {
+            try
+            {
+                ShowLoading("Exporting file...");
+
+                // Reuse the stored service, or create one if needed
+                if (_parquetService == null)
+                {
+                    var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
+                    _parquetService = new ParquetService(logger!);
+                }
+
+                await _parquetService.SaveFileAsync(saveFileDialog.FileName, _originalData);
+
+                var targetFormat = Services.FileFormatDetector.DetectFormat(saveFileDialog.FileName);
+                var formatName = Services.FileFormatDetector.GetFormatDisplayName(targetFormat);
+                StatusText.Text = $"Exported as {formatName} to {System.IO.Path.GetFileName(saveFileDialog.FileName)}";
+
+                MessageBox.Show(
+                    $"File exported successfully as {formatName} to:\n{saveFileDialog.FileName}",
+                    "Export Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error exporting file: {ex.Message}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusText.Text = "Error exporting file";
+            }
+            finally
+            {
+                HideLoading();
+            }
+        }
+    }
     
-    private void UpdateSchemaPanel(string filePath, ParquetFileInfo fileInfo)
+    private void UpdateSchemaPanel(string filePath, DataFileInfo fileInfo)
     {
         SchemaPanel.Children.Clear();
         
@@ -675,12 +797,20 @@ public partial class MainWindow : Window
         SchemaPanel.Children.Add(titleBlock);
         
         // File info
+        var formatName = Services.FileFormatDetector.GetFormatDisplayName(fileInfo.Format);
         var fileBlock = new TextBlock
         {
             Text = $"📁 File: {System.IO.Path.GetFileName(filePath)}",
             Margin = new Thickness(0, 2, 0, 2)
         };
         SchemaPanel.Children.Add(fileBlock);
+
+        var formatBlock = new TextBlock
+        {
+            Text = $"📋 Format: {formatName}",
+            Margin = new Thickness(0, 2, 0, 2)
+        };
+        SchemaPanel.Children.Add(formatBlock);
         
         var rowBlock = new TextBlock
         {
@@ -709,7 +839,7 @@ public partial class MainWindow : Window
         }
     }
     
-    private void SetupDataGrid(DataTable dataTable, List<ColumnInfo> columns)
+    private void SetupDataGrid(DataTable dataTable, List<ColumnInfo>? columns)
     {
         try
         {
@@ -792,7 +922,7 @@ public partial class MainWindow : Window
                 if (column.ColumnName == "__RowNumber")
                     continue;
                 
-                var columnInfo = columns.FirstOrDefault(c => c.Name == column.ColumnName);
+                var columnInfo = columns?.FirstOrDefault(c => c.Name == column.ColumnName);
                 
                 // Create sortable DataGrid column with proper column name for sorting
                 var gridColumn = new DataGridTextColumn
@@ -1113,5 +1243,268 @@ public partial class MainWindow : Window
                 UpdateRecentFilesMenu();
             }
         }
+    }
+
+    // ── Drag-and-Drop ───────────────────────────────────────────────────
+
+    private void OnDragOver(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            if (files?.Length == 1)
+            {
+                e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+                return;
+            }
+        }
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void OnFileDrop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            if (files?.Length == 1)
+            {
+                await LoadFileAsync(files[0]);
+            }
+        }
+    }
+
+    // ── Import Options (re-import CSV/TSV with custom settings) ─────────
+
+    private async void OnImportOptionsClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_currentFilePath)) return;
+
+        var format = Services.FileFormatDetector.DetectFormat(_currentFilePath);
+        if (format != SupportedFileFormat.Csv && format != SupportedFileFormat.Tsv)
+        {
+            MessageBox.Show("Import options are only available for CSV and TSV files.",
+                "Import Options", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dialog = new CsvOptionsDialog { Owner = this };
+        if (format == SupportedFileFormat.Tsv)
+            dialog.PreSelectTsv();
+
+        // Pass the file path for preview
+        dialog.SetPreviewFile(_currentFilePath);
+
+        if (dialog.ShowDialog() == true && dialog.Result != null)
+        {
+            // Re-import with the new options
+            await LoadFileAsync(_currentFilePath, dialog.Result);
+        }
+    }
+
+    // ── Row Limiting / Load More ────────────────────────────────────────
+
+    private void UpdateLoadMoreBanner(int loadedRows)
+    {
+        if (_totalRowCount > loadedRows)
+        {
+            LoadMoreBanner.Visibility = Visibility.Visible;
+            LoadMoreText.Text = $"Showing {loadedRows:N0} of {_totalRowCount:N0} total rows";
+        }
+        else
+        {
+            LoadMoreBanner.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private async void OnLoadMoreClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_currentFilePath)) return;
+        _currentRowLimit += RowLimitBatch;
+        await LoadMoreRowsAsync();
+    }
+
+    /// <summary>
+    /// Lean pagination helper: reloads only the data rows without re-fetching file metadata,
+    /// re-building the schema panel, or re-running file-format detection. Significantly faster
+    /// than a full <see cref="LoadFileAsync"/> for large files with many columns.
+    /// </summary>
+    private async Task LoadMoreRowsAsync()
+    {
+        if (string.IsNullOrEmpty(_currentFilePath) || _parquetService == null) return;
+
+        try
+        {
+            ShowLoading($"Loading rows (limit: {_currentRowLimit:N0})...");
+
+            var dataTable = await _parquetService.LoadFileAsync(
+                _currentFilePath,
+                _activeCsvOptions,
+                _totalRowCount > _currentRowLimit ? _currentRowLimit : (int?)null);
+
+            SetupDataGrid(dataTable, null);
+            UpdateLoadMoreBanner(dataTable.Rows.Count);
+
+            StatusText.Text = $"Loaded {System.IO.Path.GetFileName(_currentFilePath)} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error loading additional rows: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            HideLoading();
+        }
+    }
+
+    private async void OnLoadAllClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_currentFilePath)) return;
+
+        if (_totalRowCount > 500_000)
+        {
+            var result = MessageBox.Show(
+                $"This file has {_totalRowCount:N0} rows. Loading all rows may cause the application to become slow or unresponsive.\n\nContinue?",
+                "Large File Warning", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes) return;
+        }
+
+        _currentRowLimit = _totalRowCount > int.MaxValue ? int.MaxValue : (int)_totalRowCount;
+        await LoadFileAsync(_currentFilePath, _activeCsvOptions, _currentRowLimit);
+    }
+
+    // ── JSON Flattening ───────────────────────────────────────────────
+
+    private async void OnFlattenJsonClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_currentFilePath) || _parquetService == null) return;
+
+        try
+        {
+            ShowLoading("Detecting nested structures...");
+
+            var flatQuery = await _parquetService.GetFlattenedQueryAsync(_currentFilePath, _activeCsvOptions);
+
+            if (flatQuery == null)
+            {
+                MessageBox.Show("No nested STRUCT columns were detected in this JSON file.",
+                    "Flatten JSON", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                "Nested STRUCT columns were detected. Flatten them into separate columns?\n\n" +
+                "This will reload the data with nested fields expanded (e.g., address.city becomes address_city).",
+                "Flatten Nested JSON", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            ShowLoading("Flattening nested JSON...");
+
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
+            _parquetService?.Dispose();
+            _parquetService = new ParquetService(logger!);
+
+            var dataTable = await _parquetService.LoadWithQueryAsync(flatQuery, 
+                _totalRowCount > _currentRowLimit ? _currentRowLimit : (int?)null);
+
+            var columns = dataTable.Columns.Cast<DataColumn>()
+                .Select(c => new ColumnInfo { Name = c.ColumnName, Type = c.DataType.Name, Nullable = true })
+                .ToList();
+
+            SetupDataGrid(dataTable, columns);
+            UpdateLoadMoreBanner(dataTable.Rows.Count);
+
+            StatusText.Text = $"Flattened JSON — {dataTable.Rows.Count:N0} rows, {dataTable.Columns.Count} columns";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error flattening JSON: {ex.Message}", "Flatten Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            HideLoading();
+        }
+    }
+
+    // ── Loading Overlay ─────────────────────────────────────────────────
+
+    private void ShowLoading(string message)
+    {
+        LoadingText.Text = message;
+        LoadingOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void HideLoading()
+    {
+        LoadingOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    // ── Format Badge ────────────────────────────────────────────────────
+
+    private void UpdateFormatBadge(SupportedFileFormat format)
+    {
+        var (bg, fg) = Services.FileFormatDetector.GetFormatBadgeColors(format);
+        FormatBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bg));
+        FormatBadgeText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(fg));
+        FormatBadgeText.Text = Services.FileFormatDetector.GetFormatDisplayName(format);
+        FormatBadge.Visibility = Visibility.Visible;
+    }
+
+    // ── File Watcher ────────────────────────────────────────────────────
+
+    private void SetupFileWatcher(string filePath)
+    {
+        // Dispose any previous watcher
+        _fileWatcher?.Dispose();
+        _fileWatcher = null;
+
+        try
+        {
+            var dir = System.IO.Path.GetDirectoryName(filePath);
+            var name = System.IO.Path.GetFileName(filePath);
+            if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(name)) return;
+
+            _fileWatcher = new FileSystemWatcher(dir, name)
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                EnableRaisingEvents = true
+            };
+
+            _fileWatcher.Changed += OnFileChanged;
+        }
+        catch
+        {
+            // Silently ignore if watcher can't be set up (e.g. network paths)
+        }
+    }
+
+    private void OnFileChanged(object sender, FileSystemEventArgs e)
+    {
+        // Debounce: FileSystemWatcher can fire multiple times for one save
+        _fileWatcher!.EnableRaisingEvents = false;
+
+        Dispatcher.BeginInvoke(async () =>
+        {
+            try
+            {
+                var result = MessageBox.Show(
+                    $"The file '{System.IO.Path.GetFileName(e.FullPath)}' has been modified externally.\n\nReload the file?",
+                    "File Changed", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    // Reset to default batch size on external reload — avoids silently
+                    // re-loading millions of rows that were previously loaded via Load All
+                    await LoadFileAsync(e.FullPath, _activeCsvOptions, null);
+                }
+            }
+            finally
+            {
+                if (_fileWatcher != null)
+                    _fileWatcher.EnableRaisingEvents = true;
+            }
+        });
     }
 }

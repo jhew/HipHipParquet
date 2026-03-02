@@ -10,11 +10,11 @@ using System.Windows;
 namespace HipHipParquet.ViewModels;
 
 /// <summary>
-/// ViewModel for the QA Review Panel. Uses CommunityToolkit.Mvvm for MVVM pattern.
+/// ViewModel for the Quality Review Panel. Uses CommunityToolkit.Mvvm for MVVM pattern.
 /// </summary>
-public partial class QaReviewViewModel : ObservableObject
+public partial class QualityReviewViewModel : ObservableObject
 {
-    private readonly ILogger<ParquetService> _logger;
+    private readonly ILogger<QualityReviewViewModel> _logger;
     private readonly QualityScoreService _qualityScoreService;
     private readonly NarrativeService _narrativeService;
     private readonly ReportService _reportService;
@@ -121,10 +121,25 @@ public partial class QaReviewViewModel : ObservableObject
     [ObservableProperty]
     private string _comparisonFileName = "";
 
+    // Schema diff items (populated on compare)
+    [ObservableProperty]
+    private ObservableCollection<SchemaDiffItem> _schemaDiffItems = [];
+
+    [ObservableProperty]
+    private bool _hasSchemaDiff;
+
+    // Active CSV import options (set when a CSV/TSV file is loaded with custom settings)
+    public CsvImportOptions? ActiveCsvOptions { get; private set; }
+
+    // Convenience accessor: typed logger for transient ParquetService instances created inside this ViewModel.
+    // No real logger factory is registered in this app, so we use the null logger for the service tier.
+    private static Microsoft.Extensions.Logging.ILogger<ParquetService> ParquetServiceLogger =>
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+
     // ── Constructor ─────────────────────────────────────────────────────
 
-    public QaReviewViewModel(
-        ILogger<ParquetService> logger,
+    public QualityReviewViewModel(
+        ILogger<QualityReviewViewModel> logger,
         QualityScoreService qualityScoreService,
         NarrativeService narrativeService,
         ReportService reportService)
@@ -149,10 +164,10 @@ public partial class QaReviewViewModel : ObservableObject
 
         try
         {
-            using var parquetService = new ParquetService(_logger);
+            using var parquetService = new ParquetService(ParquetServiceLogger);
             AnalysisProgress = 10;
 
-            var profile = await parquetService.GetFileProfileAsync(CurrentFilePath);
+            var profile = await parquetService.GetFileProfileAsync(CurrentFilePath, ActiveCsvOptions);
             AnalysisProgress = 60;
 
             // Score the profile
@@ -192,7 +207,7 @@ public partial class QaReviewViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"Analysis failed: {ex.Message}";
-            _logger.LogError(ex, "QA analysis failed for {FilePath}", CurrentFilePath);
+            _logger.LogError(ex, "Quality analysis failed for {FilePath}", CurrentFilePath);
         }
         finally
         {
@@ -207,8 +222,8 @@ public partial class QaReviewViewModel : ObservableObject
     {
         var openFileDialog = new OpenFileDialog
         {
-            Filter = "Parquet files (*.parquet)|*.parquet|All files (*.*)|*.*",
-            Title = "Select Comparison Parquet File"
+            Filter = Services.FileFormatDetector.GetOpenFileDialogFilter(),
+            Title = "Select Comparison Data File"
         };
 
         if (openFileDialog.ShowDialog() != true || FileProfile == null)
@@ -222,7 +237,7 @@ public partial class QaReviewViewModel : ObservableObject
             var compPath = openFileDialog.FileName;
             ComparisonFileName = System.IO.Path.GetFileName(compPath);
 
-            using var parquetService = new ParquetService(_logger);
+            using var parquetService = new ParquetService(ParquetServiceLogger);
             var compProfile = await parquetService.GetFileProfileAsync(compPath);
             _qualityScoreService.ScoreFileProfile(compProfile);
 
@@ -233,6 +248,9 @@ public partial class QaReviewViewModel : ObservableObject
 
             Comparison = comparison;
             HasComparison = true;
+
+            // Build schema diff view
+            BuildSchemaDiff(FileProfile, compProfile, comparison);
 
             // Append comparison findings to existing findings
             foreach (var finding in compFindings)
@@ -283,7 +301,7 @@ public partial class QaReviewViewModel : ObservableObject
 
         try
         {
-            using var parquetService = new ParquetService(_logger);
+            using var parquetService = new ParquetService(ParquetServiceLogger);
             var grouped = await parquetService.GetGroupedStatisticsAsync(CurrentFilePath, selectedDimensions);
 
             GroupedResults.Clear();
@@ -384,8 +402,8 @@ public partial class QaReviewViewModel : ObservableObject
         var saveDialog = new SaveFileDialog
         {
             Filter = "HTML files (*.html)|*.html",
-            Title = "Export QA Report",
-            FileName = $"QA_Report_{FileProfile.FileName}_{DateTime.Now:yyyyMMdd_HHmmss}.html"
+            Title = "Export Quality Report",
+            FileName = $"Quality_Report_{FileProfile.FileName}_{DateTime.Now:yyyyMMdd_HHmmss}.html"
         };
 
         if (saveDialog.ShowDialog() != true)
@@ -418,9 +436,10 @@ public partial class QaReviewViewModel : ObservableObject
     /// <summary>
     /// Sets the current file path when a new file is loaded in MainWindow.
     /// </summary>
-    public void SetFilePath(string filePath)
+    public void SetFilePath(string filePath, CsvImportOptions? csvOptions = null)
     {
         CurrentFilePath = filePath;
+        ActiveCsvOptions = csvOptions;
         HasFile = true;
         HasProfile = false;
         HasComparison = false;
@@ -516,6 +535,64 @@ public partial class QaReviewViewModel : ObservableObject
 
         return result;
     }
+
+    /// <summary>
+    /// Builds a side-by-side schema diff for the comparison view.
+    /// </summary>
+    private void BuildSchemaDiff(FileProfile baseline, FileProfile compProfile, FileComparison comparison)
+    {
+        SchemaDiffItems.Clear();
+
+        var baselineCols = baseline.Columns.ToDictionary(c => c.Name);
+        var compCols = compProfile.Columns.ToDictionary(c => c.Name);
+        var allNames = baseline.Columns.Select(c => c.Name)
+            .Union(compProfile.Columns.Select(c => c.Name))
+            .Distinct()
+            .OrderBy(n => n)
+            .ToList();
+
+        foreach (var name in allNames)
+        {
+            var hasBase = baselineCols.TryGetValue(name, out var baseCol);
+            var hasComp = compCols.TryGetValue(name, out var compCol);
+
+            var item = new SchemaDiffItem
+            {
+                ColumnName = name,
+                BaselineType = hasBase ? baseCol!.DuckDbType : "—",
+                ComparisonType = hasComp ? compCol!.DuckDbType : "—"
+            };
+
+            if (!hasBase)
+            {
+                item.Status = "Added";
+                item.StatusColor = "#2E7D32";
+                item.StatusIcon = "+";
+            }
+            else if (!hasComp)
+            {
+                item.Status = "Removed";
+                item.StatusColor = "#C62828";
+                item.StatusIcon = "−";
+            }
+            else if (baseCol!.DuckDbType != compCol!.DuckDbType)
+            {
+                item.Status = "Changed";
+                item.StatusColor = "#E65100";
+                item.StatusIcon = "~";
+            }
+            else
+            {
+                item.Status = "Match";
+                item.StatusColor = "#9E9E9E";
+                item.StatusIcon = "=";
+            }
+
+            SchemaDiffItems.Add(item);
+        }
+
+        HasSchemaDiff = SchemaDiffItems.Count > 0;
+    }
 }
 
 /// <summary>
@@ -540,4 +617,17 @@ public class GroupedResult
     public double QualityScore { get; set; }
     public string ScoreColor { get; set; } = "#9E9E9E";
     public FileProfile Profile { get; set; } = new();
+}
+
+/// <summary>
+/// Represents one row in the side-by-side schema diff view.
+/// </summary>
+public class SchemaDiffItem
+{
+    public string ColumnName { get; set; } = string.Empty;
+    public string BaselineType { get; set; } = "—";
+    public string ComparisonType { get; set; } = "—";
+    public string Status { get; set; } = "Match";
+    public string StatusColor { get; set; } = "#9E9E9E";
+    public string StatusIcon { get; set; } = "=";
 }

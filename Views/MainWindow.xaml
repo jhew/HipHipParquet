@@ -2,9 +2,12 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:HipHipParquet.Views"
-        Title="Hip Hip Parquet" Height="700" Width="1400"
+        Title="HipHipParquet — Data Quality Viewer" Height="700" Width="1400"
         WindowStartupLocation="CenterScreen"
-        Icon="/Assets/app.ico">
+        Icon="/Assets/app.ico"
+        AllowDrop="True"
+        DragOver="OnDragOver"
+        Drop="OnFileDrop">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -35,11 +38,29 @@
                         <TextBlock Text="📋" FontSize="14"/>
                     </MenuItem.Icon>
                 </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="ExportAsMenuItem" Header="_Export As..." Click="OnExportAsClick" IsEnabled="False">
+                    <MenuItem.Icon>
+                        <TextBlock Text="🔄" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="ImportOptionsMenuItem" Header="_Import Options..." Click="OnImportOptionsClick" IsEnabled="False">
+                    <MenuItem.Icon>
+                        <TextBlock Text="⚙️" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="FlattenJsonMenuItem" Header="Flatten _Nested JSON..." Click="OnFlattenJsonClick" IsEnabled="False">
+                    <MenuItem.Icon>
+                        <TextBlock Text="&#x1F4E6;" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="Toggle _Schema Pane" Click="OnToggleSchemaPaneClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem Header="Toggle _Filter Row" Click="OnToggleFilterRowClick" IsCheckable="True" IsChecked="True"/>
-                <MenuItem x:Name="ToggleQaPanelMenuItem" Header="Toggle _QA Review Panel" Click="OnToggleQaPanelClick" IsCheckable="True" IsChecked="True"/>
+                <MenuItem x:Name="ToggleQualityPanelMenuItem" Header="Toggle _Quality Review Panel" Click="OnToggleQualityPanelClick" IsCheckable="True" IsChecked="True"/>
             </MenuItem>
             <MenuItem Header="_Edit" SubmenuOpened="OnEditMenuOpened" SubmenuClosed="OnEditMenuClosed">
                 <MenuItem Header="_Copy" Click="OnCopyClick">
@@ -58,8 +79,8 @@
                 <ColumnDefinition x:Name="SchemaPaneColumn" Width="250" MinWidth="200"/>
                 <ColumnDefinition x:Name="SchemaSplitterColumn" Width="5"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition x:Name="QaSplitterColumn" Width="5"/>
-                <ColumnDefinition x:Name="QaPaneColumn" Width="420" MinWidth="300"/>
+                <ColumnDefinition x:Name="QualitySplitterColumn" Width="5"/>
+                <ColumnDefinition x:Name="QualityPaneColumn" Width="420" MinWidth="300"/>
             </Grid.ColumnDefinitions>
 
             <!-- Schema Pane -->
@@ -86,7 +107,7 @@
                            HorizontalAlignment="Center" 
                            VerticalAlignment="Center">
                     <TextBlock Text="📊" FontSize="48" HorizontalAlignment="Center" Foreground="Gray"/>
-                    <TextBlock Text="Open a Parquet file to get started" 
+                    <TextBlock Text="Open a data file to get started" 
                               FontSize="18" 
                               Foreground="Gray"
                               Margin="0,8,0,0"
@@ -102,6 +123,7 @@
                 <!-- Data Grid -->
                 <Grid x:Name="DataGridContainer" Visibility="Collapsed">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
@@ -119,9 +141,27 @@
                         </Border>
                     </ScrollViewer>
                     
+                    <!-- Load More Banner -->
+                    <Border x:Name="LoadMoreBanner" Grid.Row="1" 
+                            Background="#FFF3E0" BorderBrush="#FFB74D" BorderThickness="0,0,0,1"
+                            Padding="8,6" Visibility="Collapsed">
+                        <DockPanel>
+                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                                <Button Content="Load Next 50K" Padding="10,4" Margin="0,0,6,0"
+                                        Click="OnLoadMoreClick" Background="#FF9800" Foreground="White"
+                                        BorderThickness="0"/>
+                                <Button Content="Load All" Padding="10,4"
+                                        Click="OnLoadAllClick" Background="#E65100" Foreground="White"
+                                        BorderThickness="0"/>
+                            </StackPanel>
+                            <TextBlock x:Name="LoadMoreText" VerticalAlignment="Center"
+                                       Text="Showing 50,000 of X rows" Foreground="#E65100" FontWeight="SemiBold"/>
+                        </DockPanel>
+                    </Border>
+
                     <!-- Data Grid -->
                     <DataGrid x:Name="DataGrid" 
-                             Grid.Row="1"
+                             Grid.Row="2"
                              AutoGenerateColumns="False"
                              HeadersVisibility="All"
                              GridLinesVisibility="All"
@@ -178,21 +218,40 @@
                 </Grid>
             </Grid>
 
-            <!-- QA Panel Splitter -->
-            <GridSplitter x:Name="QaSplitter" Grid.Column="3" 
+            <!-- Quality Panel Splitter -->
+            <GridSplitter x:Name="QualitySplitter" Grid.Column="3" 
                          HorizontalAlignment="Stretch" 
                          Background="#E0E0E0"
                          Visibility="Visible"/>
 
-            <!-- QA Review Panel -->
-            <views:QaReviewPanel x:Name="QaReviewPanel" Grid.Column="4" 
+            <!-- Quality Review Panel -->
+            <views:QualityReviewPanel x:Name="QualityReviewPanel" Grid.Column="4" 
                                  Visibility="Visible"/>
+        </Grid>
+
+        <!-- Loading Overlay -->
+        <Grid x:Name="LoadingOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Panel.ZIndex="100">
+            <Border Background="#88FFFFFF">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <ProgressBar x:Name="LoadingProgress" IsIndeterminate="True" 
+                                 Width="200" Height="6" Margin="0,0,0,8"/>
+                    <TextBlock x:Name="LoadingText" Text="Loading..." 
+                               HorizontalAlignment="Center" FontSize="14" Foreground="#512BD4"/>
+                </StackPanel>
+            </Border>
         </Grid>
 
         <!-- Status Bar -->
         <StatusBar Grid.Row="2">
             <StatusBarItem>
-                <TextBlock x:Name="StatusText" Text="Ready"/>
+                <StackPanel Orientation="Horizontal">
+                    <Border x:Name="FormatBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
+                            Visibility="Collapsed" Background="#E3F2FD">
+                        <TextBlock x:Name="FormatBadgeText" Text="" FontSize="11" 
+                                   FontWeight="SemiBold" Foreground="#1565C0"/>
+                    </Border>
+                    <TextBlock x:Name="StatusText" Text="Ready"/>
+                </StackPanel>
             </StatusBarItem>
             <StatusBarItem HorizontalAlignment="Right">
                 <StackPanel Orientation="Horizontal">

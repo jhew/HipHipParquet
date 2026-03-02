@@ -16,19 +16,178 @@ public class ParquetService : IDisposable
     {
         _logger = logger;
     }
+
+    /// <summary>
+    /// Installs and loads the DuckDB spatial extension (required for Excel/XLSX reading via st_read).
+    /// </summary>
+    private async Task EnsureExcelExtensionAsync(DuckDBConnection connection)
+    {
+        try
+        {
+            using var installCmd = new DuckDBCommand("INSTALL spatial; LOAD spatial;", connection);
+            await installCmd.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load spatial extension for Excel support. Attempting to continue.");
+        }
+    }
+
+    /// <summary>
+    /// Detects STRUCT/nested columns in a JSON file and returns a flattening SELECT expression.
+    /// Returns null if no STRUCT columns are found.
+    /// </summary>
+    public async Task<string?> GetFlattenedQueryAsync(string filePath, CsvImportOptions? csvOptions = null)
+    {
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            var normalizedPath = filePath.Replace("\\", "/");
+            var format = FileFormatDetector.DetectFormat(filePath);
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions);
+
+            // Describe columns
+            var describeSql = $"DESCRIBE SELECT * FROM {readerExpr}";
+            using var cmd = new DuckDBCommand(describeSql, connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            var flatColumns = new List<string>();
+            var structColumns = new List<(string Name, string Type)>();
+            bool hasStruct = false;
+
+            while (await reader.ReadAsync())
+            {
+                var name = reader.GetString("column_name");
+                var type = reader.GetString("column_type");
+
+                if (type.StartsWith("STRUCT", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasStruct = true;
+                    structColumns.Add((name, type));
+                    // Parse struct fields: STRUCT(field1 TYPE1, field2 TYPE2, ...)
+                    var fields = ParseStructFields(type);
+                    foreach (var field in fields)
+                    {
+                        flatColumns.Add($"\"{name}\".\"{field}\" AS \"{name}_{field}\"");
+                    }
+                }
+                else
+                {
+                    flatColumns.Add($"\"{name}\"");
+                }
+            }
+
+            if (!hasStruct) return null;
+
+            return $"SELECT {string.Join(", ", flatColumns)} FROM {readerExpr}";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to generate flattened query for {FilePath}", filePath);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Parses STRUCT field names from a DuckDB STRUCT type string.
+    /// E.g., "STRUCT(name VARCHAR, age INTEGER)" → ["name", "age"]
+    /// </summary>
+    private static List<string> ParseStructFields(string structType)
+    {
+        var fields = new List<string>();
+        // Extract content between outermost parentheses
+        var start = structType.IndexOf('(');
+        var end = structType.LastIndexOf(')');
+        if (start < 0 || end <= start) return fields;
+
+        var content = structType.Substring(start + 1, end - start - 1);
+        
+        // Split by commas at depth 0 (to handle nested structs)
+        int depth = 0;
+        int fieldStart = 0;
+        for (int i = 0; i < content.Length; i++)
+        {
+            if (content[i] == '(') depth++;
+            else if (content[i] == ')') depth--;
+            else if (content[i] == ',' && depth == 0)
+            {
+                var field = content.Substring(fieldStart, i - fieldStart).Trim();
+                var fieldName = field.Split(' ', 2)[0].Trim('"');
+                if (!string.IsNullOrEmpty(fieldName))
+                    fields.Add(fieldName);
+                fieldStart = i + 1;
+            }
+        }
+        // Last field
+        var lastField = content.Substring(fieldStart).Trim();
+        var lastFieldName = lastField.Split(' ', 2)[0].Trim('"');
+        if (!string.IsNullOrEmpty(lastFieldName))
+            fields.Add(lastFieldName);
+
+        return fields;
+    }
+
+    /// <summary>
+    /// Loads a file using a custom SQL query (for flattened JSON, etc.).
+    /// </summary>
+    public async Task<DataTable> LoadWithQueryAsync(string sql, int? rowLimit = null)
+    {
+        try
+        {
+            _connection = new DuckDBConnection("DataSource=:memory:");
+            await _connection.OpenAsync();
+
+            var limitClause = rowLimit.HasValue ? $" LIMIT {rowLimit.Value}" : "";
+            var fullSql = $"SELECT * FROM ({sql}) AS flattened{limitClause}";
+            _logger.LogDebug("Executing flattened SQL: {SQL}", fullSql);
+
+            using var command = new DuckDBCommand(fullSql, _connection);
+            using var reader = await command.ExecuteReaderAsync();
+
+            var dataTable = new DataTable();
+            for (int i = 0; i < reader.FieldCount; i++)
+                dataTable.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+
+            while (await reader.ReadAsync())
+            {
+                var row = dataTable.NewRow();
+                for (int i = 0; i < reader.FieldCount; i++)
+                    row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                dataTable.Rows.Add(row);
+            }
+
+            return dataTable;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute flattened query");
+            if (_connection != null) { _connection.Dispose(); _connection = null; }
+            throw new InvalidOperationException($"Failed to load flattened data: {ex.Message}", ex);
+        }
+    }
     
-    public async Task<DataTable> LoadParquetFileAsync(string filePath)
+    public async Task<DataTable> LoadFileAsync(string filePath, CsvImportOptions? csvOptions = null, int? rowLimit = null)
     {
         try
         {
             _connection = new DuckDBConnection("DataSource=:memory:");
             await _connection.OpenAsync();
             
-            // Use DuckDB to read Parquet file
+            // Use DuckDB to read file (format auto-detected from extension)
             var normalizedPath = filePath.Replace("\\", "/");
-            _logger.LogInformation("Reading Parquet file: {FilePath}", normalizedPath);
+            var format = FileFormatDetector.DetectFormat(filePath);
+            var formatName = FileFormatDetector.GetFormatDisplayName(format);
+            _logger.LogInformation("Reading {Format} file: {FilePath}", formatName, normalizedPath);
+
+            // Load spatial extension for Excel files
+            if (format == SupportedFileFormat.Excel)
+                await EnsureExcelExtensionAsync(_connection);
             
-            var sql = $"SELECT * FROM read_parquet('{normalizedPath}')";
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions);
+            var limitClause = rowLimit.HasValue ? $" LIMIT {rowLimit.Value}" : "";
+            var sql = $"SELECT * FROM {readerExpr}{limitClause}";
             _logger.LogDebug("Executing SQL: {SQL}", sql);
             
             using var command = new DuckDBCommand(sql, _connection);
@@ -58,7 +217,7 @@ public class ParquetService : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to load parquet file: {FilePath}. Error: {Error}", filePath, ex.Message);
+            _logger.LogError(ex, "Failed to load file: {FilePath}. Error: {Error}", filePath, ex.Message);
             
             // Cleanup connection on error
             if (_connection != null)
@@ -67,11 +226,11 @@ public class ParquetService : IDisposable
                 _connection = null;
             }
             
-            throw new InvalidOperationException($"Failed to load Parquet file '{Path.GetFileName(filePath)}': {ex.Message}", ex);
+            throw new InvalidOperationException($"Failed to load file '{Path.GetFileName(filePath)}': {ex.Message}", ex);
         }
     }
     
-    public async Task<ParquetFileInfo> GetFileInfoAsync(string filePath)
+    public async Task<DataFileInfo> GetFileInfoAsync(string filePath, CsvImportOptions? csvOptions = null)
     {
         try
         {
@@ -86,11 +245,18 @@ public class ParquetService : IDisposable
             }
                 
             var normalizedPath = filePath.Replace("\\", "/");
+            var format = FileFormatDetector.DetectFormat(filePath);
+
+            // Load spatial extension for Excel files
+            if (format == SupportedFileFormat.Excel)
+                await EnsureExcelExtensionAsync(_connection);
+
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions);
             
-            // Get schema information using DuckDB's read_parquet function
+            // Get schema information using DuckDB reader
             _logger.LogInformation("Getting schema for file: {FilePath}", normalizedPath);
             
-            var sql = $"DESCRIBE SELECT * FROM read_parquet('{normalizedPath}')";
+            var sql = $"DESCRIBE SELECT * FROM {readerExpr}";
             _logger.LogDebug("Executing schema SQL: {SQL}", sql);
             
             using var command = new DuckDBCommand(sql, _connection);
@@ -107,12 +273,13 @@ public class ParquetService : IDisposable
                 });
             }
             
-            // Get row count
-            var rowCount = await GetRowCountAsync(normalizedPath);
+            // Get row count (pass csvOptions so custom delimiters/skip-rows are applied)
+            var rowCount = await GetRowCountAsync(normalizedPath, format, csvOptions);
             
-            return new ParquetFileInfo
+            return new DataFileInfo
             {
                 FilePath = filePath,
+                Format = format,
                 Columns = columns,
                 RowCount = rowCount
             };
@@ -124,15 +291,37 @@ public class ParquetService : IDisposable
         }
     }
     
-    private async Task<long> GetRowCountAsync(string filePath)
+    private async Task<long> GetRowCountAsync(string filePath, SupportedFileFormat format, CsvImportOptions? csvOptions = null)
     {
-        var sql = $"SELECT COUNT(*) FROM read_parquet('{filePath}')";
+        var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(filePath, format, csvOptions);
+        var sql = $"SELECT COUNT(*) FROM {readerExpr}";
         using var command = new DuckDBCommand(sql, _connection!);
         var result = await command.ExecuteScalarAsync();
         return Convert.ToInt64(result);
     }
+
+    /// <summary>
+    /// Gets the total row count for a file without loading any data. Uses a fresh connection.
+    /// </summary>
+    public async Task<long> GetTotalRowCountAsync(string filePath, CsvImportOptions? csvOptions = null)
+    {
+        using var connection = new DuckDBConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var normalizedPath = filePath.Replace("\\", "/");
+        var format = FileFormatDetector.DetectFormat(filePath);
+
+        if (format == SupportedFileFormat.Excel)
+            await EnsureExcelExtensionAsync(connection);
+
+        var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions);
+        var sql = $"SELECT COUNT(*) FROM {readerExpr}";
+        using var cmd = new DuckDBCommand(sql, connection);
+        var result = await cmd.ExecuteScalarAsync();
+        return Convert.ToInt64(result);
+    }
     
-    public async Task SaveParquetFileAsync(string filePath, DataTable dataTable)
+    public async Task SaveFileAsync(string filePath, DataTable dataTable)
     {
         try
         {
@@ -143,7 +332,9 @@ public class ParquetService : IDisposable
             }
             
             var normalizedPath = filePath.Replace("\\", "/");
-            _logger.LogInformation("Saving Parquet file: {FilePath}", normalizedPath);
+            var format = FileFormatDetector.DetectFormat(filePath);
+            var formatName = FileFormatDetector.GetFormatDisplayName(format);
+            _logger.LogInformation("Saving {Format} file: {FilePath}", formatName, normalizedPath);
             
             // Create a temporary table from the DataTable
             var tempTableName = "temp_" + Guid.NewGuid().ToString("N");
@@ -202,9 +393,12 @@ public class ParquetService : IDisposable
                 await insertCommand.ExecuteNonQueryAsync();
             }
             
-            // Export to Parquet
-            var exportSql = $"COPY {tempTableName} TO '{normalizedPath}' (FORMAT PARQUET)";
-            _logger.LogDebug("Exporting to Parquet: {SQL}", exportSql);
+            // Export to target format
+            var exportFormat = FileFormatDetector.GetDuckDbExportFormat(format);
+            var exportOptions = FileFormatDetector.GetDuckDbExportOptions(format);
+            var escapedExportPath = normalizedPath.Replace("'", "''");
+            var exportSql = $"COPY {tempTableName} TO '{escapedExportPath}' (FORMAT {exportFormat}{exportOptions})";
+            _logger.LogDebug("Exporting to {Format}: {SQL}", formatName, exportSql);
             
             using (var exportCommand = new DuckDBCommand(exportSql, _connection))
             {
@@ -222,8 +416,8 @@ public class ParquetService : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to save parquet file: {FilePath}", filePath);
-            throw new InvalidOperationException($"Failed to save Parquet file '{Path.GetFileName(filePath)}': {ex.Message}", ex);
+            _logger.LogError(ex, "Failed to save file: {FilePath}", filePath);
+            throw new InvalidOperationException($"Failed to save file '{Path.GetFileName(filePath)}': {ex.Message}", ex);
         }
     }
     
@@ -246,7 +440,7 @@ public class ParquetService : IDisposable
     /// <summary>
     /// Generates a comprehensive FileProfile with per-column statistics using DuckDB aggregate SQL.
     /// </summary>
-    public async Task<FileProfile> GetFileProfileAsync(string filePath)
+    public async Task<FileProfile> GetFileProfileAsync(string filePath, CsvImportOptions? csvOptions = null)
     {
         try
         {
@@ -255,11 +449,19 @@ public class ParquetService : IDisposable
 
             var normalizedPath = filePath.Replace("\\", "/");
             var escapedPath = normalizedPath.Replace("'", "''");
-            _logger.LogInformation("Profiling Parquet file: {FilePath}", normalizedPath);
+            var format = FileFormatDetector.DetectFormat(filePath);
+            var formatName = FileFormatDetector.GetFormatDisplayName(format);
+            _logger.LogInformation("Profiling {Format} file: {FilePath}", formatName, normalizedPath);
+
+            // Load spatial extension for Excel files
+            if (format == SupportedFileFormat.Excel)
+                await EnsureExcelExtensionAsync(connection);
+
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(escapedPath, format, csvOptions);
 
             // Get schema
             var columns = new List<(string Name, string Type, bool IsNullable)>();
-            var describeSql = $"DESCRIBE SELECT * FROM read_parquet('{escapedPath}')";
+            var describeSql = $"DESCRIBE SELECT * FROM {readerExpr}";
             using (var cmd = new DuckDBCommand(describeSql, connection))
             using (var reader = await cmd.ExecuteReaderAsync())
             {
@@ -272,13 +474,13 @@ public class ParquetService : IDisposable
 
             // Get row count
             long rowCount;
-            using (var cmd = new DuckDBCommand($"SELECT COUNT(*) FROM read_parquet('{escapedPath}')", connection))
+            using (var cmd = new DuckDBCommand($"SELECT COUNT(*) FROM {readerExpr}", connection))
             {
                 rowCount = Convert.ToInt64(await cmd.ExecuteScalarAsync());
             }
 
             var columnProfiles = new List<ColumnProfile>();
-            var fileSrc = $"read_parquet('{escapedPath}')";
+            var fileSrc = readerExpr;
 
             foreach (var (colName, colType, isNullable) in columns)
             {
@@ -290,6 +492,7 @@ public class ParquetService : IDisposable
             {
                 FilePath = filePath,
                 FileName = Path.GetFileName(filePath),
+                SourceFormat = format,
                 RowCount = rowCount,
                 ColumnCount = columns.Count,
                 FileSizeBytes = new System.IO.FileInfo(filePath).Length,
@@ -301,8 +504,8 @@ public class ParquetService : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to profile parquet file: {FilePath}", filePath);
-            throw new InvalidOperationException($"Failed to profile Parquet file '{Path.GetFileName(filePath)}': {ex.Message}", ex);
+            _logger.LogError(ex, "Failed to profile file: {FilePath}", filePath);
+            throw new InvalidOperationException($"Failed to profile file '{Path.GetFileName(filePath)}': {ex.Message}", ex);
         }
     }
 
@@ -520,7 +723,7 @@ public class ParquetService : IDisposable
     /// Generates grouped statistics for a file, grouped by the specified dimension columns.
     /// Returns a dictionary mapping group key strings to their FileProfile.
     /// </summary>
-    public async Task<Dictionary<string, FileProfile>> GetGroupedStatisticsAsync(string filePath, List<string> groupByColumns)
+    public async Task<Dictionary<string, FileProfile>> GetGroupedStatisticsAsync(string filePath, List<string> groupByColumns, CsvImportOptions? csvOptions = null)
     {
         try
         {
@@ -529,7 +732,13 @@ public class ParquetService : IDisposable
 
             var normalizedPath = filePath.Replace("\\", "/");
             var escapedPath = normalizedPath.Replace("'", "''");
-            var src = $"read_parquet('{escapedPath}')";
+            var format = FileFormatDetector.DetectFormat(filePath);
+
+            // Load spatial extension for Excel files
+            if (format == SupportedFileFormat.Excel)
+                await EnsureExcelExtensionAsync(connection);
+
+            var src = FileFormatDetector.GetDuckDbReaderExpression(escapedPath, format, csvOptions);
             var groupByCols = string.Join(", ", groupByColumns.Select(c => $"\"{c}\""));
 
             // Get distinct group values
@@ -656,9 +865,10 @@ public class ParquetService : IDisposable
     }
 }
 
-public class ParquetFileInfo
+public class DataFileInfo
 {
     public string FilePath { get; set; } = string.Empty;
+    public SupportedFileFormat Format { get; set; }
     public List<ColumnInfo> Columns { get; set; } = [];
     public long RowCount { get; set; }
 }

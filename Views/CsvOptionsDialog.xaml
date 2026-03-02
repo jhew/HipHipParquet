@@ -1,0 +1,144 @@
+<Window x:Class="HipHipParquet.Views.CsvOptionsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CSV Import Options"
+        Width="640" Height="560"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResizeWithGrip"
+        ShowInTaskbar="False"
+        MinWidth="500" MinHeight="450"
+        Icon="/Assets/app.ico">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="120"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" Grid.ColumnSpan="2"
+                   Text="Configure CSV/TSV Import Settings"
+                   FontSize="14" FontWeight="SemiBold"
+                   Margin="0,0,0,16"/>
+
+        <!-- Delimiter -->
+        <TextBlock Grid.Row="1" Grid.Column="0"
+                   Text="Delimiter:"
+                   VerticalAlignment="Center" Margin="0,0,0,8"/>
+        <ComboBox x:Name="DelimiterCombo" Grid.Row="1" Grid.Column="1"
+                  Margin="0,0,0,8" SelectedIndex="0"
+                  SelectionChanged="OnOptionChanged">
+            <ComboBoxItem Content="Auto-detect" Tag="auto"/>
+            <ComboBoxItem Content="Comma (,)" Tag=","/>
+            <ComboBoxItem Content="Tab (⇥)" Tag="tab"/>
+            <ComboBoxItem Content="Semicolon (;)" Tag=";"/>
+            <ComboBoxItem Content="Pipe (|)" Tag="|"/>
+            <ComboBoxItem Content="Space" Tag=" "/>
+        </ComboBox>
+
+        <!-- Header Row -->
+        <TextBlock Grid.Row="2" Grid.Column="0"
+                   Text="Header row:"
+                   VerticalAlignment="Center" Margin="0,0,0,8"/>
+        <CheckBox x:Name="HasHeaderCheckBox" Grid.Row="2" Grid.Column="1"
+                  Content="First row contains column names"
+                  IsChecked="True" VerticalAlignment="Center" Margin="0,0,0,8"
+                  Checked="OnOptionChanged" Unchecked="OnOptionChanged"/>
+
+        <!-- Quote Character -->
+        <TextBlock Grid.Row="3" Grid.Column="0"
+                   Text="Quote char:"
+                   VerticalAlignment="Center" Margin="0,0,0,8"/>
+        <ComboBox x:Name="QuoteCharCombo" Grid.Row="3" Grid.Column="1"
+                  Margin="0,0,0,8" SelectedIndex="0"
+                  SelectionChanged="OnOptionChanged">
+            <ComboBoxItem Content="Double quote (&quot;)" Tag="&quot;"/>
+            <ComboBoxItem Content="Single quote (')" Tag="'"/>
+            <ComboBoxItem Content="None" Tag=""/>
+        </ComboBox>
+
+        <!-- Encoding -->
+        <TextBlock Grid.Row="4" Grid.Column="0"
+                   Text="Encoding:"
+                   VerticalAlignment="Center" Margin="0,0,0,8"/>
+        <ComboBox x:Name="EncodingCombo" Grid.Row="4" Grid.Column="1"
+                  Margin="0,0,0,8" SelectedIndex="0"
+                  SelectionChanged="OnOptionChanged">
+            <ComboBoxItem Content="Auto-detect" Tag="auto"/>
+            <ComboBoxItem Content="UTF-8" Tag="utf-8"/>
+            <ComboBoxItem Content="Latin-1 (ISO-8859-1)" Tag="latin1"/>
+            <ComboBoxItem Content="Windows-1252" Tag="windows-1252"/>
+        </ComboBox>
+
+        <!-- Skip Rows -->
+        <TextBlock Grid.Row="5" Grid.Column="0"
+                   Text="Skip rows:"
+                   VerticalAlignment="Center" Margin="0,0,0,8"/>
+        <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBox x:Name="SkipRowsTextBox" Width="60" Text="0"
+                     VerticalContentAlignment="Center"
+                     TextChanged="OnOptionChanged"/>
+            <TextBlock Text="rows from the top"
+                       VerticalAlignment="Center" Margin="8,0,0,0"
+                       Foreground="Gray" FontSize="12"/>
+        </StackPanel>
+
+        <!-- Preview header -->
+        <TextBlock Grid.Row="6" Grid.ColumnSpan="2"
+                   Text="📋 Data Preview (first 5 rows):"
+                   FontWeight="SemiBold" FontSize="12"
+                   Margin="0,8,0,4"/>
+
+        <!-- Preview DataGrid -->
+        <Border Grid.Row="7" Grid.ColumnSpan="2" BorderBrush="#E0E0E0" BorderThickness="1"
+                CornerRadius="4" Margin="0,0,0,8">
+            <Grid>
+                <DataGrid x:Name="PreviewGrid"
+                          AutoGenerateColumns="True"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="All"
+                          AlternatingRowBackground="#F9F9F9"
+                          MaxHeight="180"
+                          FontSize="11"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Auto"/>
+                <TextBlock x:Name="PreviewPlaceholder"
+                           Text="Select a file to see preview..."
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Foreground="Gray" FontStyle="Italic"/>
+                <TextBlock x:Name="PreviewError"
+                           TextWrapping="Wrap" Foreground="#C62828" FontSize="11"
+                           Margin="8" Visibility="Collapsed"/>
+            </Grid>
+        </Border>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="8" Grid.ColumnSpan="2"
+                    Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Use Defaults (Auto)"
+                    Padding="12,6" Margin="0,0,8,0"
+                    Click="OnUseDefaultsClick"/>
+            <Button Content="Apply"
+                    Padding="12,6"
+                    Background="#512BD4" Foreground="White"
+                    IsDefault="True"
+                    Click="OnApplyClick"/>
+            <Button Content="Cancel"
+                    Padding="12,6" Margin="8,0,0,0"
+                    IsCancel="True"
+                    Click="OnCancelClick"/>
+        </StackPanel>
+    </Grid>
+</Window>
