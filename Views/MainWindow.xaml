@@ -49,11 +49,14 @@
                     <MenuItem.Icon>
                         <TextBlock Text="⚙️" FontSize="14"/>
                     </MenuItem.Icon>
-                </MenuItem>                <MenuItem x:Name="FlattenJsonMenuItem" Header="Flatten _Nested JSON..." Click="OnFlattenJsonClick" IsEnabled="False">
+                </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="FlattenJsonMenuItem" Header="Flatten _Nested JSON..." Click="OnFlattenJsonClick" IsEnabled="False">
                     <MenuItem.Icon>
                         <TextBlock Text="&#x1F4E6;" FontSize="14"/>
                     </MenuItem.Icon>
-                </MenuItem>            </MenuItem>
+                </MenuItem>
+            </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="Toggle _Schema Pane" Click="OnToggleSchemaPaneClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem Header="Toggle _Filter Row" Click="OnToggleFilterRowClick" IsCheckable="True" IsChecked="True"/>

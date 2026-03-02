@@ -54,10 +54,10 @@ public static class FileFormatDetector
     /// </summary>
     public static string GetDuckDbReaderExpression(string filePath, SupportedFileFormat format, CsvImportOptions? csvOptions)
     {
-        var p = EscapePath(filePath);
-        // Only CSV/TSV formats use custom options
+        // Only CSV/TSV formats use custom options; all other formats fall through to the base overload
         if (csvOptions != null && (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv))
         {
+            var p = EscapePath(filePath);
             var opts = csvOptions.ToDuckDbOptions();
             return $"read_csv_auto('{p}'{opts})";
         }

@@ -1371,7 +1371,7 @@ public partial class MainWindow : Window
         }
 
         _currentRowLimit = _totalRowCount > int.MaxValue ? int.MaxValue : (int)_totalRowCount;
-        await LoadFileAsync(_currentFilePath, _activeCsvOptions, (int?)null);
+        await LoadFileAsync(_currentFilePath, _activeCsvOptions, _currentRowLimit);
     }
 
     // ── JSON Flattening ───────────────────────────────────────────────
@@ -1495,7 +1495,9 @@ public partial class MainWindow : Window
 
                 if (result == MessageBoxResult.Yes)
                 {
-                    await LoadFileAsync(e.FullPath, _activeCsvOptions, _currentRowLimit);
+                    // Reset to default batch size on external reload — avoids silently
+                    // re-loading millions of rows that were previously loaded via Load All
+                    await LoadFileAsync(e.FullPath, _activeCsvOptions, null);
                 }
             }
             finally

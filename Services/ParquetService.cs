@@ -273,8 +273,8 @@ public class ParquetService : IDisposable
                 });
             }
             
-            // Get row count
-            var rowCount = await GetRowCountAsync(normalizedPath, format);
+            // Get row count (pass csvOptions so custom delimiters/skip-rows are applied)
+            var rowCount = await GetRowCountAsync(normalizedPath, format, csvOptions);
             
             return new DataFileInfo
             {
@@ -291,9 +291,9 @@ public class ParquetService : IDisposable
         }
     }
     
-    private async Task<long> GetRowCountAsync(string filePath, SupportedFileFormat format)
+    private async Task<long> GetRowCountAsync(string filePath, SupportedFileFormat format, CsvImportOptions? csvOptions = null)
     {
-        var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(filePath, format);
+        var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(filePath, format, csvOptions);
         var sql = $"SELECT COUNT(*) FROM {readerExpr}";
         using var command = new DuckDBCommand(sql, _connection!);
         var result = await command.ExecuteScalarAsync();
@@ -396,7 +396,8 @@ public class ParquetService : IDisposable
             // Export to target format
             var exportFormat = FileFormatDetector.GetDuckDbExportFormat(format);
             var exportOptions = FileFormatDetector.GetDuckDbExportOptions(format);
-            var exportSql = $"COPY {tempTableName} TO '{normalizedPath}' (FORMAT {exportFormat}{exportOptions})";
+            var escapedExportPath = normalizedPath.Replace("'", "''");
+            var exportSql = $"COPY {tempTableName} TO '{escapedExportPath}' (FORMAT {exportFormat}{exportOptions})";
             _logger.LogDebug("Exporting to {Format}: {SQL}", formatName, exportSql);
             
             using (var exportCommand = new DuckDBCommand(exportSql, _connection))

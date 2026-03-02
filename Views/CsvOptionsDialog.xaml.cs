@@ -26,6 +26,7 @@ public partial class CsvOptionsDialog : Window
     {
         InitializeComponent();
         Loaded += (_, _) => { _isInitialized = true; RefreshPreview(); };
+        Closed += (_, _) => { _previewCts?.Cancel(); _previewCts?.Dispose(); };
     }
 
     /// <summary>
@@ -93,8 +94,9 @@ public partial class CsvOptionsDialog : Window
     /// </summary>
     private async void RefreshPreview()
     {
-        // Cancel any in-flight preview and start a new token
+        // Cancel and dispose any in-flight preview before starting a new one
         _previewCts?.Cancel();
+        _previewCts?.Dispose();
         _previewCts = new CancellationTokenSource();
         var ct = _previewCts.Token;
 
