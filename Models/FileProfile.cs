@@ -7,6 +7,7 @@ public class FileProfile
 {
     public string FilePath { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
+    public SupportedFileFormat SourceFormat { get; set; }
     public long RowCount { get; set; }
     public int ColumnCount { get; set; }
     public long FileSizeBytes { get; set; }

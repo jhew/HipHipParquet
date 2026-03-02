@@ -1,14 +1,15 @@
-<UserControl x:Class="HipHipParquet.Views.QaReviewPanel"
+<UserControl x:Class="HipHipParquet.Views.QualityReviewPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:HipHipParquet.Controls"
              xmlns:vm="clr-namespace:HipHipParquet.ViewModels"
              xmlns:local="clr-namespace:HipHipParquet.Views"
+             xmlns:conv="clr-namespace:HipHipParquet.Converters"
              Background="#FAFAFA">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-        <local:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
-        <local:StringToBrushConverter x:Key="StringToBrushConverter"/>
+        <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
+        <conv:StringToBrushConverter x:Key="StringToBrushConverter"/>
         
         <!-- Card style for sections -->
         <Style x:Key="SectionCard" TargetType="Border">
@@ -52,7 +53,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="🔍 QA Review" FontSize="16" FontWeight="Bold" Foreground="White"/>
+                    <TextBlock Text="🔍 Quality Review" FontSize="16" FontWeight="Bold" Foreground="White"/>
                     <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="#CCCCCC" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -113,7 +114,7 @@
                                    HorizontalAlignment="Center" Margin="0,4,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="Open a parquet file to begin"/>
+                                    <Setter Property="Text" Value="Open a data file to begin"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding HasFile}" Value="True">
                                             <Setter Property="Text" Value="Click Analyze to profile this file"/>
@@ -649,6 +650,66 @@
                                 <Run Text="Drift score: " Foreground="Gray"/>
                                 <Run Text="{Binding Comparison.DriftScore, StringFormat={}{0:F1}/100, Mode=OneWay}"/>
                             </TextBlock>
+
+                            <!-- Schema Diff Table -->
+                            <Expander Header="📊 Schema Diff" Margin="0,8,0,0" FontSize="12" FontWeight="SemiBold"
+                                      Visibility="{Binding HasSchemaDiff, Converter={StaticResource BoolToVis}}"
+                                      IsExpanded="True">
+                                <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Margin="0,4,0,0">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+                                        <!-- Header row -->
+                                        <Grid Background="#F5F5F5" Grid.Row="0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="24"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="" FontSize="10" FontWeight="Bold" Padding="4,3"/>
+                                            <TextBlock Grid.Column="1" Text="Column" FontSize="10" FontWeight="Bold" Padding="4,3"/>
+                                            <TextBlock Grid.Column="2" Text="Baseline" FontSize="10" FontWeight="Bold" Padding="4,3" Foreground="#1565C0"/>
+                                            <TextBlock Grid.Column="3" Text="Compare" FontSize="10" FontWeight="Bold" Padding="4,3" Foreground="#6A1B9A"/>
+                                        </Grid>
+                                        <!-- Diff rows -->
+                                        <ItemsControl Grid.Row="1" ItemsSource="{Binding SchemaDiffItems}" MaxHeight="200">
+                                            <ItemsControl.Template>
+                                                <ControlTemplate>
+                                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                        <ItemsPresenter/>
+                                                    </ScrollViewer>
+                                                </ControlTemplate>
+                                            </ItemsControl.Template>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="24"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding StatusIcon}" 
+                                                                   FontWeight="Bold" FontSize="12" Padding="6,2"
+                                                                   Foreground="{Binding StatusColor, Converter={StaticResource StringToBrushConverter}}"
+                                                                   HorizontalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding ColumnName}" 
+                                                                   FontSize="10" Padding="4,2" TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding ColumnName}"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding BaselineType}" 
+                                                                   FontSize="10" Padding="4,2" Foreground="#666"/>
+                                                        <TextBlock Grid.Column="3" Text="{Binding ComparisonType}" 
+                                                                   FontSize="10" Padding="4,2" Foreground="#666"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </Border>
+                            </Expander>
                         </StackPanel>
                     </StackPanel>
                 </Border>

@@ -242,7 +242,7 @@ public class NarrativeService
             {
                 Severity = NarrativeSeverity.Critical,
                 Title = "Empty file",
-                Description = "The Parquet file contains 0 rows."
+                Description = $"The {FileFormatDetector.GetFormatDisplayName(profile.SourceFormat)} file contains 0 rows."
             });
         }
 

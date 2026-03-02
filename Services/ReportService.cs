@@ -4,7 +4,7 @@ using System.Text;
 namespace HipHipParquet.Services;
 
 /// <summary>
-/// Generates self-contained HTML QA reports with inline CSS and SVG visualizations.
+/// Generates self-contained HTML Quality reports with inline CSS and SVG visualizations.
 /// </summary>
 public class ReportService
 {
@@ -17,7 +17,7 @@ public class ReportService
         sb.AppendLine("<head>");
         sb.AppendLine("<meta charset=\"UTF-8\">");
         sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine($"<title>QA Report — {Escape(profile.FileName)}</title>");
+        sb.AppendLine($"<title>Quality Report — {Escape(profile.FileName)}</title>");
         sb.AppendLine("<style>");
         sb.AppendLine(GetCss());
         sb.AppendLine("</style>");
@@ -37,6 +37,7 @@ public class ReportService
         sb.AppendLine($"<div class=\"stat\"><span class=\"stat-value\">{profile.RowCount:N0}</span><span class=\"stat-label\">Rows</span></div>");
         sb.AppendLine($"<div class=\"stat\"><span class=\"stat-value\">{profile.ColumnCount}</span><span class=\"stat-label\">Columns</span></div>");
         sb.AppendLine($"<div class=\"stat\"><span class=\"stat-value\">{profile.FileSizeFormatted}</span><span class=\"stat-label\">File Size</span></div>");
+        sb.AppendLine($"<div class=\"stat\"><span class=\"stat-value\">{FileFormatDetector.GetFormatDisplayName(profile.SourceFormat)}</span><span class=\"stat-label\">Format</span></div>");
         sb.AppendLine($"<div class=\"stat\"><span class=\"stat-value\">{profile.OverallCompleteness:F1}%</span><span class=\"stat-label\">Completeness</span></div>");
         sb.AppendLine($"<div class=\"stat\"><span class=\"stat-value\">{profile.ColumnsWithNulls}</span><span class=\"stat-label\">Columns with Nulls</span></div>");
         sb.AppendLine("</div>");
