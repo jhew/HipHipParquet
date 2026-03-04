@@ -131,6 +131,9 @@ public partial class QualityReviewViewModel : ObservableObject
     // Active CSV import options (set when a CSV/TSV file is loaded with custom settings)
     public CsvImportOptions? ActiveCsvOptions { get; private set; }
 
+    // Active JSON import options (set when a JSON file is loaded with custom settings)
+    public JsonImportOptions? ActiveJsonOptions { get; private set; }
+
     // Convenience accessor: typed logger for transient ParquetService instances created inside this ViewModel.
     // No real logger factory is registered in this app, so we use the null logger for the service tier.
     private static Microsoft.Extensions.Logging.ILogger<ParquetService> ParquetServiceLogger =>
@@ -167,7 +170,7 @@ public partial class QualityReviewViewModel : ObservableObject
             using var parquetService = new ParquetService(ParquetServiceLogger);
             AnalysisProgress = 10;
 
-            var profile = await parquetService.GetFileProfileAsync(CurrentFilePath, ActiveCsvOptions);
+            var profile = await parquetService.GetFileProfileAsync(CurrentFilePath, ActiveCsvOptions, ActiveJsonOptions);
             AnalysisProgress = 60;
 
             // Score the profile
@@ -302,7 +305,7 @@ public partial class QualityReviewViewModel : ObservableObject
         try
         {
             using var parquetService = new ParquetService(ParquetServiceLogger);
-            var grouped = await parquetService.GetGroupedStatisticsAsync(CurrentFilePath, selectedDimensions);
+            var grouped = await parquetService.GetGroupedStatisticsAsync(CurrentFilePath, selectedDimensions, ActiveCsvOptions, ActiveJsonOptions);
 
             GroupedResults.Clear();
             foreach (var kvp in grouped.OrderByDescending(g => g.Value.RowCount))
@@ -436,10 +439,11 @@ public partial class QualityReviewViewModel : ObservableObject
     /// <summary>
     /// Sets the current file path when a new file is loaded in MainWindow.
     /// </summary>
-    public void SetFilePath(string filePath, CsvImportOptions? csvOptions = null)
+    public void SetFilePath(string filePath, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
     {
         CurrentFilePath = filePath;
         ActiveCsvOptions = csvOptions;
+        ActiveJsonOptions = jsonOptions;
         HasFile = true;
         HasProfile = false;
         HasComparison = false;

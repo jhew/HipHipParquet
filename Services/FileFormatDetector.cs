@@ -66,6 +66,34 @@ public static class FileFormatDetector
     }
 
     /// <summary>
+    /// Returns the DuckDB SQL expression with user-specified JSON import options.
+    /// </summary>
+    public static string GetDuckDbReaderExpression(string filePath, SupportedFileFormat format, JsonImportOptions? jsonOptions)
+    {
+        if (jsonOptions != null && format == SupportedFileFormat.Json)
+        {
+            var p = EscapePath(filePath);
+            var opts = jsonOptions.ToDuckDbOptions();
+            return $"read_json_auto('{p}'{opts})";
+        }
+
+        return GetDuckDbReaderExpression(filePath, format);
+    }
+
+    /// <summary>
+    /// Returns the DuckDB SQL expression using whichever import options are provided.
+    /// Dispatches to CSV or JSON overloads based on which options are non-null.
+    /// </summary>
+    public static string GetDuckDbReaderExpression(string filePath, SupportedFileFormat format,
+        CsvImportOptions? csvOptions, JsonImportOptions? jsonOptions)
+    {
+        if (jsonOptions != null && format == SupportedFileFormat.Json)
+            return GetDuckDbReaderExpression(filePath, format, jsonOptions);
+
+        return GetDuckDbReaderExpression(filePath, format, csvOptions);
+    }
+
+    /// <summary>
     /// Returns the DuckDB COPY FORMAT keyword for the given format.
     /// </summary>
     public static string GetDuckDbExportFormat(SupportedFileFormat format) => format switch
