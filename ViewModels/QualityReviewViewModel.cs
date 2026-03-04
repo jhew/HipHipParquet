@@ -82,6 +82,35 @@ public partial class QualityReviewViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<NarrativeItem> _findings = [];
 
+    // All findings (before severity filtering)
+    private List<NarrativeItem> _allFindings = [];
+
+    // Findings severity filtering
+    [ObservableProperty]
+    private string _selectedFindingFilter = "All";
+
+    [ObservableProperty]
+    private ObservableCollection<FindingSeverityGroup> _groupedFindings = [];
+
+    [ObservableProperty]
+    private int _findingsCriticalCount;
+
+    [ObservableProperty]
+    private int _findingsWarningCount;
+
+    [ObservableProperty]
+    private int _findingsInfoCount;
+
+    // Column sort
+    [ObservableProperty]
+    private string _columnSortBy = "Name";
+
+    [ObservableProperty]
+    private ObservableCollection<string> _columnSortOptions =
+    [
+        "Name", "Score \u2191", "Score \u2193", "Nulls \u2191", "Nulls \u2193"
+    ];
+
     // Dimension group-by
     [ObservableProperty]
     private ObservableCollection<DimensionItem> _availableDimensions = [];
@@ -194,7 +223,9 @@ public partial class QualityReviewViewModel : ObservableObject
             ValidityScore = profile.OverallScore.Validity;
             DistributionScore = profile.OverallScore.Distribution;
 
+            _allFindings = findings;
             Findings = new ObservableCollection<NarrativeItem>(findings);
+            RebuildGroupedFindings();
 
             // Populate available dimensions (string/categorical columns)
             AvailableDimensions.Clear();
@@ -259,7 +290,9 @@ public partial class QualityReviewViewModel : ObservableObject
             foreach (var finding in compFindings)
             {
                 Findings.Add(finding);
+                _allFindings.Add(finding);
             }
+            RebuildGroupedFindings();
 
             StatusMessage = $"Comparison complete with {ComparisonFileName} — drift score: {comparison.DriftScore:F1}/100";
         }
@@ -271,6 +304,18 @@ public partial class QualityReviewViewModel : ObservableObject
         {
             IsAnalyzing = false;
         }
+    }
+
+    [RelayCommand]
+    private void SetFindingFilter(string filter)
+    {
+        SelectedFindingFilter = filter;
+        RebuildGroupedFindings();
+    }
+
+    partial void OnColumnSortByChanged(string value)
+    {
+        ApplySortToColumns();
     }
 
     [RelayCommand]
@@ -449,7 +494,11 @@ public partial class QualityReviewViewModel : ObservableObject
         HasComparison = false;
         Comparison = null;
         Findings.Clear();
+        _allFindings.Clear();
+        GroupedFindings.Clear();
+        SelectedFindingFilter = "All";
         DisplayedColumns.Clear();
+        ColumnSortBy = "Name";
         GroupedResults.Clear();
         HasGroupedResults = false;
         IsGroupByExpanded = false;
@@ -460,6 +509,69 @@ public partial class QualityReviewViewModel : ObservableObject
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    private void RebuildGroupedFindings()
+    {
+        FindingsCriticalCount = _allFindings.Count(f => f.Severity == NarrativeSeverity.Critical);
+        FindingsWarningCount = _allFindings.Count(f => f.Severity == NarrativeSeverity.Warning);
+        FindingsInfoCount = _allFindings.Count(f => f.Severity == NarrativeSeverity.Info);
+
+        var filtered = SelectedFindingFilter switch
+        {
+            "Critical" => _allFindings.Where(f => f.Severity == NarrativeSeverity.Critical).ToList(),
+            "Warning" => _allFindings.Where(f => f.Severity == NarrativeSeverity.Warning).ToList(),
+            "Info" => _allFindings.Where(f => f.Severity == NarrativeSeverity.Info).ToList(),
+            _ => _allFindings.ToList()
+        };
+
+        var groups = new ObservableCollection<FindingSeverityGroup>();
+        var severities = new[] { NarrativeSeverity.Critical, NarrativeSeverity.Warning, NarrativeSeverity.Info };
+
+        foreach (var severity in severities)
+        {
+            var items = filtered.Where(f => f.Severity == severity).ToList();
+            if (items.Count == 0) continue;
+
+            groups.Add(new FindingSeverityGroup
+            {
+                Severity = severity,
+                Label = severity switch
+                {
+                    NarrativeSeverity.Critical => "\U0001f534 Needs Review",
+                    NarrativeSeverity.Warning => "\U0001f7e1 Fair",
+                    NarrativeSeverity.Info => "\U0001f7e2 Good",
+                    _ => "Other"
+                },
+                Color = severity switch
+                {
+                    NarrativeSeverity.Critical => "#F44336",
+                    NarrativeSeverity.Warning => "#FF9800",
+                    NarrativeSeverity.Info => "#4CAF50",
+                    _ => "#9E9E9E"
+                },
+                Count = items.Count,
+                IsExpanded = severity == NarrativeSeverity.Critical || items.Count <= 10,
+                Items = new ObservableCollection<NarrativeItem>(items)
+            });
+        }
+
+        GroupedFindings = groups;
+    }
+
+    private void ApplySortToColumns()
+    {
+        if (_allColumns.Count == 0) return;
+
+        var sorted = ColumnSortBy switch
+        {
+            "Score \u2191" => _allColumns.OrderBy(c => c.Score.Total).ToList(),
+            "Score \u2193" => _allColumns.OrderByDescending(c => c.Score.Total).ToList(),
+            "Nulls \u2191" => _allColumns.OrderBy(c => c.NullPercentage).ToList(),
+            "Nulls \u2193" => _allColumns.OrderByDescending(c => c.NullPercentage).ToList(),
+            _ => _allColumns.OrderBy(c => c.Name).ToList()
+        };
+        DisplayedColumns = new ObservableCollection<ColumnProfile>(sorted);
+    }
 
     private static FileComparison BuildComparison(FileProfile baseline, FileProfile comparison)
     {
@@ -634,4 +746,20 @@ public class SchemaDiffItem
     public string Status { get; set; } = "Match";
     public string StatusColor { get; set; } = "#9E9E9E";
     public string StatusIcon { get; set; } = "=";
+}
+
+/// <summary>
+/// A group of findings by severity level, with collapse/expand support.
+/// </summary>
+public partial class FindingSeverityGroup : ObservableObject
+{
+    public NarrativeSeverity Severity { get; set; }
+    public string Label { get; set; } = "";
+    public string Color { get; set; } = "";
+    public int Count { get; set; }
+
+    [ObservableProperty]
+    private bool _isExpanded = true;
+
+    public ObservableCollection<NarrativeItem> Items { get; set; } = [];
 }
