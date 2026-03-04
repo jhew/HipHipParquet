@@ -37,4 +37,20 @@ public class QualityScore
         >= 60 => "#FF9800", // Orange
         _ => "#F44336"      // Red
     };
+
+    /// <summary>Background color for score badge (light tint).</summary>
+    public string BadgeBackground => Total switch
+    {
+        >= 80 => "#E8F5E9",  // Light green
+        >= 60 => "#FFF3E0",  // Light orange
+        _ => "#FFEBEE"       // Light red
+    };
+
+    /// <summary>Foreground color for score badge text.</summary>
+    public string BadgeForeground => Total switch
+    {
+        >= 80 => "#2E7D32",  // Green
+        >= 60 => "#E65100",  // Orange
+        _ => "#C62828"       // Red
+    };
 }

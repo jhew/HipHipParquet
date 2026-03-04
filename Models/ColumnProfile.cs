@@ -53,6 +53,36 @@ public class ColumnProfile
 
     // Quality score (computed by QualityScoreService)
     public QualityScore Score { get; set; } = new();
+
+    // ── Display helpers for table view (type-aware formatting) ──────────
+
+    /// <summary>Formatted Min value suitable for display across all column types.</summary>
+    public string DisplayMin => Category switch
+    {
+        ColumnCategory.Numeric => Min.HasValue ? $"{Min.Value:G6}" : "—",
+        ColumnCategory.String => MinLength.HasValue ? $"len {MinLength}" : "—",
+        ColumnCategory.DateTime => MinDate ?? "—",
+        ColumnCategory.Boolean => TrueCount.HasValue ? $"T:{TrueCount}" : "—",
+        _ => "—"
+    };
+
+    /// <summary>Formatted Max value suitable for display across all column types.</summary>
+    public string DisplayMax => Category switch
+    {
+        ColumnCategory.Numeric => Max.HasValue ? $"{Max.Value:G6}" : "—",
+        ColumnCategory.String => MaxLength.HasValue ? $"len {MaxLength}" : "—",
+        ColumnCategory.DateTime => MaxDate ?? "—",
+        ColumnCategory.Boolean => FalseCount.HasValue ? $"F:{FalseCount}" : "—",
+        _ => "—"
+    };
+
+    /// <summary>Formatted Mean value suitable for display across all column types.</summary>
+    public string DisplayMean => Category switch
+    {
+        ColumnCategory.Numeric => Mean.HasValue ? $"{Mean.Value:G6}" : "—",
+        ColumnCategory.String => AvgLength.HasValue ? $"avg {AvgLength.Value:F1}" : "—",
+        _ => "—"
+    };
 }
 
 /// <summary>

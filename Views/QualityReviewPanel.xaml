@@ -229,31 +229,173 @@
                             <Run Text="{Binding Findings.Count, StringFormat='({0})', Mode=OneWay}" Foreground="Gray"/>
                         </TextBlock>
                         
-                        <ItemsControl ItemsSource="{Binding Findings}" MaxHeight="250">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Margin="0,0,0,4" Padding="8,6" CornerRadius="4"
-                                            BorderThickness="0,0,0,2">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="Background" Value="#F5F5F5"/>
-                                                <Setter Property="BorderBrush" Value="#E0E0E0"/>
-                                            </Style>
-                                        </Border.Style>
-                                        <StackPanel>
-                                            <StackPanel Orientation="Horizontal">
-                                                <Ellipse Width="10" Height="10" Margin="0,1,6,0" VerticalAlignment="Center"
-                                                         Fill="{Binding SeverityColor, Converter={StaticResource StringToBrushConverter}}"/>
-                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="11"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding Description}" FontSize="10" Foreground="#666"
-                                                       TextWrapping="Wrap" Margin="18,2,0,0"/>
+                        <!-- Severity filter chips -->
+                        <WrapPanel Margin="0,0,0,8">
+                            <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="All"
+                                    Padding="8,3" Margin="0,0,4,4" FontSize="10" Cursor="Hand"
+                                    BorderThickness="1" BorderBrush="#CCC">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="White"/>
+                                        <Setter Property="Foreground" Value="#666"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFindingFilter}" Value="All">
+                                                <Setter Property="Background" Value="#512BD4"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                                <Setter Property="BorderBrush" Value="#512BD4"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <TextBlock>
+                                    <Run Text="All"/>
+                                    <Run Text="{Binding Findings.Count, StringFormat=' ({0})', Mode=OneWay}"/>
+                                </TextBlock>
+                            </Button>
+                            
+                            <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="Critical"
+                                    Padding="8,3" Margin="0,0,4,4" FontSize="10" Cursor="Hand"
+                                    BorderThickness="1" BorderBrush="#CCC">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="White"/>
+                                        <Setter Property="Foreground" Value="#666"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFindingFilter}" Value="Critical">
+                                                <Setter Property="Background" Value="#F44336"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                                <Setter Property="BorderBrush" Value="#F44336"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <TextBlock>
+                                    <Run Text="🔴 Needs Review"/>
+                                    <Run Text="{Binding FindingsCriticalCount, StringFormat=' ({0})', Mode=OneWay}"/>
+                                </TextBlock>
+                            </Button>
+                            
+                            <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="Warning"
+                                    Padding="8,3" Margin="0,0,4,4" FontSize="10" Cursor="Hand"
+                                    BorderThickness="1" BorderBrush="#CCC">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="White"/>
+                                        <Setter Property="Foreground" Value="#666"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFindingFilter}" Value="Warning">
+                                                <Setter Property="Background" Value="#FF9800"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                                <Setter Property="BorderBrush" Value="#FF9800"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <TextBlock>
+                                    <Run Text="🟡 Fair"/>
+                                    <Run Text="{Binding FindingsWarningCount, StringFormat=' ({0})', Mode=OneWay}"/>
+                                </TextBlock>
+                            </Button>
+                            
+                            <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="Info"
+                                    Padding="8,3" Margin="0,0,4,4" FontSize="10" Cursor="Hand"
+                                    BorderThickness="1" BorderBrush="#CCC">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="White"/>
+                                        <Setter Property="Foreground" Value="#666"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFindingFilter}" Value="Info">
+                                                <Setter Property="Background" Value="#4CAF50"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                                <Setter Property="BorderBrush" Value="#4CAF50"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <TextBlock>
+                                    <Run Text="🟢 Good"/>
+                                    <Run Text="{Binding FindingsInfoCount, StringFormat=' ({0})', Mode=OneWay}"/>
+                                </TextBlock>
+                            </Button>
+                        </WrapPanel>
+                        
+                        <!-- Scrollable grouped findings -->
+                        <ScrollViewer MaxHeight="500" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding GroupedFindings}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,0,0,4">
+                                            <!-- Group header (toggle) -->
+                                            <ToggleButton IsChecked="{Binding IsExpanded}"
+                                                          Background="Transparent" BorderThickness="0"
+                                                          HorizontalContentAlignment="Stretch"
+                                                          Cursor="Hand" Padding="4,4">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                                               FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                                                    <Border Grid.Column="1" Background="#E8E8E8" CornerRadius="8"
+                                                            Padding="6,1" VerticalAlignment="Center" Margin="6,0">
+                                                        <TextBlock Text="{Binding Count}" FontSize="10" FontWeight="SemiBold" Foreground="#555"/>
+                                                    </Border>
+                                                    <TextBlock Grid.Column="2" FontSize="10" Foreground="#999" VerticalAlignment="Center" Margin="4,0,0,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="▶"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                                                        <Setter Property="Text" Value="▼"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Grid>
+                                            </ToggleButton>
+                                            
+                                            <!-- Group items (visible when expanded) -->
+                                            <ItemsControl ItemsSource="{Binding Items}">
+                                                <ItemsControl.Style>
+                                                    <Style TargetType="ItemsControl">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ItemsControl.Style>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Margin="16,0,0,3" Padding="8,4" CornerRadius="3"
+                                                                BorderThickness="0,0,0,1">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="#FAFAFA"/>
+                                                                    <Setter Property="BorderBrush" Value="#F0F0F0"/>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="10"
+                                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                                                                <TextBlock Text="{Binding Description}" FontSize="9" Foreground="#888"
+                                                                           TextWrapping="Wrap" Margin="0,1,0,0" MaxHeight="32"
+                                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
                                         </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
                     </StackPanel>
                 </Border>
                 
@@ -288,37 +430,49 @@
                 <Border Style="{StaticResource SectionCard}"
                         Visibility="{Binding HasProfile, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
-                        <!-- Toggle header -->
-                        <Button Command="{Binding ToggleColumnProfilesExpandedCommand}"
-                                Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
-                                Cursor="Hand" Padding="0" Margin="0,0,0,6">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
+                        <!-- Header with toggle and sort -->
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Command="{Binding ToggleColumnProfilesExpandedCommand}"
+                                    Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    Cursor="Hand" Padding="0">
                                 <TextBlock FontWeight="Bold" FontSize="13">
                                     <Run Text="📊 Column Profiles"/>
                                     <Run Text="{Binding DisplayedColumns.Count, StringFormat='({0})', Mode=OneWay}" Foreground="Gray"/>
                                 </TextBlock>
-                                <TextBlock Grid.Column="1" FontSize="12" Foreground="#512BD4" VerticalAlignment="Center">
+                            </Button>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                                <TextBlock Text="Sort:" FontSize="10" Foreground="#999" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <ComboBox ItemsSource="{Binding ColumnSortOptions}"
+                                          SelectedItem="{Binding ColumnSortBy}"
+                                          FontSize="10" Width="80" Padding="4,2"/>
+                            </StackPanel>
+                            <Button Grid.Column="2" Command="{Binding ToggleColumnProfilesExpandedCommand}"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand" Padding="0"
+                                    VerticalAlignment="Center">
+                                <TextBlock FontSize="12" Foreground="#512BD4">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
-                                            <Setter Property="Text" Value="▶ Expand"/>
+                                            <Setter Property="Text" Value="▶"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsColumnProfilesExpanded}" Value="True">
-                                                    <Setter Property="Text" Value="▼ Collapse"/>
+                                                    <Setter Property="Text" Value="▼"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                            </Grid>
-                        </Button>
+                            </Button>
+                        </Grid>
 
-                        <ItemsControl ItemsSource="{Binding DisplayedColumns}">
-                            <ItemsControl.Style>
-                                <Style TargetType="ItemsControl">
+                        <!-- Table content (collapsible) -->
+                        <StackPanel>
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsColumnProfilesExpanded}" Value="True">
@@ -326,151 +480,163 @@
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
-                            </ItemsControl.Style>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="White" BorderBrush="#E8E8E8" BorderThickness="1"
-                                            CornerRadius="4" Margin="0,0,0,8" Padding="10">
-                                        <StackPanel>
-                                            <!-- Column header -->
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="12"/>
-                                                    <TextBlock FontSize="10" Foreground="Gray">
-                                                        <Run Text="{Binding DuckDbType, Mode=OneWay}"/>
-                                                        <Run Text=" · "/>
-                                                        <Run Text="{Binding Category, Mode=OneWay}"/>
-                                                    </TextBlock>
-                                                </StackPanel>
-                                                <Border Grid.Column="1" CornerRadius="10" Padding="8,2"
-                                                        VerticalAlignment="Center">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="Background" Value="#E8F5E9"/>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <TextBlock FontSize="11" FontWeight="Bold"
-                                                               Text="{Binding Score.Total, StringFormat={}{0:F0}}"/>
-                                                </Border>
-                                            </Grid>
-                                            
-                                            <!-- Stats grid -->
-                                            <Grid Margin="0,6,0,0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition/>
-                                                    <RowDefinition/>
-                                                </Grid.RowDefinitions>
-                                                
-                                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,4,4">
-                                                    <TextBlock Text="Nulls" FontSize="9" Foreground="Gray"/>
-                                                    <TextBlock FontSize="11" FontWeight="SemiBold">
-                                                        <Run Text="{Binding NullPercentage, StringFormat={}{0:F1}%, Mode=OneWay}"/>
-                                                    </TextBlock>
-                                                </StackPanel>
-                                                
-                                                <StackPanel Grid.Row="0" Grid.Column="1" Margin="4,0,4,4">
-                                                    <TextBlock Text="Distinct" FontSize="9" Foreground="Gray"/>
-                                                    <TextBlock FontSize="11" FontWeight="SemiBold"
-                                                               Text="{Binding DistinctCount, StringFormat={}{0:N0}}"/>
-                                                </StackPanel>
-                                                
-                                                <StackPanel Grid.Row="0" Grid.Column="2" Margin="4,0,0,4">
-                                                    <TextBlock Text="Complete" FontSize="9" Foreground="Gray"/>
-                                                    <TextBlock FontSize="11" FontWeight="SemiBold">
-                                                        <Run Text="{Binding Completeness, StringFormat={}{0:F1}%, Mode=OneWay}"/>
-                                                    </TextBlock>
-                                                </StackPanel>
-                                                
-                                                <!-- Numeric-specific row -->
-                                                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,4,0">
-                                                    <TextBlock Text="Min" FontSize="9" Foreground="Gray"/>
-                                                    <TextBlock FontSize="11" Text="{Binding Min, StringFormat={}{0:G6}, TargetNullValue=—}"/>
-                                                </StackPanel>
-                                                
-                                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="4,0,4,0">
-                                                    <TextBlock Text="Mean" FontSize="9" Foreground="Gray"/>
-                                                    <TextBlock FontSize="11" Text="{Binding Mean, StringFormat={}{0:G6}, TargetNullValue=—}"/>
-                                                </StackPanel>
-                                                
-                                                <StackPanel Grid.Row="1" Grid.Column="2" Margin="4,0,0,0">
-                                                    <TextBlock Text="Max" FontSize="9" Foreground="Gray"/>
-                                                    <TextBlock FontSize="11" Text="{Binding Max, StringFormat={}{0:G6}, TargetNullValue=—}"/>
-                                                </StackPanel>
-                                            </Grid>
-                                            
-                                            <!-- Sparkline (numeric columns with histogram data) -->
-                                            <controls:SparklineControl Buckets="{Binding Histogram}" 
-                                                                       Margin="0,6,0,0"
-                                                                       Height="30"/>
-                                            
-                                            <!-- Per-column quality dimension scores -->
-                                            <Grid Margin="0,6,0,0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.Column="0" Margin="0,0,3,0">
-                                                    <TextBlock Text="C" FontSize="8" Foreground="Gray" HorizontalAlignment="Center" ToolTip="Completeness"/>
-                                                    <ProgressBar Height="4" Maximum="25" Value="{Binding Score.Completeness}" Foreground="#4CAF50" Background="#E8E8E8"/>
-                                                    <TextBlock Text="{Binding Score.Completeness, StringFormat={}{0:F0}}" FontSize="8" Foreground="Gray" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="1" Margin="3,0,3,0">
-                                                    <TextBlock Text="U" FontSize="8" Foreground="Gray" HorizontalAlignment="Center" ToolTip="Uniqueness"/>
-                                                    <ProgressBar Height="4" Maximum="25" Value="{Binding Score.Uniqueness}" Foreground="#2196F3" Background="#E8E8E8"/>
-                                                    <TextBlock Text="{Binding Score.Uniqueness, StringFormat={}{0:F0}}" FontSize="8" Foreground="Gray" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="2" Margin="3,0,3,0">
-                                                    <TextBlock Text="V" FontSize="8" Foreground="Gray" HorizontalAlignment="Center" ToolTip="Validity"/>
-                                                    <ProgressBar Height="4" Maximum="25" Value="{Binding Score.Validity}" Foreground="#FF9800" Background="#E8E8E8"/>
-                                                    <TextBlock Text="{Binding Score.Validity, StringFormat={}{0:F0}}" FontSize="8" Foreground="Gray" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="3" Margin="3,0,0,0">
-                                                    <TextBlock Text="D" FontSize="8" Foreground="Gray" HorizontalAlignment="Center" ToolTip="Distribution"/>
-                                                    <ProgressBar Height="4" Maximum="25" Value="{Binding Score.Distribution}" Foreground="#9C27B0" Background="#E8E8E8"/>
-                                                    <TextBlock Text="{Binding Score.Distribution, StringFormat={}{0:F0}}" FontSize="8" Foreground="Gray" HorizontalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Grid>
-                                            
-                                            <!-- Top values -->
-                                            <ItemsControl ItemsSource="{Binding TopValues}" Margin="0,4,0,0">
+                            </StackPanel.Style>
+
+                            <!-- Horizontal + Vertical scrollable table -->
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <StackPanel MinWidth="720">
+                                    <!-- Table header -->
+                                    <Border Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4,4,0,0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120"/>
+                                                <ColumnDefinition Width="64"/>
+                                                <ColumnDefinition Width="36"/>
+                                                <ColumnDefinition Width="22"/>
+                                                <ColumnDefinition Width="22"/>
+                                                <ColumnDefinition Width="22"/>
+                                                <ColumnDefinition Width="22"/>
+                                                <ColumnDefinition Width="48"/>
+                                                <ColumnDefinition Width="50"/>
+                                                <ColumnDefinition Width="70"/>
+                                                <ColumnDefinition Width="70"/>
+                                                <ColumnDefinition Width="70"/>
+                                                <ColumnDefinition Width="*" MinWidth="80"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="COLUMN" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="6,5"/>
+                                            <TextBlock Grid.Column="1" Text="TYPE" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
+                                            <TextBlock Grid.Column="2" Text="SCR" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="2,5" HorizontalAlignment="Center"/>
+                                            <TextBlock Grid.Column="3" Text="C" FontSize="9" FontWeight="Bold" Foreground="#4CAF50" Padding="0,5" HorizontalAlignment="Center" ToolTip="Completeness"/>
+                                            <TextBlock Grid.Column="4" Text="U" FontSize="9" FontWeight="Bold" Foreground="#2196F3" Padding="0,5" HorizontalAlignment="Center" ToolTip="Uniqueness"/>
+                                            <TextBlock Grid.Column="5" Text="V" FontSize="9" FontWeight="Bold" Foreground="#FF9800" Padding="0,5" HorizontalAlignment="Center" ToolTip="Validity"/>
+                                            <TextBlock Grid.Column="6" Text="D" FontSize="9" FontWeight="Bold" Foreground="#9C27B0" Padding="0,5" HorizontalAlignment="Center" ToolTip="Distribution"/>
+                                            <TextBlock Grid.Column="7" Text="NULLS" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="2,5"/>
+                                            <TextBlock Grid.Column="8" Text="DIST" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="2,5" ToolTip="Distinct values"/>
+                                            <TextBlock Grid.Column="9" Text="MIN" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
+                                            <TextBlock Grid.Column="10" Text="MAX" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
+                                            <TextBlock Grid.Column="11" Text="MEAN" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
+                                            <TextBlock Grid.Column="12" Text="DISTRIBUTION" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Table rows -->
+                                    <Border BorderBrush="#E0E0E0" BorderThickness="1,0,1,1" CornerRadius="0,0,4,4">
+                                        <ScrollViewer MaxHeight="500" VerticalScrollBarVisibility="Auto">
+                                            <ItemsControl ItemsSource="{Binding DisplayedColumns}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Grid Margin="0,1">
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="*"/>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                            </Grid.ColumnDefinitions>
+                                                        <Border BorderBrush="#F0F0F0" BorderThickness="0,0,0,1" Padding="0,2">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="White"/>
+                                                                    <Style.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter Property="Background" Value="#FAFAFA"/>
+                                                                        </Trigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <Border.ToolTip>
+                                                                <StackPanel MaxWidth="240">
+                                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="12" Margin="0,0,0,4"/>
+                                                                    <TextBlock FontSize="11">
+                                                                        <Run Text="Type: "/><Run Text="{Binding DuckDbType, Mode=OneWay}"/>
+                                                                        <Run Text="  ·  "/><Run Text="{Binding Category, Mode=OneWay}"/>
+                                                                    </TextBlock>
+                                                                    <TextBlock FontSize="11">
+                                                                        <Run Text="Completeness: "/><Run Text="{Binding Completeness, StringFormat={}{0:F1}%, Mode=OneWay}"/>
+                                                                    </TextBlock>
+                                                                    <TextBlock FontSize="11" Text="{Binding Median, StringFormat='Median: {0:G6}', TargetNullValue=''}"/>
+                                                                    <TextBlock FontSize="11" Text="{Binding StdDev, StringFormat='StdDev: {0:G6}', TargetNullValue=''}"/>
+                                                                    <TextBlock FontSize="11" Text="{Binding Q1, StringFormat='Q1: {0:G6}', TargetNullValue=''}"/>
+                                                                    <TextBlock FontSize="11" Text="{Binding Q3, StringFormat='Q3: {0:G6}', TargetNullValue=''}"/>
+                                                                    <TextBlock FontSize="11">
+                                                                        <Run Text="Outliers: "/><Run Text="{Binding OutlierPercentage, StringFormat={}{0:F1}%, Mode=OneWay}"/>
+                                                                    </TextBlock>
+                                                                </StackPanel>
+                                                            </Border.ToolTip>
                                                             <Grid>
-                                                                <ProgressBar Value="{Binding Percentage}" Maximum="100"
-                                                                             Height="16" Foreground="#E8EAF6" Background="#F5F5F5"
-                                                                             BorderThickness="0"/>
-                                                                <TextBlock Text="{Binding Value}" FontSize="9" Margin="4,0,0,0"
-                                                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="120"/>
+                                                                    <ColumnDefinition Width="64"/>
+                                                                    <ColumnDefinition Width="36"/>
+                                                                    <ColumnDefinition Width="22"/>
+                                                                    <ColumnDefinition Width="22"/>
+                                                                    <ColumnDefinition Width="22"/>
+                                                                    <ColumnDefinition Width="22"/>
+                                                                    <ColumnDefinition Width="48"/>
+                                                                    <ColumnDefinition Width="50"/>
+                                                                    <ColumnDefinition Width="70"/>
+                                                                    <ColumnDefinition Width="70"/>
+                                                                    <ColumnDefinition Width="70"/>
+                                                                    <ColumnDefinition Width="*" MinWidth="80"/>
+                                                                </Grid.ColumnDefinitions>
+
+                                                                <!-- Column name -->
+                                                                <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="10" FontWeight="SemiBold"
+                                                                           Padding="6,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+
+                                                                <!-- Type -->
+                                                                <TextBlock Grid.Column="1" Text="{Binding DuckDbType}" FontSize="9" Foreground="#888"
+                                                                           Padding="3,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+
+                                                                <!-- Score badge -->
+                                                                <Border Grid.Column="2" CornerRadius="8" Padding="3,1" Margin="1"
+                                                                        Background="{Binding Score.BadgeBackground, Converter={StaticResource StringToBrushConverter}}"
+                                                                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                    <TextBlock Text="{Binding Score.Total, StringFormat={}{0:F0}}" FontSize="9" FontWeight="Bold"
+                                                                               Foreground="{Binding Score.BadgeForeground, Converter={StaticResource StringToBrushConverter}}"
+                                                                               HorizontalAlignment="Center"/>
+                                                                </Border>
+
+                                                                <!-- C U V D dimension scores -->
+                                                                <TextBlock Grid.Column="3" Text="{Binding Score.Completeness, StringFormat={}{0:F0}}"
+                                                                           FontSize="8" Foreground="#4CAF50" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                <TextBlock Grid.Column="4" Text="{Binding Score.Uniqueness, StringFormat={}{0:F0}}"
+                                                                           FontSize="8" Foreground="#2196F3" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                <TextBlock Grid.Column="5" Text="{Binding Score.Validity, StringFormat={}{0:F0}}"
+                                                                           FontSize="8" Foreground="#FF9800" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                <TextBlock Grid.Column="6" Text="{Binding Score.Distribution, StringFormat={}{0:F0}}"
+                                                                           FontSize="8" Foreground="#9C27B0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+                                                                <!-- Nulls -->
+                                                                <TextBlock Grid.Column="7" FontSize="9" Foreground="#555" Padding="2,2" VerticalAlignment="Center">
+                                                                    <Run Text="{Binding NullPercentage, StringFormat={}{0:F1}%, Mode=OneWay}"/>
+                                                                </TextBlock>
+
+                                                                <!-- Distinct -->
+                                                                <TextBlock Grid.Column="8" Text="{Binding DistinctCount, StringFormat={}{0:N0}}"
+                                                                           FontSize="9" Foreground="#555" Padding="2,2" VerticalAlignment="Center"/>
+
+                                                                <!-- Min -->
+                                                                <TextBlock Grid.Column="9" Text="{Binding DisplayMin}" FontSize="9" Foreground="#555"
+                                                                           Padding="3,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                                           ToolTip="{Binding DisplayMin}"/>
+
+                                                                <!-- Max -->
+                                                                <TextBlock Grid.Column="10" Text="{Binding DisplayMax}" FontSize="9" Foreground="#555"
+                                                                           Padding="3,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                                           ToolTip="{Binding DisplayMax}"/>
+
+                                                                <!-- Mean -->
+                                                                <TextBlock Grid.Column="11" Text="{Binding DisplayMean}" FontSize="9" Foreground="#555"
+                                                                           Padding="3,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                                           ToolTip="{Binding DisplayMean}"/>
+
+                                                                <!-- Distribution sparkline -->
+                                                                <controls:SparklineControl Grid.Column="12" Buckets="{Binding Histogram}"
+                                                                                           Height="20" Margin="3,1,3,1"
+                                                                                           VerticalAlignment="Center"/>
                                                             </Grid>
-                                                            <TextBlock Grid.Column="1" FontSize="9" Foreground="Gray"
-                                                                       Margin="6,0,0,0" VerticalAlignment="Center">
-                                                                <Run Text="{Binding Percentage, StringFormat={}{0:F1}%, Mode=OneWay}"/>
-                                                            </TextBlock>
-                                                        </Grid>
+                                                        </Border>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
-                                        </StackPanel>
+                                        </ScrollViewer>
                                     </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
                 
