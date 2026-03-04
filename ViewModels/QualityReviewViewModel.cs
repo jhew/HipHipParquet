@@ -496,8 +496,12 @@ public partial class QualityReviewViewModel : ObservableObject
         Findings.Clear();
         _allFindings.Clear();
         GroupedFindings.Clear();
+        FindingsCriticalCount = 0;
+        FindingsWarningCount = 0;
+        FindingsInfoCount = 0;
         SelectedFindingFilter = "All";
         DisplayedColumns.Clear();
+        _allColumns.Clear();
         ColumnSortBy = "Name";
         GroupedResults.Clear();
         HasGroupedResults = false;
@@ -560,15 +564,21 @@ public partial class QualityReviewViewModel : ObservableObject
 
     private void ApplySortToColumns()
     {
-        if (_allColumns.Count == 0) return;
+        // Sort the currently displayed (potentially filtered) set so active filters are preserved.
+        // Fall back to _allColumns only when DisplayedColumns hasn't been populated yet.
+        var source = (DisplayedColumns != null && DisplayedColumns.Count > 0)
+            ? (IEnumerable<ColumnProfile>)DisplayedColumns
+            : _allColumns;
+
+        if (!source.Any()) return;
 
         var sorted = ColumnSortBy switch
         {
-            "Score \u2191" => _allColumns.OrderBy(c => c.Score.Total).ToList(),
-            "Score \u2193" => _allColumns.OrderByDescending(c => c.Score.Total).ToList(),
-            "Nulls \u2191" => _allColumns.OrderBy(c => c.NullPercentage).ToList(),
-            "Nulls \u2193" => _allColumns.OrderByDescending(c => c.NullPercentage).ToList(),
-            _ => _allColumns.OrderBy(c => c.Name).ToList()
+            "Score \u2191" => source.OrderBy(c => c.Score.Total).ToList(),
+            "Score \u2193" => source.OrderByDescending(c => c.Score.Total).ToList(),
+            "Nulls \u2191" => source.OrderBy(c => c.NullPercentage).ToList(),
+            "Nulls \u2193" => source.OrderByDescending(c => c.NullPercentage).ToList(),
+            _ => source.OrderBy(c => c.Name).ToList()
         };
         DisplayedColumns = new ObservableCollection<ColumnProfile>(sorted);
     }
