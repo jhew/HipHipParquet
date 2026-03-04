@@ -37,7 +37,7 @@ public class ParquetService : IDisposable
     /// Detects STRUCT/nested columns in a JSON file and returns a flattening SELECT expression.
     /// Returns null if no STRUCT columns are found.
     /// </summary>
-    public async Task<string?> GetFlattenedQueryAsync(string filePath, CsvImportOptions? csvOptions = null)
+    public async Task<string?> GetFlattenedQueryAsync(string filePath, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
     {
         try
         {
@@ -46,7 +46,7 @@ public class ParquetService : IDisposable
 
             var normalizedPath = filePath.Replace("\\", "/");
             var format = FileFormatDetector.DetectFormat(filePath);
-            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions);
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
 
             // Describe columns
             var describeSql = $"DESCRIBE SELECT * FROM {readerExpr}";
@@ -168,7 +168,7 @@ public class ParquetService : IDisposable
         }
     }
     
-    public async Task<DataTable> LoadFileAsync(string filePath, CsvImportOptions? csvOptions = null, int? rowLimit = null)
+    public async Task<DataTable> LoadFileAsync(string filePath, CsvImportOptions? csvOptions = null, int? rowLimit = null, JsonImportOptions? jsonOptions = null)
     {
         try
         {
@@ -185,7 +185,7 @@ public class ParquetService : IDisposable
             if (format == SupportedFileFormat.Excel)
                 await EnsureExcelExtensionAsync(_connection);
             
-            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions);
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
             var limitClause = rowLimit.HasValue ? $" LIMIT {rowLimit.Value}" : "";
             var sql = $"SELECT * FROM {readerExpr}{limitClause}";
             _logger.LogDebug("Executing SQL: {SQL}", sql);
@@ -230,7 +230,7 @@ public class ParquetService : IDisposable
         }
     }
     
-    public async Task<DataFileInfo> GetFileInfoAsync(string filePath, CsvImportOptions? csvOptions = null)
+    public async Task<DataFileInfo> GetFileInfoAsync(string filePath, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
     {
         try
         {
@@ -251,7 +251,7 @@ public class ParquetService : IDisposable
             if (format == SupportedFileFormat.Excel)
                 await EnsureExcelExtensionAsync(_connection);
 
-            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions);
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
             
             // Get schema information using DuckDB reader
             _logger.LogInformation("Getting schema for file: {FilePath}", normalizedPath);
@@ -273,8 +273,8 @@ public class ParquetService : IDisposable
                 });
             }
             
-            // Get row count (pass csvOptions so custom delimiters/skip-rows are applied)
-            var rowCount = await GetRowCountAsync(normalizedPath, format, csvOptions);
+            // Get row count (pass csvOptions/jsonOptions so custom delimiters/skip-rows are applied)
+            var rowCount = await GetRowCountAsync(normalizedPath, format, csvOptions, jsonOptions);
             
             return new DataFileInfo
             {
@@ -291,9 +291,9 @@ public class ParquetService : IDisposable
         }
     }
     
-    private async Task<long> GetRowCountAsync(string filePath, SupportedFileFormat format, CsvImportOptions? csvOptions = null)
+    private async Task<long> GetRowCountAsync(string filePath, SupportedFileFormat format, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
     {
-        var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(filePath, format, csvOptions);
+        var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(filePath, format, csvOptions, jsonOptions);
         var sql = $"SELECT COUNT(*) FROM {readerExpr}";
         using var command = new DuckDBCommand(sql, _connection!);
         var result = await command.ExecuteScalarAsync();
@@ -303,7 +303,7 @@ public class ParquetService : IDisposable
     /// <summary>
     /// Gets the total row count for a file without loading any data. Uses a fresh connection.
     /// </summary>
-    public async Task<long> GetTotalRowCountAsync(string filePath, CsvImportOptions? csvOptions = null)
+    public async Task<long> GetTotalRowCountAsync(string filePath, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
     {
         using var connection = new DuckDBConnection("DataSource=:memory:");
         await connection.OpenAsync();
@@ -314,7 +314,7 @@ public class ParquetService : IDisposable
         if (format == SupportedFileFormat.Excel)
             await EnsureExcelExtensionAsync(connection);
 
-        var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions);
+        var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
         var sql = $"SELECT COUNT(*) FROM {readerExpr}";
         using var cmd = new DuckDBCommand(sql, connection);
         var result = await cmd.ExecuteScalarAsync();
@@ -440,7 +440,7 @@ public class ParquetService : IDisposable
     /// <summary>
     /// Generates a comprehensive FileProfile with per-column statistics using DuckDB aggregate SQL.
     /// </summary>
-    public async Task<FileProfile> GetFileProfileAsync(string filePath, CsvImportOptions? csvOptions = null)
+    public async Task<FileProfile> GetFileProfileAsync(string filePath, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
     {
         try
         {
@@ -457,7 +457,7 @@ public class ParquetService : IDisposable
             if (format == SupportedFileFormat.Excel)
                 await EnsureExcelExtensionAsync(connection);
 
-            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(escapedPath, format, csvOptions);
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(escapedPath, format, csvOptions, jsonOptions);
 
             // Get schema
             var columns = new List<(string Name, string Type, bool IsNullable)>();
@@ -723,7 +723,7 @@ public class ParquetService : IDisposable
     /// Generates grouped statistics for a file, grouped by the specified dimension columns.
     /// Returns a dictionary mapping group key strings to their FileProfile.
     /// </summary>
-    public async Task<Dictionary<string, FileProfile>> GetGroupedStatisticsAsync(string filePath, List<string> groupByColumns, CsvImportOptions? csvOptions = null)
+    public async Task<Dictionary<string, FileProfile>> GetGroupedStatisticsAsync(string filePath, List<string> groupByColumns, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
     {
         try
         {
@@ -738,7 +738,7 @@ public class ParquetService : IDisposable
             if (format == SupportedFileFormat.Excel)
                 await EnsureExcelExtensionAsync(connection);
 
-            var src = FileFormatDetector.GetDuckDbReaderExpression(escapedPath, format, csvOptions);
+            var src = FileFormatDetector.GetDuckDbReaderExpression(escapedPath, format, csvOptions, jsonOptions);
             var groupByCols = string.Join(", ", groupByColumns.Select(c => $"\"{c}\""));
 
             // Get distinct group values

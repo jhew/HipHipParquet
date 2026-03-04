@@ -20,8 +20,16 @@ public class CsvImportOptions
     /// <summary>Number of rows to skip from the top before reading.</summary>
     public int SkipRows { get; set; } = 0;
 
+    /// <summary>When true, malformed rows are silently skipped instead of aborting the read.</summary>
+    public bool IgnoreErrors { get; set; } = false;
+
+    /// <summary>When true, rows with fewer columns than the header are padded with NULLs.</summary>
+    public bool NullPadding { get; set; } = false;
+
     /// <summary>True if all settings are auto-detect (default).</summary>
-    public bool IsAutoDetect => Delimiter == "auto" && HasHeader && QuoteChar == "\"" && Encoding == "auto" && SkipRows == 0;
+    public bool IsAutoDetect => Delimiter == "auto" && HasHeader && QuoteChar == "\"" &&
+                                 Encoding == "auto" && SkipRows == 0 &&
+                                 !IgnoreErrors && !NullPadding;
 
     /// <summary>Returns the default auto-detect options.</summary>
     public static CsvImportOptions AutoDetect => new();
@@ -53,9 +61,13 @@ public class CsvImportOptions
         }
 
         if (SkipRows > 0)
-        {
             parts.Add($"skip={SkipRows}");
-        }
+
+        if (IgnoreErrors)
+            parts.Add("ignore_errors=true");
+
+        if (NullPadding)
+            parts.Add("null_padding=true");
 
         return parts.Count > 0 ? ", " + string.Join(", ", parts) : string.Empty;
     }

@@ -36,6 +36,7 @@ public partial class MainWindow : Window
     private int _currentRowLimit = RowLimitBatch;
     private long _totalRowCount;
     private CsvImportOptions? _activeCsvOptions;
+    private JsonImportOptions? _activeJsonOptions;
     private SupportedFileFormat _currentFormat;
 
     // ── File watcher ─────────────────────────────────────────────────────
@@ -109,7 +110,18 @@ public partial class MainWindow : Window
         {
             var fileToLoad = _pendingFileToLoad;
             _pendingFileToLoad = null;
-            await LoadFileAsync(fileToLoad);
+
+            var format = Services.FileFormatDetector.DetectFormat(fileToLoad);
+            if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
+            {
+                var result = ShowFileImportDialog(fileToLoad, format);
+                if (result.Imported)
+                    await LoadFileAsync(fileToLoad, result.CsvOptions, jsonOptions: result.JsonOptions);
+            }
+            else
+            {
+                await LoadFileAsync(fileToLoad);
+            }
         }
     }
 
@@ -130,8 +142,43 @@ public partial class MainWindow : Window
 
         if (openFileDialog.ShowDialog() == true)
         {
-            await LoadFileAsync(openFileDialog.FileName);
+            var filePath = openFileDialog.FileName;
+            var format = Services.FileFormatDetector.DetectFormat(filePath);
+
+            // Show the import settings dialog for CSV/TSV/JSON files
+            if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
+            {
+                var result = ShowFileImportDialog(filePath, format);
+                if (!result.Imported) return;
+
+                await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
+            }
+            else
+            {
+                await LoadFileAsync(filePath);
+            }
         }
+    }
+
+    /// <summary>
+    /// Shows the unified FileImportDialog for CSV/TSV/JSON files and returns the result.
+    /// </summary>
+    private (bool Imported, CsvImportOptions? CsvOptions, JsonImportOptions? JsonOptions) ShowFileImportDialog(
+        string filePath, SupportedFileFormat format,
+        CsvImportOptions? existingCsvOptions = null, JsonImportOptions? existingJsonOptions = null)
+    {
+        var dialog = new FileImportDialog { Owner = this };
+        dialog.SetFile(filePath, format);
+
+        if (existingCsvOptions != null)
+            dialog.PrePopulateCsvOptions(existingCsvOptions);
+        if (existingJsonOptions != null)
+            dialog.PrePopulateJsonOptions(existingJsonOptions);
+
+        if (dialog.ShowDialog() == true)
+            return (true, dialog.CsvResult, dialog.JsonResult);
+
+        return (false, null, null);
     }
     
     private void OnToggleSchemaPaneClick(object sender, RoutedEventArgs e)
@@ -549,7 +596,7 @@ public partial class MainWindow : Window
         ApplyFilters();
     }
 
-    private async Task LoadFileAsync(string filePath, CsvImportOptions? csvOptions = null, int? rowLimit = null)
+    private async Task LoadFileAsync(string filePath, CsvImportOptions? csvOptions = null, int? rowLimit = null, JsonImportOptions? jsonOptions = null)
     {
         try
         {
@@ -559,6 +606,7 @@ public partial class MainWindow : Window
             var format = Services.FileFormatDetector.DetectFormat(filePath);
             _currentFormat = format;
             _activeCsvOptions = csvOptions;
+            _activeJsonOptions = jsonOptions;
 
             // Show info bar for unknown extensions defaulting to CSV (saved for after the main status line)
             bool isUnknownExtension = Services.FileFormatDetector.IsUnknownExtension(filePath);
@@ -574,12 +622,12 @@ public partial class MainWindow : Window
             _parquetService = new ParquetService(logger!);
             
             // Load file info and data (with row limit)
-            var fileInfo = await _parquetService.GetFileInfoAsync(filePath, csvOptions);
+            var fileInfo = await _parquetService.GetFileInfoAsync(filePath, csvOptions, jsonOptions);
             _totalRowCount = fileInfo.RowCount;
 
             ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
             var dataTable = await _parquetService.LoadFileAsync(filePath, csvOptions, 
-                _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null);
+                _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null, jsonOptions);
             
             // Update schema panel
             UpdateSchemaPanel(filePath, fileInfo);
@@ -610,7 +658,7 @@ public partial class MainWindow : Window
             SetupFileWatcher(filePath);
 
             // Notify Quality panel of new file
-            _qualityViewModel?.SetFilePath(filePath, csvOptions);
+            _qualityViewModel?.SetFilePath(filePath, csvOptions, jsonOptions);
             
             StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
 
@@ -647,7 +695,7 @@ public partial class MainWindow : Window
         SaveAsMenuItem.IsEnabled = hasFile;
         ExportAsMenuItem.IsEnabled = hasFile;
         ImportOptionsMenuItem.IsEnabled = hasFile && 
-            (_currentFormat == SupportedFileFormat.Csv || _currentFormat == SupportedFileFormat.Tsv);
+            (_currentFormat == SupportedFileFormat.Csv || _currentFormat == SupportedFileFormat.Tsv || _currentFormat == SupportedFileFormat.Json);
         FlattenJsonMenuItem.IsEnabled = hasFile && _currentFormat == SupportedFileFormat.Json;
     }
     
@@ -876,7 +924,8 @@ public partial class MainWindow : Window
                 Width = 80,
                 MinWidth = 40,
                 IsReadOnly = true,
-                CanUserSort = false,
+                CanUserSort = true,
+                SortMemberPath = "__RowNumber",
                 CanUserResize = true,
                 Binding = new System.Windows.Data.Binding("[__RowNumber]")
             };
@@ -1018,7 +1067,8 @@ public partial class MainWindow : Window
             // Update column sort direction
             column.SortDirection = direction;
             
-            StatusText.Text = $"Sorted by {sortMemberPath} ({(direction == ListSortDirection.Ascending ? "ascending" : "descending")})";
+            var displayName = sortMemberPath == "__RowNumber" ? "#" : sortMemberPath;
+            StatusText.Text = $"Sorted by {displayName} ({(direction == ListSortDirection.Ascending ? "ascending" : "descending")})";
         }
         catch (Exception ex)
         {
@@ -1233,7 +1283,17 @@ public partial class MainWindow : Window
         {
             if (System.IO.File.Exists(filePath))
             {
-                await LoadFileAsync(filePath);
+                var format = Services.FileFormatDetector.DetectFormat(filePath);
+                if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
+                {
+                    var result = ShowFileImportDialog(filePath, format);
+                    if (!result.Imported) return;
+                    await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
+                }
+                else
+                {
+                    await LoadFileAsync(filePath);
+                }
             }
             else
             {
@@ -1270,7 +1330,19 @@ public partial class MainWindow : Window
             var files = (string[])e.Data.GetData(DataFormats.FileDrop);
             if (files?.Length == 1)
             {
-                await LoadFileAsync(files[0]);
+                var filePath = files[0];
+                var format = Services.FileFormatDetector.DetectFormat(filePath);
+
+                if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
+                {
+                    var result = ShowFileImportDialog(filePath, format);
+                    if (!result.Imported) return;
+                    await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
+                }
+                else
+                {
+                    await LoadFileAsync(filePath);
+                }
             }
         }
     }
@@ -1282,24 +1354,17 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(_currentFilePath)) return;
 
         var format = Services.FileFormatDetector.DetectFormat(_currentFilePath);
-        if (format != SupportedFileFormat.Csv && format != SupportedFileFormat.Tsv)
+        if (format != SupportedFileFormat.Csv && format != SupportedFileFormat.Tsv && format != SupportedFileFormat.Json)
         {
-            MessageBox.Show("Import options are only available for CSV and TSV files.",
+            MessageBox.Show("Import options are available for CSV, TSV, and JSON files.",
                 "Import Options", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        var dialog = new CsvOptionsDialog { Owner = this };
-        if (format == SupportedFileFormat.Tsv)
-            dialog.PreSelectTsv();
-
-        // Pass the file path for preview
-        dialog.SetPreviewFile(_currentFilePath);
-
-        if (dialog.ShowDialog() == true && dialog.Result != null)
+        var result = ShowFileImportDialog(_currentFilePath, format, _activeCsvOptions, _activeJsonOptions);
+        if (result.Imported)
         {
-            // Re-import with the new options
-            await LoadFileAsync(_currentFilePath, dialog.Result);
+            await LoadFileAsync(_currentFilePath, result.CsvOptions, jsonOptions: result.JsonOptions);
         }
     }
 
@@ -1341,7 +1406,8 @@ public partial class MainWindow : Window
             var dataTable = await _parquetService.LoadFileAsync(
                 _currentFilePath,
                 _activeCsvOptions,
-                _totalRowCount > _currentRowLimit ? _currentRowLimit : (int?)null);
+                _totalRowCount > _currentRowLimit ? _currentRowLimit : (int?)null,
+                _activeJsonOptions);
 
             SetupDataGrid(dataTable, null);
             UpdateLoadMoreBanner(dataTable.Rows.Count);
@@ -1371,7 +1437,7 @@ public partial class MainWindow : Window
         }
 
         _currentRowLimit = _totalRowCount > int.MaxValue ? int.MaxValue : (int)_totalRowCount;
-        await LoadFileAsync(_currentFilePath, _activeCsvOptions, _currentRowLimit);
+        await LoadFileAsync(_currentFilePath, _activeCsvOptions, _currentRowLimit, _activeJsonOptions);
     }
 
     // ── JSON Flattening ───────────────────────────────────────────────
@@ -1384,7 +1450,7 @@ public partial class MainWindow : Window
         {
             ShowLoading("Detecting nested structures...");
 
-            var flatQuery = await _parquetService.GetFlattenedQueryAsync(_currentFilePath, _activeCsvOptions);
+            var flatQuery = await _parquetService.GetFlattenedQueryAsync(_currentFilePath, _activeCsvOptions, _activeJsonOptions);
 
             if (flatQuery == null)
             {
@@ -1497,7 +1563,7 @@ public partial class MainWindow : Window
                 {
                     // Reset to default batch size on external reload — avoids silently
                     // re-loading millions of rows that were previously loaded via Load All
-                    await LoadFileAsync(e.FullPath, _activeCsvOptions, null);
+                    await LoadFileAsync(e.FullPath, _activeCsvOptions, null, _activeJsonOptions);
                 }
             }
             finally
