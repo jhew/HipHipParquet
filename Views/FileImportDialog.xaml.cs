@@ -168,8 +168,8 @@ public partial class FileImportDialog : Window
 
     private JsonImportOptions BuildJsonOptions()
     {
-        int.TryParse(JsonMaxDepthTextBox.Text, out var maxDepth);
-        int.TryParse(JsonSampleSizeTextBox.Text, out var sampleSize);
+        if (!int.TryParse(JsonMaxDepthTextBox.Text, out var maxDepth)) maxDepth = -1;
+        if (!int.TryParse(JsonSampleSizeTextBox.Text, out var sampleSize)) sampleSize = -1;
         return new JsonImportOptions
         {
             Format          = GetSelectedTag(JsonFormatCombo, "auto"),

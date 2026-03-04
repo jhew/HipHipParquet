@@ -448,7 +448,6 @@ public class ParquetService : IDisposable
             await connection.OpenAsync();
 
             var normalizedPath = filePath.Replace("\\", "/");
-            var escapedPath = normalizedPath.Replace("'", "''");
             var format = FileFormatDetector.DetectFormat(filePath);
             var formatName = FileFormatDetector.GetFormatDisplayName(format);
             _logger.LogInformation("Profiling {Format} file: {FilePath}", formatName, normalizedPath);
@@ -457,7 +456,7 @@ public class ParquetService : IDisposable
             if (format == SupportedFileFormat.Excel)
                 await EnsureExcelExtensionAsync(connection);
 
-            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(escapedPath, format, csvOptions, jsonOptions);
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
 
             // Get schema
             var columns = new List<(string Name, string Type, bool IsNullable)>();
@@ -731,14 +730,13 @@ public class ParquetService : IDisposable
             await connection.OpenAsync();
 
             var normalizedPath = filePath.Replace("\\", "/");
-            var escapedPath = normalizedPath.Replace("'", "''");
             var format = FileFormatDetector.DetectFormat(filePath);
 
             // Load spatial extension for Excel files
             if (format == SupportedFileFormat.Excel)
                 await EnsureExcelExtensionAsync(connection);
 
-            var src = FileFormatDetector.GetDuckDbReaderExpression(escapedPath, format, csvOptions, jsonOptions);
+            var src = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
             var groupByCols = string.Join(", ", groupByColumns.Select(c => $"\"{c}\""));
 
             // Get distinct group values

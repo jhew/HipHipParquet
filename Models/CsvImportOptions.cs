@@ -63,6 +63,9 @@ public class CsvImportOptions
         if (SkipRows > 0)
             parts.Add($"skip={SkipRows}");
 
+        if (Encoding != "auto")
+            parts.Add($"encoding='{Encoding.Replace("'", "''")}'" );
+
         if (IgnoreErrors)
             parts.Add("ignore_errors=true");
 
