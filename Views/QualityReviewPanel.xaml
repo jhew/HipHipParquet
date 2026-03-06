@@ -61,7 +61,14 @@
                             Command="{Binding AnalyzeCommand}" 
                             Background="White" Foreground="#512BD4" 
                             FontWeight="Bold" Padding="12,4" Margin="0,0,6,0"
-                            BorderThickness="0" Cursor="Hand"/>
+                            BorderThickness="0" Cursor="Hand"
+                            Visibility="{Binding IsAnalyzing, Converter={StaticResource InverseBoolToVis}}"/>
+                    <Button Content="⏹ Cancel"
+                            Command="{Binding CancelAnalysisCommand}"
+                            Background="#C62828" Foreground="White"
+                            FontWeight="Bold" Padding="12,4" Margin="0,0,6,0"
+                            BorderThickness="0" Cursor="Hand"
+                            Visibility="{Binding CanCancel, Converter={StaticResource BoolToVis}}"/>
                     <Button Content="📄 Export" 
                             Command="{Binding ExportHtmlReportCommand}" 
                             Background="Transparent" Foreground="White" 

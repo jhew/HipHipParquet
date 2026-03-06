@@ -30,7 +30,12 @@ public partial class MainWindow : Window
     private QualityReviewViewModel? _qualityViewModel;
     private List<DataGridCellInfo>? _savedSelectedCells;
     private List<object>? _savedSelectedItems;
+    private bool _closingConfirmed = false;
 
+    // ── Filter / sort state (preserved across reloads) ────────────────────
+    private readonly Dictionary<string, string> _savedColumnSearchTexts = new();
+    private string _savedGlobalSearch = string.Empty;
+    private string _savedSort = string.Empty;
     // ── Row limiting ─────────────────────────────────────────────────────
     private const int RowLimitBatch = 50_000;
     private int _currentRowLimit = RowLimitBatch;
@@ -44,6 +49,9 @@ public partial class MainWindow : Window
 
     // ── Stored service reference for reuse ───────────────────────────────
     private ParquetService? _parquetService;
+
+    // ── Search debounce ───────────────────────────────────────────────────
+    private readonly System.Windows.Threading.DispatcherTimer _filterDebounceTimer;
     
     public MainWindow()
     {
@@ -53,54 +61,73 @@ public partial class MainWindow : Window
         UpdateRecentFilesMenu();
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
+
+        // Search debounce: wait 300 ms after last keystroke before filtering.
+        _filterDebounceTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(300)
+        };
+        _filterDebounceTimer.Tick += (_, _) =>
+        {
+            _filterDebounceTimer.Stop();
+            ApplyFilters();
+        };
     }
     
-    private void OnWindowClosing(object? sender, CancelEventArgs e)
+    private async void OnWindowClosing(object? sender, CancelEventArgs e)
     {
-        if (_hasUnsavedChanges)
+        if (_closingConfirmed)
         {
-            var result = MessageBox.Show(
-                "You have unsaved changes. Do you want to save before closing?",
-                "Unsaved Changes",
-                MessageBoxButton.YesNoCancel,
-                MessageBoxImage.Warning);
-            
-            if (result == MessageBoxResult.Yes)
-            {
-                // Save the file
-                if (string.IsNullOrEmpty(_currentFilePath))
-                {
-                    var saveFileDialog = new SaveFileDialog
-                    {
-                        Filter = Services.FileFormatDetector.GetSaveFileDialogFilter(),
-                        Title = "Save Data File",
-                        FileName = "untitled.parquet"
-                    };
-                    
-                    if (saveFileDialog.ShowDialog() == true)
-                    {
-                        Task.Run(async () => await SaveFileAsync(saveFileDialog.FileName)).Wait();
-                    }
-                    else
-                    {
-                        e.Cancel = true; // Cancel closing if user cancels save dialog
-                    }
-                }
-                else
-                {
-                    Task.Run(async () => await SaveFileAsync(_currentFilePath)).Wait();
-                }
-            }
-            else if (result == MessageBoxResult.Cancel)
-            {
-                e.Cancel = true; // Cancel closing
-            }
-            // If No, just close without saving
+            // Second pass — let the close proceed and clean up.
+            _parquetService?.Dispose();
+            _fileWatcher?.Dispose();
+            return;
         }
 
-        // Dispose stored services
-        _parquetService?.Dispose();
-        _fileWatcher?.Dispose();
+        if (!_hasUnsavedChanges)
+        {
+            _parquetService?.Dispose();
+            _fileWatcher?.Dispose();
+            return;
+        }
+
+        // Cancel initially so we can run async save without deadlocking.
+        e.Cancel = true;
+
+        var result = MessageBox.Show(
+            "You have unsaved changes. Do you want to save before closing?",
+            "Unsaved Changes",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Warning);
+
+        if (result == MessageBoxResult.Cancel)
+            return;
+
+        if (result == MessageBoxResult.Yes)
+        {
+            if (string.IsNullOrEmpty(_currentFilePath))
+            {
+                var saveFileDialog = new SaveFileDialog
+                {
+                    Filter = Services.FileFormatDetector.GetSaveFileDialogFilter(),
+                    Title = "Save Data File",
+                    FileName = "untitled.parquet"
+                };
+
+                if (saveFileDialog.ShowDialog() == true)
+                    await SaveFileAsync(saveFileDialog.FileName);
+                else
+                    return; // user cancelled save dialog → keep window open
+            }
+            else
+            {
+                await SaveFileAsync(_currentFilePath);
+            }
+        }
+
+        // "No" or save complete — now close for real.
+        _closingConfirmed = true;
+        Close();
     }
 
     private async void OnWindowLoaded(object sender, RoutedEventArgs e)
@@ -260,6 +287,9 @@ public partial class MainWindow : Window
 
             _qualityViewModel = new QualityReviewViewModel(logger, qualityScoreService, narrativeService, reportService);
             QualityReviewPanel.SetViewModel(_qualityViewModel);
+
+            // attach a few helper handlers once the grid exists
+            DataGrid.PreviewKeyDown += OnDataGridPreviewKeyDown;
         }
         catch (Exception ex)
         {
@@ -311,108 +341,9 @@ public partial class MainWindow : Window
                 StatusText.Text = "No cells selected to copy";
                 return;
             }
-            
-            // Special handling for single cell selection
-            if (selectedCells.Count == 1 && !includeHeaders)
-            {
-                var cell = selectedCells[0];
-                var cellValue = "";
-                
-                if (cell.Column is DataGridBoundColumn column)
-                {
-                    var binding = (column as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
-                    if (binding != null && cell.Item is DataRowView rowView)
-                    {
-                        var columnName = binding.Path.Path.Trim('[', ']');
-                        var value = rowView[columnName];
-                        cellValue = value?.ToString() ?? "";
-                    }
-                }
-                
-                Clipboard.SetText(cellValue);
-                StatusText.Text = "Copied cell value to clipboard";
-                return;
-            }
-            
-            // Special handling for single cell with header
-            if (selectedCells.Count == 1 && includeHeaders)
-            {
-                var cell = selectedCells[0];
-                var cellValue = "";
-                var headerText = GetColumnHeaderText(cell.Column);
-                
-                if (cell.Column is DataGridBoundColumn column)
-                {
-                    var binding = (column as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
-                    if (binding != null && cell.Item is DataRowView rowView)
-                    {
-                        var columnName = binding.Path.Path.Trim('[', ']');
-                        var value = rowView[columnName];
-                        cellValue = value?.ToString() ?? "";
-                    }
-                }
-                
-                var output = new System.Text.StringBuilder();
-                output.AppendLine(headerText);
-                output.Append(cellValue);
-                
-                Clipboard.SetText(output.ToString());
-                StatusText.Text = "Copied cell value with header to clipboard";
-                return;
-            }
-            
-            // Group cells by row
-            var rowGroups = selectedCells
-                .GroupBy(cell => DataGrid.Items.IndexOf(cell.Item))
-                .OrderBy(g => g.Key);
-            
-            var multiOutput = new System.Text.StringBuilder();
-            
-            // Add headers if requested
-            if (includeHeaders)
-            {
-                var headerColumns = selectedCells
-                    .Select(cell => cell.Column)
-                    .Distinct()
-                    .OrderBy(col => col.DisplayIndex)
-                    .ToList();
-                
-                var headers = headerColumns.Select(col => GetColumnHeaderText(col)).ToList();
-                multiOutput.AppendLine(string.Join(delimiter, headers));
-            }
-            
-            foreach (var rowGroup in rowGroups)
-            {
-                var cellsInRow = rowGroup.OrderBy(cell => cell.Column.DisplayIndex).ToList();
-                var values = new List<string>();
-                
-                foreach (var cell in cellsInRow)
-                {
-                    var cellValue = "";
-                    if (cell.Column is DataGridBoundColumn column)
-                    {
-                        var binding = (column as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
-                        if (binding != null && cell.Item is DataRowView rowView)
-                        {
-                            var columnName = binding.Path.Path.Trim('[', ']');
-                            var value = rowView[columnName];
-                            cellValue = value?.ToString() ?? "";
-                        }
-                    }
-                    
-                    // Escape value if it contains delimiter or quotes
-                    if (delimiter == "," && (cellValue.Contains(",") || cellValue.Contains("\"") || cellValue.Contains("\n")))
-                    {
-                        cellValue = "\"" + cellValue.Replace("\"", "\"\"") + "\"";
-                    }
-                    
-                    values.Add(cellValue);
-                }
-                
-                multiOutput.AppendLine(string.Join(delimiter, values));
-            }
-            
-            Clipboard.SetText(multiOutput.ToString());
+
+            var text = CopyHelper.FormatCells(DataGrid, selectedCells, delimiter, includeHeaders);
+            Clipboard.SetText(text);
             StatusText.Text = $"Copied {selectedCells.Count} cell(s) to clipboard" + (includeHeaders ? " with headers" : "");
         }
         catch (Exception ex)
@@ -450,6 +381,16 @@ public partial class MainWindow : Window
     private void OnContextCopyColumnsWithHeadersClick(object sender, RoutedEventArgs e)
     {
         CopyColumns(true);
+    }
+
+    private void OnContextCopyAsCsvClick(object sender, RoutedEventArgs e)
+    {
+        CopySelectionToClipboard(",", false);
+    }
+
+    private void OnContextCopyAsCsvWithHeadersClick(object sender, RoutedEventArgs e)
+    {
+        CopySelectionToClipboard(",", true);
     }
     
     private void CopyRows(bool includeHeaders)
@@ -590,10 +531,40 @@ public partial class MainWindow : Window
         return column.Header?.ToString() ?? "";
     }
     
+    /// <summary>Escapes characters that have special meaning in DataView LIKE expressions.</summary>
+    private static string EscapeDataViewLikeValue(string value) =>
+        value.Replace("[", "[[]")
+             .Replace("*", "[*]")
+             .Replace("%", "[%]");
+
     private void OnGlobalSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        // Just reapply all filters (column + global)
-        ApplyFilters();
+        // Debounce: restart the timer on every keystroke.
+        _filterDebounceTimer.Stop();
+        _filterDebounceTimer.Start();
+    }
+
+    private void OnDataGridPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var mods = System.Windows.Input.Keyboard.Modifiers;
+        if (mods == System.Windows.Input.ModifierKeys.Control && e.Key == System.Windows.Input.Key.C)
+        {
+            // plain copy
+            CopySelectionToClipboard("\t", false);
+            e.Handled = true;
+        }
+        else if (mods == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift) && e.Key == System.Windows.Input.Key.C)
+        {
+            // copy with headers
+            CopySelectionToClipboard("\t", true);
+            e.Handled = true;
+        }
+        else if (mods == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Alt) && e.Key == System.Windows.Input.Key.C)
+        {
+            // copy as CSV
+            CopySelectionToClipboard(",", false);
+            e.Handled = true;
+        }
     }
 
     private async Task LoadFileAsync(string filePath, CsvImportOptions? csvOptions = null, int? rowLimit = null, JsonImportOptions? jsonOptions = null)
@@ -617,9 +588,10 @@ public partial class MainWindow : Window
             _currentRowLimit = effectiveLimit;
 
             // Get ParquetService
-            var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
             _parquetService?.Dispose();
-            _parquetService = new ParquetService(logger!);
+            _parquetService = new ParquetService(logger);
             
             // Load file info and data (with row limit)
             var fileInfo = await _parquetService.GetFileInfoAsync(filePath, csvOptions, jsonOptions);
@@ -628,11 +600,25 @@ public partial class MainWindow : Window
             ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
             var dataTable = await _parquetService.LoadFileAsync(filePath, csvOptions, 
                 _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null, jsonOptions);
+
+            // Compute row-number column on a background thread (avoids stalling the UI for large files).
+            ShowLoading("Indexing rows...");
+            await Task.Run(() =>
+            {
+                if (!dataTable.Columns.Contains("__RowNumber"))
+                {
+                    var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
+                    rowNumColumn.SetOrdinal(0);
+                    for (int i = 0; i < dataTable.Rows.Count; i++)
+                        dataTable.Rows[i]["__RowNumber"] = i + 1;
+                }
+            });
             
             // Update schema panel
             UpdateSchemaPanel(filePath, fileInfo);
             
-            // Setup data grid
+            // Setup data grid (row-number column already present)
+            ShowLoading("Building grid...");
             SetupDataGrid(dataTable, fileInfo.Columns);
             
             // Switch UI
@@ -727,34 +713,42 @@ public partial class MainWindow : Window
         
         if (saveFileDialog.ShowDialog() == true)
         {
-            await SaveFileAsync(saveFileDialog.FileName);
+            await SaveFileAsync(saveFileDialog.FileName, showConfirmation: true);
             _currentFilePath = saveFileDialog.FileName;
             UpdateWindowTitle();
         }
     }
     
-    private async Task SaveFileAsync(string filePath)
+    private async Task SaveFileAsync(string filePath, bool showConfirmation = false)
     {
         try
         {
+            if (_originalData == null)
+            {
+                StatusText.Text = "Nothing to save";
+                return;
+            }
+
             ShowLoading("Saving file...");
             
             // Reuse stored service, or create one
             if (_parquetService == null)
             {
-                var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
-                _parquetService = new ParquetService(logger!);
+                var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                    ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+                _parquetService = new ParquetService(logger);
             }
             
             // Save the file
-            await _parquetService.SaveFileAsync(filePath, _originalData!);
+            await _parquetService.SaveFileAsync(filePath, _originalData);
             
             _hasUnsavedChanges = false;
             UpdateWindowTitle();
             
-            StatusText.Text = $"Saved {System.IO.Path.GetFileName(filePath)} — {_originalData!.Rows.Count:N0} rows";
-            
-            MessageBox.Show($"File saved successfully to:\n{filePath}", "Save Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            StatusText.Text = $"Saved {System.IO.Path.GetFileName(filePath)} — {_originalData.Rows.Count:N0} rows";
+
+            if (showConfirmation)
+                MessageBox.Show($"File saved to:\n{filePath}", "Save Complete", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
@@ -802,8 +796,9 @@ public partial class MainWindow : Window
                 // Reuse the stored service, or create one if needed
                 if (_parquetService == null)
                 {
-                    var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
-                    _parquetService = new ParquetService(logger!);
+                    var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                        ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+                    _parquetService = new ParquetService(logger);
                 }
 
                 await _parquetService.SaveFileAsync(saveFileDialog.FileName, _originalData);
@@ -891,125 +886,47 @@ public partial class MainWindow : Window
     {
         try
         {
+            SnapshotFilterState();
+
             _originalData = dataTable;
             _dataView = dataTable.DefaultView;
             
-            // Add a row number column to the DataTable
-            if (!dataTable.Columns.Contains("__RowNumber"))
-            {
-                var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
-                rowNumColumn.SetOrdinal(0); // Move to first position
-                
-                for (int i = 0; i < dataTable.Rows.Count; i++)
-                {
-                    dataTable.Rows[i]["__RowNumber"] = i + 1;
-                }
-            }
+            // __RowNumber column is already added by LoadFileAsync (on a background thread).
             
             // Clear existing
             DataGrid.Columns.Clear();
             SearchPanel.Children.Clear();
             _searchBoxes.Clear();
             
-            // Add event handlers for safer sorting
+            // Guard against double-subscription on repeated loads
+            DataGrid.Sorting -= OnDataGridSorting;
             DataGrid.Sorting += OnDataGridSorting;
             
-            // Find the search ScrollViewer
             _searchScrollViewer = FindVisualChild<ScrollViewer>(DataGridContainer);
             
-            // Add row number column
-            var rowNumberColumn = new DataGridTextColumn
-            {
-                Header = "#",
-                Width = 80,
-                MinWidth = 40,
-                IsReadOnly = true,
-                CanUserSort = true,
-                SortMemberPath = "__RowNumber",
-                CanUserResize = true,
-                Binding = new System.Windows.Data.Binding("[__RowNumber]")
-            };
-            
-            // Style the row number column
-            var headerStyle = new Style(typeof(DataGridColumnHeader));
-            headerStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(240, 240, 240))));
-            headerStyle.Setters.Add(new Setter(Control.FontWeightProperty, FontWeights.Bold));
-            headerStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
-            rowNumberColumn.HeaderStyle = headerStyle;
-            
-            var cellStyle = new Style(typeof(DataGridCell));
-            cellStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(250, 250, 250))));
-            cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(Color.FromRgb(100, 100, 100))));
-            cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
-            rowNumberColumn.CellStyle = cellStyle;
-            
+            // Row number column + search panel spacer
+            var rowNumberColumn = CreateRowNumberColumn();
             DataGrid.Columns.Add(rowNumberColumn);
+            SearchPanel.Children.Add(CreateRowNumberSpacer(rowNumberColumn));
             
-            // Add empty space in search panel for row number column
-            var rowNumberSpacer = new Border
-            {
-                MinWidth = 40,
-                Background = new SolidColorBrush(Color.FromRgb(248, 248, 248))
-            };
-            
-            // Bind the spacer width to the row number column width
-            var spacerBinding = new System.Windows.Data.Binding("ActualWidth")
-            {
-                Source = rowNumberColumn,
-                Mode = System.Windows.Data.BindingMode.OneWay
-            };
-            rowNumberSpacer.SetBinding(FrameworkElement.WidthProperty, spacerBinding);
-            
-            SearchPanel.Children.Add(rowNumberSpacer);
-            
-            // Display all columns (except the internal __RowNumber column)
+            // Data columns and per-column search boxes
             for (int i = 0; i < dataTable.Columns.Count; i++)
             {
                 var column = dataTable.Columns[i];
-                
-                // Skip the internal row number column
-                if (column.ColumnName == "__RowNumber")
-                    continue;
-                
+                if (column.ColumnName == "__RowNumber") continue;
+
                 var columnInfo = columns?.FirstOrDefault(c => c.Name == column.ColumnName);
-                
-                // Create sortable DataGrid column with proper column name for sorting
-                var gridColumn = new DataGridTextColumn
-                {
-                    Header = CreateColumnHeader(column.ColumnName, columnInfo?.Type ?? "unknown", i),
-                    Binding = new System.Windows.Data.Binding($"[{column.ColumnName}]"),
-                    Width = DataGridLength.Auto,
-                    MinWidth = 100,
-                    CanUserSort = true,
-                    CanUserResize = true,
-                    SortMemberPath = column.ColumnName
-                };
+                var gridColumn = CreateDataColumn(column, columnInfo, i);
                 DataGrid.Columns.Add(gridColumn);
-                
-                // Create search box that matches column width
-                var searchBox = new TextBox
-                {
-                    Margin = new Thickness(0, 2, 0, 2),
-                    Tag = column.ColumnName,
-                    ToolTip = $"Search {column.ColumnName}...",
-                    MinWidth = 100
-                };
-                
-                // Bind the search box width to the column width
-                var binding = new System.Windows.Data.Binding("ActualWidth")
-                {
-                    Source = gridColumn,
-                    Mode = System.Windows.Data.BindingMode.OneWay
-                };
-                searchBox.SetBinding(FrameworkElement.WidthProperty, binding);
-                
-                searchBox.TextChanged += OnSearchTextChanged;
+
+                var searchBox = CreateSearchBox(gridColumn, column.ColumnName);
                 _searchBoxes.Add(searchBox);
                 SearchPanel.Children.Add(searchBox);
             }
             
-            // Set data source
             DataGrid.ItemsSource = _dataView;
+
+            RestoreFilterState();
         }
         catch (Exception ex)
         {
@@ -1017,7 +934,121 @@ public partial class MainWindow : Window
             StatusText.Text = "Error displaying data";
         }
     }
-    
+
+    private DataGridTextColumn CreateRowNumberColumn()
+    {
+        var col = new DataGridTextColumn
+        {
+            Header = "#",
+            Width = 80,
+            MinWidth = 40,
+            IsReadOnly = true,
+            CanUserSort = true,
+            SortMemberPath = "__RowNumber",
+            CanUserResize = true,
+            Binding = new System.Windows.Data.Binding("[__RowNumber]")
+        };
+
+        var headerStyle = new Style(typeof(DataGridColumnHeader));
+        headerStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(240, 240, 240))));
+        headerStyle.Setters.Add(new Setter(Control.FontWeightProperty, FontWeights.Bold));
+        headerStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+        col.HeaderStyle = headerStyle;
+
+        var cellStyle = new Style(typeof(DataGridCell));
+        cellStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(250, 250, 250))));
+        cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(Color.FromRgb(100, 100, 100))));
+        cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+        col.CellStyle = cellStyle;
+
+        return col;
+    }
+
+    private Border CreateRowNumberSpacer(DataGridTextColumn rowNumberColumn)
+    {
+        var spacer = new Border
+        {
+            MinWidth = 40,
+            Background = new SolidColorBrush(Color.FromRgb(248, 248, 248))
+        };
+        var binding = new System.Windows.Data.Binding("ActualWidth")
+        {
+            Source = rowNumberColumn,
+            Mode = System.Windows.Data.BindingMode.OneWay
+        };
+        spacer.SetBinding(FrameworkElement.WidthProperty, binding);
+        return spacer;
+    }
+
+    private DataGridTextColumn CreateDataColumn(DataColumn column, ColumnInfo? columnInfo, int index)
+    {
+        return new DataGridTextColumn
+        {
+            Header = CreateColumnHeader(column.ColumnName, columnInfo?.Type ?? "unknown", index),
+            Binding = new System.Windows.Data.Binding($"[{column.ColumnName}]"),
+            Width = DataGridLength.Auto,
+            MinWidth = 100,
+            CanUserSort = true,
+            CanUserResize = true,
+            SortMemberPath = column.ColumnName
+        };
+    }
+
+    private TextBox CreateSearchBox(DataGridTextColumn gridColumn, string columnName)
+    {
+        var searchBox = new TextBox
+        {
+            Margin = new Thickness(0, 2, 0, 2),
+            Tag = columnName,
+            ToolTip = $"Search {columnName}...",
+            MinWidth = 100
+        };
+        var binding = new System.Windows.Data.Binding("ActualWidth")
+        {
+            Source = gridColumn,
+            Mode = System.Windows.Data.BindingMode.OneWay
+        };
+        searchBox.SetBinding(FrameworkElement.WidthProperty, binding);
+        searchBox.TextChanged += OnSearchTextChanged;
+        return searchBox;
+    }
+
+    private void SnapshotFilterState()
+    {
+        _savedColumnSearchTexts.Clear();
+        foreach (var box in _searchBoxes)
+        {
+            var colName = box.Tag?.ToString();
+            if (!string.IsNullOrEmpty(colName) && !string.IsNullOrEmpty(box.Text))
+                _savedColumnSearchTexts[colName] = box.Text;
+        }
+        _savedGlobalSearch = GlobalSearchBox?.Text ?? string.Empty;
+        _savedSort = _dataView?.Sort ?? string.Empty;
+    }
+
+    private void RestoreFilterState()
+    {
+        // Re-populate search boxes whose column still exists in the new load
+        foreach (var box in _searchBoxes)
+        {
+            var colName = box.Tag?.ToString();
+            if (!string.IsNullOrEmpty(colName) && _savedColumnSearchTexts.TryGetValue(colName, out var text))
+                box.Text = text;
+        }
+
+        if (!string.IsNullOrEmpty(_savedGlobalSearch) && GlobalSearchBox != null)
+            GlobalSearchBox.Text = _savedGlobalSearch;
+
+        if (!string.IsNullOrEmpty(_savedSort) && _dataView != null)
+        {
+            try { _dataView.Sort = _savedSort; }
+            catch { /* column may no longer exist in the reloaded schema */ }
+        }
+
+        if (_savedColumnSearchTexts.Count > 0 || !string.IsNullOrEmpty(_savedGlobalSearch))
+            ApplyFilters();
+    }
+
     private FrameworkElement CreateColumnHeader(string name, string type, int index)
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1079,9 +1110,11 @@ public partial class MainWindow : Window
 
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (sender is TextBox searchBox && _dataView != null)
+        if (sender is TextBox && _dataView != null)
         {
-            ApplyFilters();
+            // Debounce: restart the timer on every keystroke.
+            _filterDebounceTimer.Stop();
+            _filterDebounceTimer.Start();
         }
     }
     
@@ -1099,9 +1132,9 @@ public partial class MainWindow : Window
             
             if (!string.IsNullOrEmpty(searchText) && !string.IsNullOrEmpty(columnName))
             {
-                // Escape single quotes and create LIKE filter using column name
-                var escapedText = searchText.Replace("'", "''");
-                filters.Add($"Convert([{columnName}], 'System.String') LIKE '*{escapedText}*'");
+                // Escape single quotes (DataView), then escape DataView LIKE wildcards in the value
+                var escaped = EscapeDataViewLikeValue(searchText.Replace("'", "''"));
+                filters.Add($"Convert([{columnName}], 'System.String') LIKE '*{escaped}*'");
             }
         }
         
@@ -1110,14 +1143,12 @@ public partial class MainWindow : Window
         if (!string.IsNullOrEmpty(globalSearchText) && _originalData != null)
         {
             var globalConditions = new List<string>();
-            var escapedGlobalText = globalSearchText.Replace("'", "''");
+            var escapedGlobalText = EscapeDataViewLikeValue(globalSearchText.Replace("'", "''"));
             
             foreach (DataColumn col in _originalData.Columns)
             {
                 if (col.ColumnName != "__RowNumber")
-                {
                     globalConditions.Add($"Convert([{col.ColumnName}], 'System.String') LIKE '*{escapedGlobalText}*'");
-                }
             }
             
             if (globalConditions.Count > 0)
@@ -1201,9 +1232,9 @@ public partial class MainWindow : Window
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore errors loading recent files
+            System.Diagnostics.Debug.WriteLine($"Error loading recent files: {ex.Message}");
         }
     }
     
@@ -1215,9 +1246,9 @@ public partial class MainWindow : Window
             Properties.Settings.Default.RecentFiles = json;
             Properties.Settings.Default.Save();
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore errors saving recent files
+            System.Diagnostics.Debug.WriteLine($"Error saving recent files: {ex.Message}");
         }
     }
     
@@ -1311,13 +1342,9 @@ public partial class MainWindow : Window
     {
         if (e.Data.GetDataPresent(DataFormats.FileDrop))
         {
-            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
-            if (files?.Length == 1)
-            {
-                e.Effects = DragDropEffects.Copy;
-                e.Handled = true;
-                return;
-            }
+            e.Effects = DragDropEffects.Copy;
+            e.Handled = true;
+            return;
         }
         e.Effects = DragDropEffects.None;
         e.Handled = true;
@@ -1325,25 +1352,26 @@ public partial class MainWindow : Window
 
     private async void OnFileDrop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetDataPresent(DataFormats.FileDrop))
-        {
-            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
-            if (files?.Length == 1)
-            {
-                var filePath = files[0];
-                var format = Services.FileFormatDetector.DetectFormat(filePath);
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
 
-                if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
-                {
-                    var result = ShowFileImportDialog(filePath, format);
-                    if (!result.Imported) return;
-                    await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
-                }
-                else
-                {
-                    await LoadFileAsync(filePath);
-                }
-            }
+        var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+        if (files == null || files.Length == 0) return;
+
+        if (files.Length > 1)
+            StatusText.Text = $"{files.Length} files dropped — opening the first one only";
+
+        var filePath = files[0];
+        var format = Services.FileFormatDetector.DetectFormat(filePath);
+
+        if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
+        {
+            var result = ShowFileImportDialog(filePath, format);
+            if (!result.Imported) return;
+            await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
+        }
+        else
+        {
+            await LoadFileAsync(filePath);
         }
     }
 
@@ -1468,9 +1496,10 @@ public partial class MainWindow : Window
 
             ShowLoading("Flattening nested JSON...");
 
-            var logger = App.Current.Services.GetService<ILogger<ParquetService>>();
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
             _parquetService?.Dispose();
-            _parquetService = new ParquetService(logger!);
+            _parquetService = new ParquetService(logger);
 
             var dataTable = await _parquetService.LoadWithQueryAsync(flatQuery, 
                 _totalRowCount > _currentRowLimit ? _currentRowLimit : (int?)null);

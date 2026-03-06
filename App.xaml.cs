@@ -25,7 +25,7 @@ public partial class App : Application
             _host = Host.CreateDefaultBuilder()
                 .ConfigureServices((context, services) =>
                 {
-                    services.AddSingleton<ParquetService>();
+                    // Note: ParquetService is created per-load in MainWindow and is not a singleton.
                     services.AddSingleton<QualityScoreService>();
                     services.AddSingleton<NarrativeService>();
                     services.AddSingleton<ReportService>();
@@ -63,7 +63,7 @@ public partial class App : Application
             // Check if a file path was passed as a command-line argument
             if (e.Args.Length > 0)
             {
-                var filePath = e.Args[0];
+                var filePath = System.IO.Path.GetFullPath(e.Args[0]);
                 
                 if (System.IO.File.Exists(filePath))
                 {

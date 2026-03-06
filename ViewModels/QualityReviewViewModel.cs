@@ -168,6 +168,12 @@ public partial class QualityReviewViewModel : ObservableObject
     private static Microsoft.Extensions.Logging.ILogger<ParquetService> ParquetServiceLogger =>
         Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
 
+    // ── Cancellation ────────────────────────────────────────────────────
+    private CancellationTokenSource? _analysisCts;
+
+    [ObservableProperty]
+    private bool _canCancel;
+
     // ── Constructor ─────────────────────────────────────────────────────
 
     public QualityReviewViewModel(
@@ -190,16 +196,36 @@ public partial class QualityReviewViewModel : ObservableObject
         if (string.IsNullOrEmpty(CurrentFilePath))
             return;
 
+        // Cancel any running analysis and start fresh.
+        _analysisCts?.Cancel();
+        _analysisCts?.Dispose();
+        _analysisCts = new CancellationTokenSource();
+        var cts = _analysisCts;
+
         IsAnalyzing = true;
+        CanCancel = true;
         AnalysisProgress = 0;
         StatusMessage = "Analyzing file...";
 
         try
         {
+            // Report per-column progress: map 0..N columns to the 10-60 % range.
+            var columnProgress = new Progress<(int Current, int Total)>(p =>
+            {
+                AnalysisProgress = p.Total > 0
+                    ? 10.0 + (double)p.Current / p.Total * 50.0
+                    : 10.0;
+                StatusMessage = $"Profiling column {p.Current} of {p.Total}...";
+            });
+
+            // Run all DuckDB work on the thread-pool so the WPF dispatcher stays free.
             using var parquetService = new ParquetService(ParquetServiceLogger);
             AnalysisProgress = 10;
-
-            var profile = await parquetService.GetFileProfileAsync(CurrentFilePath, ActiveCsvOptions, ActiveJsonOptions);
+            var profile = await Task.Run(
+                () => parquetService.GetFileProfileAsync(
+                    CurrentFilePath, ActiveCsvOptions, ActiveJsonOptions,
+                    cts.Token, columnProgress),
+                cts.Token);
             AnalysisProgress = 60;
 
             // Score the profile
@@ -238,6 +264,11 @@ public partial class QualityReviewViewModel : ObservableObject
             AnalysisProgress = 100;
             StatusMessage = $"Analysis complete — {profile.ColumnCount} columns, {profile.RowCount:N0} rows, score: {profile.OverallScore.Total:F1}/100";
         }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Analysis cancelled.";
+            AnalysisProgress = 0;
+        }
         catch (Exception ex)
         {
             StatusMessage = $"Analysis failed: {ex.Message}";
@@ -246,10 +277,17 @@ public partial class QualityReviewViewModel : ObservableObject
         finally
         {
             IsAnalyzing = false;
+            CanCancel = false;
         }
     }
 
     private bool CanAnalyze() => !string.IsNullOrEmpty(CurrentFilePath) && !IsAnalyzing;
+
+    [RelayCommand]
+    private void CancelAnalysis()
+    {
+        _analysisCts?.Cancel();
+    }
 
     [RelayCommand]
     private async Task CompareWithFileAsync()
@@ -343,14 +381,33 @@ public partial class QualityReviewViewModel : ObservableObject
         if (string.IsNullOrEmpty(CurrentFilePath))
             return;
 
+        // Cancel any running analysis and start fresh.
+        _analysisCts?.Cancel();
+        _analysisCts?.Dispose();
+        _analysisCts = new CancellationTokenSource();
+        var cts = _analysisCts;
+
         IsAnalyzing = true;
+        CanCancel = true;
         GroupByStatusMessage = "";
         StatusMessage = "Computing grouped statistics...";
+        AnalysisProgress = 0;
 
         try
         {
+            var groupProgress = new Progress<(int Current, int Total)>(p =>
+            {
+                AnalysisProgress = p.Total > 0 ? (double)p.Current / p.Total * 100.0 : 0;
+                StatusMessage = $"Processing group {p.Current} of {p.Total}...";
+            });
+
+            // Run all DuckDB work on the thread-pool so the WPF dispatcher stays free.
             using var parquetService = new ParquetService(ParquetServiceLogger);
-            var grouped = await parquetService.GetGroupedStatisticsAsync(CurrentFilePath, selectedDimensions, ActiveCsvOptions, ActiveJsonOptions);
+            var grouped = await Task.Run(
+                () => parquetService.GetGroupedStatisticsAsync(
+                    CurrentFilePath, selectedDimensions, ActiveCsvOptions, ActiveJsonOptions,
+                    cts.Token, groupProgress),
+                cts.Token);
 
             GroupedResults.Clear();
             foreach (var kvp in grouped.OrderByDescending(g => g.Value.RowCount))
@@ -371,6 +428,13 @@ public partial class QualityReviewViewModel : ObservableObject
                 ? $"{GroupedResults.Count} groups found"
                 : "No groups found for selected dimensions.";
             StatusMessage = $"Grouped by {string.Join(", ", selectedDimensions)} — {GroupedResults.Count} groups";
+            AnalysisProgress = 100;
+        }
+        catch (OperationCanceledException)
+        {
+            GroupByStatusMessage = "Cancelled.";
+            StatusMessage = "Group-by cancelled.";
+            AnalysisProgress = 0;
         }
         catch (Exception ex)
         {
@@ -380,6 +444,7 @@ public partial class QualityReviewViewModel : ObservableObject
         finally
         {
             IsAnalyzing = false;
+            CanCancel = false;
         }
     }
 
