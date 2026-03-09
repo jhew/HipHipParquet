@@ -13,7 +13,6 @@
 #define MyAppPublisher "jhew"
 #define MyAppURL       "https://github.com/jhew/HipHipParquet"
 #define MyAppExeName   "HipHipParquet.exe"
-#define MyDotNetVersion "8.0"
 
 [Setup]
 AppId={{F3A5C8D2-1B6E-4F9A-B3D7-8E2C5A4F1B9D}}
@@ -63,54 +62,3 @@ Name: "{autodesktop}\{#MyAppName}";    Filename: "{app}\{#MyAppExeName}"; Tasks:
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-
-[Code]
-// -----------------------------------------------------------------------
-// .NET 8 Desktop Runtime check
-// -----------------------------------------------------------------------
-const
-  DotNetRegBase =
-    'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
-
-function IsDotNet8Installed: Boolean;
-var
-  Names: TArrayOfString;
-  i: Integer;
-  Ver: String;
-begin
-  Result := False;
-  if not RegGetSubkeyNames(HKLM64, DotNetRegBase, Names) then
-    Exit;
-  for i := 0 to GetArrayLength(Names) - 1 do
-  begin
-    Ver := Names[i];
-    // Accept any 8.x.y
-    if Copy(Ver, 1, 2) = '8.' then
-    begin
-      Result := True;
-      Exit;
-    end;
-  end;
-end;
-
-function InitializeSetup: Boolean;
-var
-  MsgResult: Integer;
-begin
-  Result := True;
-  if not IsDotNet8Installed then
-  begin
-    MsgResult := MsgBox(
-      'HipHipParquet requires the .NET 8 Desktop Runtime, which was not detected on this machine.' + #13#10 + #13#10 +
-      'Click OK to open the Microsoft download page, then re-run this installer after installing the runtime.' + #13#10 +
-      'Click Cancel to install anyway (the application may not start).',
-      mbConfirmation, MB_OKCANCEL);
-    if MsgResult = IDOK then
-    begin
-      ShellExec('open',
-        'https://dotnet.microsoft.com/download/dotnet/8.0/runtime?utm_source=hiphipparquet-installer&runtime=desktop&os=windows&arch=x64',
-        '', '', SW_SHOWNORMAL, ewNoWait, MsgResult);
-      Result := False;
-    end;
-  end;
-end;
