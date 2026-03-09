@@ -509,6 +509,10 @@ public class ParquetService : IDisposable
 
             return fileProfile;
         }
+        catch (OperationCanceledException)
+        {
+            throw; // propagate cancellation without hiding it as an InvalidOperationException
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to profile file: {FilePath}", filePath);

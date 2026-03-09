@@ -12,8 +12,9 @@ namespace HipHipParquet.ViewModels;
 /// <summary>
 /// ViewModel for the Quality Review Panel. Uses CommunityToolkit.Mvvm for MVVM pattern.
 /// </summary>
-public partial class QualityReviewViewModel : ObservableObject
+public partial class QualityReviewViewModel : ObservableObject, IDisposable
 {
+    private bool _disposed;
     private readonly ILogger<QualityReviewViewModel> _logger;
     private readonly QualityScoreService _qualityScoreService;
     private readonly NarrativeService _narrativeService;
@@ -186,6 +187,15 @@ public partial class QualityReviewViewModel : ObservableObject
         _qualityScoreService = qualityScoreService;
         _narrativeService = narrativeService;
         _reportService = reportService;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _analysisCts?.Cancel();
+        _analysisCts?.Dispose();
+        _analysisCts = null;
+        _disposed = true;
     }
 
     // ── Commands ────────────────────────────────────────────────────────

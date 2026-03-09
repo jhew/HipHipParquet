@@ -86,8 +86,8 @@ namespace HipHipParquet.Views
                 }
             }
 
-            // escape if needed for CSV
-            if (delimiter == "," && (cellValue.Contains(",") || cellValue.Contains("\"") || cellValue.Contains("\n")))
+            // escape if needed for CSV (RFC 4180: quote if contains comma, double-quote, LF or CR)
+            if (delimiter == "," && (cellValue.Contains(",") || cellValue.Contains("\"") || cellValue.Contains("\n") || cellValue.Contains("\r")))
             {
                 cellValue = "\"" + cellValue.Replace("\"", "\"\"") + "\"";
             }

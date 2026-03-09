@@ -39,7 +39,7 @@ CSV and TSV imports support configurable options including delimiter, header det
 - **Multi‑cell selection** (click‑drag or Shift/Ctrl‑click) within the grid
 - Clipboard copy of selected cells – use Edit ▶ Copy or right‑click for the context menu; include column names by choosing "with headers".
   The right‑click menu now includes separate entries for *Copy* (tab‑delimited) and *Copy as CSV* (comma‑delimited), both with header variants.  Keyboard shortcuts:
-  Ctrl+C (TSV), Ctrl+Shift+C (TSV with headers), Ctrl+Alt+C (CSV), Ctrl+Alt+Shift+C (CSV with headers).
+  Ctrl+C (TSV), Ctrl+Shift+C (TSV with headers), Ctrl+Alt+C (CSV).
 
 ### Quality Review Panel
 - **Composite quality scoring** across four dimensions (Completeness, Uniqueness, Validity, Distribution), each scored 0--25 for a 0--100 total
