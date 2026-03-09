@@ -36,7 +36,10 @@ CSV and TSV imports support configurable options including delimiter, header det
 - Per-column search filters and global full-grid search
 - Schema pane displaying column names, types, and row count
 - Incremental row loading (50,000 per batch) with option to load all
-- Clipboard copy of selected data as CSV or TSV
+- **Multi‑cell selection** (click‑drag or Shift/Ctrl‑click) within the grid
+- Clipboard copy of selected cells – use Edit ▶ Copy or right‑click for the context menu; include column names by choosing "with headers".
+  The right‑click menu now includes separate entries for *Copy* (tab‑delimited) and *Copy as CSV* (comma‑delimited), both with header variants.  Keyboard shortcuts:
+  Ctrl+C (TSV), Ctrl+Shift+C (TSV with headers), Ctrl+Alt+C (CSV).
 
 ### Quality Review Panel
 - **Composite quality scoring** across four dimensions (Completeness, Uniqueness, Validity, Distribution), each scored 0--25 for a 0--100 total

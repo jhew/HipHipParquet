@@ -440,7 +440,12 @@ public class ParquetService : IDisposable
     /// <summary>
     /// Generates a comprehensive FileProfile with per-column statistics using DuckDB aggregate SQL.
     /// </summary>
-    public async Task<FileProfile> GetFileProfileAsync(string filePath, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
+    public async Task<FileProfile> GetFileProfileAsync(
+        string filePath,
+        CsvImportOptions? csvOptions = null,
+        JsonImportOptions? jsonOptions = null,
+        CancellationToken cancellationToken = default,
+        IProgress<(int Current, int Total)>? progress = null)
     {
         try
         {
@@ -481,10 +486,13 @@ public class ParquetService : IDisposable
             var columnProfiles = new List<ColumnProfile>();
             var fileSrc = readerExpr;
 
-            foreach (var (colName, colType, isNullable) in columns)
+            for (int ci = 0; ci < columns.Count; ci++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                var (colName, colType, isNullable) = columns[ci];
                 var profile = await ProfileColumnAsync(connection, fileSrc, colName, colType, rowCount, isNullable);
                 columnProfiles.Add(profile);
+                progress?.Report((ci + 1, columns.Count));
             }
 
             var fileProfile = new FileProfile
@@ -500,6 +508,10 @@ public class ParquetService : IDisposable
             };
 
             return fileProfile;
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // propagate cancellation without hiding it as an InvalidOperationException
         }
         catch (Exception ex)
         {
@@ -722,7 +734,13 @@ public class ParquetService : IDisposable
     /// Generates grouped statistics for a file, grouped by the specified dimension columns.
     /// Returns a dictionary mapping group key strings to their FileProfile.
     /// </summary>
-    public async Task<Dictionary<string, FileProfile>> GetGroupedStatisticsAsync(string filePath, List<string> groupByColumns, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
+    public async Task<Dictionary<string, FileProfile>> GetGroupedStatisticsAsync(
+        string filePath,
+        List<string> groupByColumns,
+        CsvImportOptions? csvOptions = null,
+        JsonImportOptions? jsonOptions = null,
+        CancellationToken cancellationToken = default,
+        IProgress<(int Current, int Total)>? progress = null)
     {
         try
         {
@@ -778,8 +796,10 @@ public class ParquetService : IDisposable
 
             var result = new Dictionary<string, FileProfile>();
 
+            int gi = 0;
             foreach (var (groupKey, groupCount) in groups)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var groupProfile = new FileProfile
                 {
                     FilePath = filePath,
@@ -810,9 +830,14 @@ public class ParquetService : IDisposable
                 }
 
                 result[groupKey] = groupProfile;
+                progress?.Report((++gi, groups.Count));
             }
 
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // propagate cancellation without logging it as an error
         }
         catch (Exception ex)
         {

@@ -8,6 +8,12 @@
         AllowDrop="True"
         DragOver="OnDragOver"
         Drop="OnFileDrop">
+    <Window.InputBindings>
+        <KeyBinding Key="S" Modifiers="Ctrl" Command="Save"/>
+    </Window.InputBindings>
+    <Window.CommandBindings>
+        <CommandBinding Command="Save" Executed="OnSaveClick"/>
+    </Window.CommandBindings>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -63,13 +69,13 @@
                 <MenuItem x:Name="ToggleQualityPanelMenuItem" Header="Toggle _Quality Review Panel" Click="OnToggleQualityPanelClick" IsCheckable="True" IsChecked="True"/>
             </MenuItem>
             <MenuItem Header="_Edit" SubmenuOpened="OnEditMenuOpened" SubmenuClosed="OnEditMenuClosed">
-                <MenuItem Header="_Copy" Click="OnCopyClick">
+                <MenuItem Header="_Copy" Click="OnCopyClick" InputGestureText="Ctrl+C">
                     <MenuItem.Icon>
                         <TextBlock Text="📋" FontSize="14"/>
                     </MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="Copy as _CSV" Click="OnCopyAsCsvClick"/>
-                <MenuItem Header="Copy as _TSV" Click="OnCopyAsTsvClick"/>
+                <MenuItem Header="Copy as _CSV" Click="OnCopyAsCsvClick" InputGestureText="Ctrl+Alt+C"/>
+                <MenuItem Header="Copy as _TSV" Click="OnCopyAsTsvClick" InputGestureText="Ctrl+Shift+C"/>
             </MenuItem>
         </Menu>
 
@@ -169,7 +175,7 @@
                              CanUserAddRows="False"
                              CanUserDeleteRows="False"
                              IsReadOnly="False"
-                             SelectionMode="Single"
+                             SelectionMode="Extended"
                              SelectionUnit="CellOrRowHeader"
                              Margin="12,5,12,12"
                              ScrollViewer.ScrollChanged="OnDataGridScrollChanged"
@@ -188,6 +194,17 @@
                                 <MenuItem Header="Copy with Headers" Click="OnContextCopyWithHeadersClick">
                                     <MenuItem.Icon>
                                         <TextBlock Text="📋" FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator/>
+                                <MenuItem Header="Copy as CSV" Click="OnContextCopyAsCsvClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="," FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Copy as CSV with Headers" Click="OnContextCopyAsCsvWithHeadersClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="," FontSize="12"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <Separator/>
