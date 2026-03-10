@@ -1365,6 +1365,12 @@ public partial class MainWindow : Window
 
         if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
         {
+            // Defer past the drag-drop event so the DnD machinery fully releases before
+            // opening a modal dialog. Without this, WPF's drag handling can minimize the
+            // owner window when the modal steals activation mid-drag.
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Input);
+            Activate();
+
             var result = ShowFileImportDialog(filePath, format);
             if (!result.Imported) return;
             await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
@@ -1574,6 +1580,22 @@ public partial class MainWindow : Window
             // Silently ignore if watcher can't be set up (e.g. network paths)
         }
     }
+
+    // ── Help Menu ────────────────────────────────────────────────────
+
+    private void OnHelpClick(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+        => new HelpDialog(initialTab: 0) { Owner = this }.ShowDialog();
+
+    private void OnKeyboardShortcutsClick(object sender, RoutedEventArgs e)
+        => new HelpDialog(initialTab: 0) { Owner = this }.ShowDialog();
+
+    private void OnTipsAndTricksClick(object sender, RoutedEventArgs e)
+        => new HelpDialog(initialTab: 1) { Owner = this }.ShowDialog();
+
+    private void OnAboutClick(object sender, RoutedEventArgs e)
+        => new HelpDialog(initialTab: 2) { Owner = this }.ShowDialog();
+
+    // ── File Watcher ────────────────────────────────────────────────────
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {

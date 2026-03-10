@@ -36,6 +36,32 @@
             <Setter Property="Padding" Value="4,1"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
+
+        <!-- Selectable text style: TextBox that looks and behaves like a TextBlock -->
+        <Style x:Key="SelectableText" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="KeyboardNavigation.TabNavigation" Value="None"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden"/>
+            <Setter Property="Cursor" Value="IBeam"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Hidden"
+                                      Background="Transparent"
+                                      Padding="0"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
     
     <Grid>
@@ -133,6 +159,87 @@
                     </StackPanel>
                 </Border>
                 
+                <!-- File Summary Section -->
+                <Border Style="{StaticResource SectionCard}"
+                        Visibility="{Binding HasProfile, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="File Summary" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
+
+                        <!-- File name + analyzed at -->
+                        <TextBox Style="{StaticResource SelectableText}" FontSize="11" FontWeight="SemiBold"
+                                 Text="{Binding FileProfile.FileName, Mode=OneWay}" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#888"
+                                 Text="{Binding AnalyzedAtDisplay, Mode=OneWay}" Margin="0,0,0,10"/>
+
+                        <!-- Stat tiles: 3-column grid -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Rows -->
+                            <Border Grid.Row="0" Grid.Column="0" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,4,4">
+                                <StackPanel>
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
+                                             Text="{Binding FileProfile.RowCount, StringFormat='{}{0:N0}', Mode=OneWay}"/>
+                                    <TextBlock Text="Rows" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Columns -->
+                            <Border Grid.Row="0" Grid.Column="1" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,4,4">
+                                <StackPanel>
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
+                                             Text="{Binding FileProfile.ColumnCount, Mode=OneWay}"/>
+                                    <TextBlock Text="Columns" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- File Size -->
+                            <Border Grid.Row="0" Grid.Column="2" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,0,4">
+                                <StackPanel>
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
+                                             Text="{Binding FileProfile.FileSizeFormatted, Mode=OneWay}"/>
+                                    <TextBlock Text="File Size" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Format -->
+                            <Border Grid.Row="1" Grid.Column="0" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,4,0">
+                                <StackPanel>
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
+                                             Text="{Binding FormatDisplay, Mode=OneWay}"/>
+                                    <TextBlock Text="Format" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Completeness -->
+                            <Border Grid.Row="1" Grid.Column="1" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,4,0">
+                                <StackPanel>
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
+                                             Text="{Binding FileProfile.OverallCompleteness, StringFormat='{}{0:F1}%', Mode=OneWay}"/>
+                                    <TextBlock Text="Completeness" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Columns with Nulls -->
+                            <Border Grid.Row="1" Grid.Column="2" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,0,0">
+                                <StackPanel>
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
+                                             Text="{Binding FileProfile.ColumnsWithNulls, Mode=OneWay}"/>
+                                    <TextBlock Text="Cols w/ Nulls" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
                 <!-- Quality Score Gauge Section -->
                 <Border Style="{StaticResource SectionCard}"
                         Visibility="{Binding HasProfile, Converter={StaticResource BoolToVis}}">
@@ -155,38 +262,26 @@
                             </Grid.RowDefinitions>
                             
                             <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,6,6">
-                                <TextBlock FontSize="10" Foreground="Gray">
-                                    <Run Text="Completeness"/>
-                                    <Run Text=" "/>
-                                    <Run Text="{Binding CompletenessScore, StringFormat={}{0:F1}/25, Mode=OneWay}"/>
-                                </TextBlock>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                         Text="{Binding CompletenessScore, StringFormat='Completeness {0:F1}/25', Mode=OneWay}"/>
                                 <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding CompletenessScore}"/>
                             </StackPanel>
                             
                             <StackPanel Grid.Row="0" Grid.Column="1" Margin="6,0,0,6">
-                                <TextBlock FontSize="10" Foreground="Gray">
-                                    <Run Text="Uniqueness"/>
-                                    <Run Text=" "/>
-                                    <Run Text="{Binding UniquenessScore, StringFormat={}{0:F1}/25, Mode=OneWay}"/>
-                                </TextBlock>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                         Text="{Binding UniquenessScore, StringFormat='Uniqueness {0:F1}/25', Mode=OneWay}"/>
                                 <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding UniquenessScore}"/>
                             </StackPanel>
                             
                             <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,6,0">
-                                <TextBlock FontSize="10" Foreground="Gray">
-                                    <Run Text="Validity"/>
-                                    <Run Text=" "/>
-                                    <Run Text="{Binding ValidityScore, StringFormat={}{0:F1}/25, Mode=OneWay}"/>
-                                </TextBlock>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                         Text="{Binding ValidityScore, StringFormat='Validity {0:F1}/25', Mode=OneWay}"/>
                                 <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding ValidityScore}"/>
                             </StackPanel>
                             
                             <StackPanel Grid.Row="1" Grid.Column="1" Margin="6,0,0,0">
-                                <TextBlock FontSize="10" Foreground="Gray">
-                                    <Run Text="Distribution"/>
-                                    <Run Text=" "/>
-                                    <Run Text="{Binding DistributionScore, StringFormat={}{0:F1}/25, Mode=OneWay}"/>
-                                </TextBlock>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                         Text="{Binding DistributionScore, StringFormat='Distribution {0:F1}/25', Mode=OneWay}"/>
                                 <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding DistributionScore}"/>
                             </StackPanel>
                         </Grid>
@@ -195,32 +290,24 @@
                         <Border Background="#F5F5F5" CornerRadius="4" Padding="10" Margin="0,10,0,0">
                             <StackPanel>
                                 <TextBlock Text="📖 Scoring Key" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,6"/>
-                                <TextBlock FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,3">
-                                    <Run Text="Each dimension is scored 0–25. Total score = sum of all four (0–100)." FontStyle="Italic"/>
-                                </TextBlock>
-                                <TextBlock FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,2">
-                                    <Run FontWeight="SemiBold" Text="Completeness"/>
-                                    <Run Text="— Measures how few null/missing values exist. 0% nulls = 25/25."/>
-                                </TextBlock>
-                                <TextBlock FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,2">
-                                    <Run FontWeight="SemiBold" Text="Uniqueness"/>
-                                    <Run Text="— Measures value diversity. Higher distinct-value ratios score higher; constant columns score low."/>
-                                </TextBlock>
-                                <TextBlock FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,2">
-                                    <Run FontWeight="SemiBold" Text="Validity"/>
-                                    <Run Text="— Measures type consistency and value correctness. Penalizes empty strings, non-nullable columns with nulls, and suspicious patterns."/>
-                                </TextBlock>
-                                <TextBlock FontSize="10" Foreground="#555" TextWrapping="Wrap">
-                                    <Run FontWeight="SemiBold" Text="Distribution"/>
-                                    <Run Text="— Measures data spread. Penalizes high outlier rates, extreme skew, and single-value dominance."/>
-                                </TextBlock>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,3"
+                                         Text="Each dimension is scored 0–25. Total score = sum of all four (0–100)."
+                                         FontStyle="Italic"/>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,2"
+                                         Text="Completeness — Measures how few null/missing values exist. 0% nulls = 25/25."/>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,2"
+                                         Text="Uniqueness — Measures value diversity. Higher distinct-value ratios score higher; constant columns score low."/>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,2"
+                                         Text="Validity — Measures type consistency and value correctness. Penalizes empty strings, non-nullable columns with nulls, and suspicious patterns."/>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap"
+                                         Text="Distribution — Measures data spread. Penalizes high outlier rates, extreme skew, and single-value dominance."/>
                                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                     <Ellipse Width="9" Height="9" Fill="#4CAF50" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                    <TextBlock Text="80–100 Good" FontSize="9" Foreground="#999" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="80–100 Good" FontSize="9" Foreground="#999" VerticalAlignment="Center" Margin="0,0,10,0"/>
                                     <Ellipse Width="9" Height="9" Fill="#FF9800" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                    <TextBlock Text="60–79 Fair" FontSize="9" Foreground="#999" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="60–79 Fair" FontSize="9" Foreground="#999" VerticalAlignment="Center" Margin="0,0,10,0"/>
                                     <Ellipse Width="9" Height="9" Fill="#F44336" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                    <TextBlock Text="&lt;60 Needs Review" FontSize="9" Foreground="#999" VerticalAlignment="Center"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="&lt;60 Needs Review" FontSize="9" Foreground="#999" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -276,10 +363,13 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
-                                <TextBlock>
-                                    <Run Text="🔴 Needs Review"/>
-                                    <Run Text="{Binding FindingsCriticalCount, StringFormat=' ({0})', Mode=OneWay}"/>
-                                </TextBlock>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#F44336" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock VerticalAlignment="Center">
+                                        <Run Text="Needs Review"/>
+                                        <Run Text="{Binding FindingsCriticalCount, StringFormat=' ({0})', Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
                             </Button>
                             
                             <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="Warning"
@@ -298,10 +388,13 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
-                                <TextBlock>
-                                    <Run Text="🟡 Fair"/>
-                                    <Run Text="{Binding FindingsWarningCount, StringFormat=' ({0})', Mode=OneWay}"/>
-                                </TextBlock>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#FF9800" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock VerticalAlignment="Center">
+                                        <Run Text="Fair"/>
+                                        <Run Text="{Binding FindingsWarningCount, StringFormat=' ({0})', Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
                             </Button>
                             
                             <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="Info"
@@ -320,10 +413,13 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
-                                <TextBlock>
-                                    <Run Text="🟢 Good"/>
-                                    <Run Text="{Binding FindingsInfoCount, StringFormat=' ({0})', Mode=OneWay}"/>
-                                </TextBlock>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#4CAF50" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock VerticalAlignment="Center">
+                                        <Run Text="Good"/>
+                                        <Run Text="{Binding FindingsInfoCount, StringFormat=' ({0})', Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
                             </Button>
                         </WrapPanel>
                         
@@ -344,8 +440,11 @@
                                                         <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="{Binding Label}"
-                                                               FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Ellipse Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,5,0"
+                                                                 Fill="{Binding Color, Converter={StaticResource StringToBrushConverter}}"/>
+                                                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                                                    </StackPanel>
                                                     <Border Grid.Column="1" Background="#E8E8E8" CornerRadius="8"
                                                             Padding="6,1" VerticalAlignment="Center" Margin="6,0">
                                                         <TextBlock Text="{Binding Count}" FontSize="10" FontWeight="SemiBold" Foreground="#555"/>
@@ -388,11 +487,18 @@
                                                                 </Style>
                                                             </Border.Style>
                                                             <StackPanel>
-                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="10"
-                                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                                                                <TextBlock Text="{Binding Description}" FontSize="9" Foreground="#888"
-                                                                           TextWrapping="Wrap" Margin="0,1,0,0" MaxHeight="32"
-                                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}"/>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Ellipse Width="7" Height="7" VerticalAlignment="Center" Margin="0,0,5,0"
+                                                                             Fill="{Binding SeverityColor, Converter={StaticResource StringToBrushConverter}}"/>
+                                                                    <TextBox Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" FontSize="10"
+                                                                             Style="{StaticResource SelectableText}"
+                                                                             ToolTip="{Binding Title}"
+                                                                             VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <TextBox Text="{Binding Description, Mode=OneWay}" FontSize="9" Foreground="#888"
+                                                                         TextWrapping="Wrap" Margin="12,1,0,0" MaxHeight="48"
+                                                                         Style="{StaticResource SelectableText}"
+                                                                         ToolTip="{Binding Description}"/>
                                                             </StackPanel>
                                                         </Border>
                                                     </DataTemplate>
