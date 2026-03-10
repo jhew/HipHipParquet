@@ -487,14 +487,13 @@
                                                                 </Style>
                                                             </Border.Style>
                                                             <StackPanel>
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <Ellipse Width="7" Height="7" VerticalAlignment="Center" Margin="0,0,5,0"
+                                                                <DockPanel LastChildFill="True">
+                                                                    <Ellipse DockPanel.Dock="Left" Width="7" Height="7" VerticalAlignment="Top" Margin="0,2,5,0"
                                                                              Fill="{Binding SeverityColor, Converter={StaticResource StringToBrushConverter}}"/>
                                                                     <TextBox Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" FontSize="10"
                                                                              Style="{StaticResource SelectableText}"
-                                                                             ToolTip="{Binding Title}"
-                                                                             VerticalAlignment="Center"/>
-                                                                </StackPanel>
+                                                                             TextWrapping="Wrap"/>
+                                                                </DockPanel>
                                                                 <TextBox Text="{Binding Description, Mode=OneWay}" FontSize="9" Foreground="#888"
                                                                          TextWrapping="Wrap" Margin="12,1,0,0" MaxHeight="48"
                                                                          Style="{StaticResource SelectableText}"

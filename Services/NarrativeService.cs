@@ -208,11 +208,14 @@ public class NarrativeService
         if (lowUniqueCols.Count > 0)
         {
             var overallUniqueness = profile.OverallScore.Uniqueness;
+            const int maxListed = 5;
+            var listedCols = string.Join(", ", lowUniqueCols.Take(maxListed).Select(c => $"\"{c.Name}\" ({c.Score.Uniqueness:F1}/25)"));
+            var moreSuffix = lowUniqueCols.Count > maxListed ? $" and {lowUniqueCols.Count - maxListed} more" : "";
             findings.Add(new NarrativeItem
             {
                 Severity = overallUniqueness < CriticalUniquenessDimension ? NarrativeSeverity.Critical : NarrativeSeverity.Warning,
                 Title = $"{lowUniqueCols.Count} column(s) with low uniqueness score",
-                Description = $"Overall uniqueness score is {overallUniqueness:F1}/25. Columns with uniqueness <{LowColumnUniqueness:F0}/25: {string.Join(", ", lowUniqueCols.Select(c => $"\"{c.Name}\" ({c.Score.Uniqueness:F1}/25)"))}. Very few distinct values indicate near-constant or highly repetitive data."
+                Description = $"Overall uniqueness score is {overallUniqueness:F1}/25. Columns with uniqueness <{LowColumnUniqueness:F0}/25: {listedCols}{moreSuffix}. Very few distinct values indicate near-constant or highly repetitive data."
             });
         }
 
