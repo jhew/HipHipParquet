@@ -59,6 +59,13 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _overallScoreColor = "#9E9E9E";
 
+    // File summary
+    [ObservableProperty]
+    private string _formatDisplay = "";
+
+    [ObservableProperty]
+    private string _analyzedAtDisplay = "";
+
     // Score components
     [ObservableProperty]
     private double _completenessScore;
@@ -254,6 +261,8 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             OverallScore = profile.OverallScore.Total;
             OverallGrade = profile.OverallScore.Grade;
             OverallScoreColor = profile.OverallScore.Color;
+            FormatDisplay = Services.FileFormatDetector.GetFormatDisplayName(profile.SourceFormat);
+            AnalyzedAtDisplay = profile.AnalyzedAt.ToString("MMM d, yyyy h:mm tt", System.Globalization.CultureInfo.CurrentCulture);
             CompletenessScore = profile.OverallScore.Completeness;
             UniquenessScore = profile.OverallScore.Uniqueness;
             ValidityScore = profile.OverallScore.Validity;
@@ -272,7 +281,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
 
             HasProfile = true;
             AnalysisProgress = 100;
-            StatusMessage = $"Analysis complete — {profile.ColumnCount} columns, {profile.RowCount:N0} rows, score: {profile.OverallScore.Total:F1}/100";
+            StatusMessage = $"Analysis complete — {profile.ColumnCount} columns, {profile.RowCount:N0} rows, score: {profile.OverallScore.Total:F0}/100";
         }
         catch (OperationCanceledException)
         {
@@ -568,6 +577,8 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         HasProfile = false;
         HasComparison = false;
         Comparison = null;
+        FormatDisplay = "";
+        AnalyzedAtDisplay = "";
         Findings.Clear();
         _allFindings.Clear();
         GroupedFindings.Clear();
@@ -616,9 +627,9 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
                 Severity = severity,
                 Label = severity switch
                 {
-                    NarrativeSeverity.Critical => "\U0001f534 Needs Review",
-                    NarrativeSeverity.Warning => "\U0001f7e1 Fair",
-                    NarrativeSeverity.Info => "\U0001f7e2 Good",
+                    NarrativeSeverity.Critical => "Needs Review",
+                    NarrativeSeverity.Warning => "Fair",
+                    NarrativeSeverity.Info => "Good",
                     _ => "Other"
                 },
                 Color = severity switch

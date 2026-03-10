@@ -1,0 +1,304 @@
+<Window x:Class="HipHipParquet.Views.HelpDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Help — HipHipParquet"
+        Width="580" Height="520"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResizeWithGrip"
+        ShowInTaskbar="False"
+        MinWidth="480" MinHeight="420"
+        Icon="/Assets/app.ico">
+    <Window.Resources>
+        <Style x:Key="ShortcutBadge" TargetType="Border">
+            <Setter Property="Background" Value="#512BD4"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="7,3"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="ShortcutLabel" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Consolas, Courier New"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style x:Key="ShortcutDesc" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#512BD4"/>
+            <Setter Property="Margin" Value="0,12,0,4"/>
+        </Style>
+        <Style x:Key="TipText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+        </Style>
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#512BD4" Padding="16,10">
+            <TextBlock Text="Help" FontSize="16" FontWeight="Bold" Foreground="White"/>
+        </Border>
+
+        <!-- Tab Control -->
+        <TabControl x:Name="HelpTabControl" Grid.Row="1" Margin="12,12,12,0"
+                    BorderThickness="1" BorderBrush="#E0E0E0">
+
+            <!-- ── Tab 0: Keyboard Shortcuts ───────────────────────────── -->
+            <TabItem>
+                <TabItem.Header>
+                    <TextBlock Text="⌨  Keyboard Shortcuts" FontSize="11"/>
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+                    <StackPanel>
+                        <TextBlock Text="⌨  Keyboard Shortcuts" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+
+                        <!-- File shortcuts -->
+                        <TextBlock Text="FILE" Style="{StaticResource SectionHeader}"/>
+                        <Grid Margin="0,0,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="32"/>
+                                <RowDefinition Height="32"/>
+                            </Grid.RowDefinitions>
+                            <!-- Ctrl+O -->
+                            <Border Grid.Row="0" Grid.Column="0" Background="#F9F9F9" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + O"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="0" Grid.Column="1" Background="#F9F9F9" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Open a data file"/>
+                            </Border>
+                            <!-- Ctrl+S -->
+                            <Border Grid.Row="1" Grid.Column="0" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + S"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="1" Grid.Column="1" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Save the current file"/>
+                            </Border>
+                        </Grid>
+
+                        <!-- Edit shortcuts -->
+                        <TextBlock Text="EDIT" Style="{StaticResource SectionHeader}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="32"/>
+                                <RowDefinition Height="32"/>
+                                <RowDefinition Height="32"/>
+                            </Grid.RowDefinitions>
+                            <Border Grid.Row="0" Grid.Column="0" Background="#F9F9F9" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + C"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="0" Grid.Column="1" Background="#F9F9F9" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Copy selected cells (tab-separated, Excel compatible)"/>
+                            </Border>
+                            <Border Grid.Row="1" Grid.Column="0" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + Shift + C"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="1" Grid.Column="1" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Copy selection as TSV"/>
+                            </Border>
+                            <Border Grid.Row="2" Grid.Column="0" Background="#F9F9F9" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + Alt + C"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="2" Grid.Column="1" Background="#F9F9F9" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Copy selection as CSV"/>
+                            </Border>
+                        </Grid>
+
+                        <!-- Other shortcuts -->
+                        <TextBlock Text="OTHER" Style="{StaticResource SectionHeader}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="32"/>
+                                <RowDefinition Height="32"/>
+                            </Grid.RowDefinitions>
+                            <Border Grid.Row="0" Grid.Column="0" Background="#F9F9F9" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="F1"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="0" Grid.Column="1" Background="#F9F9F9" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Open this Help dialog"/>
+                            </Border>
+                            <Border Grid.Row="1" Grid.Column="0" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left" Background="#888">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Drag &amp; Drop"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="1" Grid.Column="1" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Drop any supported file onto the window to open it"/>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── Tab 1: Tips & Tricks ────────────────────────────────── -->
+            <TabItem>
+                <TabItem.Header>
+                    <TextBlock Text="💡 Tips &amp; Tricks" FontSize="11"/>
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+                    <StackPanel>
+                        <TextBlock Text="💡 Tips &amp; Tricks" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+
+                        <TextBlock Text="OPENING FILES" Style="{StaticResource SectionHeader}"/>
+                        <StackPanel Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Drag and drop data files directly onto the window — no need to use File → Open."/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Opened files are monitored on disk. If the source file changes, you'll be prompted to reload automatically."/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Up to 10 recently opened files are stored under File → Recent Files for quick access."/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="FILTERING &amp; SEARCHING" Style="{StaticResource SectionHeader}"/>
+                        <StackPanel Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Column filter boxes update as you type — results appear after a short pause, no Enter key needed."/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Use View → Toggle Filter Row to hide the filter strip when working with wide tables."/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="COPYING DATA" Style="{StaticResource SectionHeader}"/>
+                        <StackPanel Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Select any range of cells and press Ctrl+C. Output is tab-separated — paste directly into Excel."/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Edit → Copy as CSV and Edit → Copy as TSV give explicit delimiter control over clipboard output."/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="IMPORT OPTIONS" Style="{StaticResource SectionHeader}"/>
+                        <StackPanel Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="File → Import Options configures delimiter, encoding, quote character, and header row for CSV/TSV files."/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="File → Flatten Nested JSON expands nested arrays and objects into a flat columnar structure before loading."/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="QUALITY REVIEW" Style="{StaticResource SectionHeader}"/>
+                        <StackPanel Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Click Analyze in the Quality Review panel to generate a scored data quality report across all columns."/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Use Compare to detect schema changes and data drift between two versions of the same file. Export the report as HTML for sharing."/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Findings are grouped by severity — click a group header to expand or collapse it. Individual finding text is selectable and can be copied."/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── Tab 2: About ────────────────────────────────────────── -->
+            <TabItem>
+                <TabItem.Header>
+                    <TextBlock Text="ℹ  About" FontSize="11"/>
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top">
+
+                        <!-- App icon + name -->
+                        <TextBlock Text="📊" FontSize="48" HorizontalAlignment="Center" Margin="0,16,0,4"/>
+                        <TextBlock Text="HipHipParquet" FontSize="22" FontWeight="Bold"
+                                   HorizontalAlignment="Center" Foreground="#512BD4"/>
+                        <TextBlock x:Name="VersionText" FontSize="12" Foreground="Gray"
+                                   HorizontalAlignment="Center" Margin="0,2,0,0"/>
+
+                        <Separator Margin="40,16"/>
+
+                        <!-- Description -->
+                        <TextBlock Text="Data file viewer and quality analysis tool"
+                                   FontSize="12" HorizontalAlignment="Center"
+                                   TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+                        <TextBlock Text="Supported formats: Parquet · CSV · TSV · JSON · Excel"
+                                   FontSize="11" Foreground="Gray" HorizontalAlignment="Center"
+                                   TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,4"/>
+
+                        <TextBlock Text="Powered by DuckDB .NET"
+                                   FontSize="11" Foreground="Gray" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+
+                        <!-- GitHub link -->
+                        <TextBlock HorizontalAlignment="Center" FontSize="11" Margin="0,0,0,8">
+                            <Hyperlink NavigateUri="https://github.com/jhew/HipHipParquet"
+                                       RequestNavigate="OnHyperlinkNavigate">
+                                github.com/jhew/HipHipParquet
+                            </Hyperlink>
+                        </TextBlock>
+
+                        <Separator Margin="40,8"/>
+
+                        <TextBlock Text="Licensed under the MIT License"
+                                   FontSize="10" Foreground="#AAA" HorizontalAlignment="Center" Margin="0,0,0,2"/>
+                        <TextBlock Text="© 2025 jhew"
+                                   FontSize="10" Foreground="#AAA" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" BorderBrush="#E0E0E0" BorderThickness="0,1,0,0" Padding="12,8">
+            <Button Content="Close" HorizontalAlignment="Right"
+                    Padding="24,6" Click="OnCloseClick"
+                    Background="#512BD4" Foreground="White"
+                    BorderThickness="0" Cursor="Hand" FontWeight="SemiBold"/>
+        </Border>
+    </Grid>
+</Window>

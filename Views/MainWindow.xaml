@@ -10,9 +10,11 @@
         Drop="OnFileDrop">
     <Window.InputBindings>
         <KeyBinding Key="S" Modifiers="Ctrl" Command="Save"/>
+        <KeyBinding Key="F1" Command="Help"/>
     </Window.InputBindings>
     <Window.CommandBindings>
         <CommandBinding Command="Save" Executed="OnSaveClick"/>
+        <CommandBinding Command="Help" Executed="OnHelpClick"/>
     </Window.CommandBindings>
     <Grid>
         <Grid.RowDefinitions>
@@ -76,6 +78,24 @@
                 </MenuItem>
                 <MenuItem Header="Copy as _CSV" Click="OnCopyAsCsvClick" InputGestureText="Ctrl+Alt+C"/>
                 <MenuItem Header="Copy as _TSV" Click="OnCopyAsTsvClick" InputGestureText="Ctrl+Shift+C"/>
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_Keyboard Shortcuts" Click="OnKeyboardShortcutsClick" InputGestureText="F1">
+                    <MenuItem.Icon>
+                        <TextBlock Text="⌨" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Tips &amp; Tricks" Click="OnTipsAndTricksClick">
+                    <MenuItem.Icon>
+                        <TextBlock Text="💡" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_About HipHipParquet..." Click="OnAboutClick">
+                    <MenuItem.Icon>
+                        <TextBlock Text="ℹ" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
         </Menu>
 

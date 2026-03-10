@@ -18,6 +18,8 @@ public class NarrativeService
     private const int LowDistinctThreshold = 2;
     private const double CriticalQualityScore = 40.0;
     private const double WarningQualityScore = 60.0;
+    private const double CriticalUniquenessDimension = 7.0;  // out of 25 — near-constant across many columns
+    private const double LowColumnUniqueness = 10.0;          // out of 25 — very few distinct values
 
     /// <summary>
     /// Generates narrative findings for a single file profile.
@@ -201,6 +203,22 @@ public class NarrativeService
             });
         }
 
+        // Uniqueness dimension summary
+        var lowUniqueCols = profile.Columns.Where(c => c.Score.Uniqueness < LowColumnUniqueness).ToList();
+        if (lowUniqueCols.Count > 0)
+        {
+            var overallUniqueness = profile.OverallScore.Uniqueness;
+            const int maxListed = 5;
+            var listedCols = string.Join(", ", lowUniqueCols.Take(maxListed).Select(c => $"\"{c.Name}\" ({c.Score.Uniqueness:F1}/25)"));
+            var moreSuffix = lowUniqueCols.Count > maxListed ? $" and {lowUniqueCols.Count - maxListed} more" : "";
+            findings.Add(new NarrativeItem
+            {
+                Severity = overallUniqueness < CriticalUniquenessDimension ? NarrativeSeverity.Critical : NarrativeSeverity.Warning,
+                Title = $"{lowUniqueCols.Count} column(s) with low uniqueness score",
+                Description = $"Overall uniqueness score is {overallUniqueness:F1}/25. Columns with uniqueness <{LowColumnUniqueness:F0}/25: {listedCols}{moreSuffix}. Very few distinct values indicate near-constant or highly repetitive data."
+            });
+        }
+
         // Distribution dimension summary
         var lowDistCols = profile.Columns.Where(c => c.Score.Distribution < 20).ToList();
         if (lowDistCols.Count > 0)
@@ -284,7 +302,13 @@ public class NarrativeService
         }
 
         // Constant column (only 1 distinct value)
-        if (col.DistinctCount == 1 && col.NonNullCount > 10)
+        bool isConstantCol = col.DistinctCount == 1 && col.NonNullCount > 10;
+        // Low cardinality for non-boolean (≤2 distinct values across a large row count)
+        bool isLowCardinalityCol = col.Category != ColumnCategory.Boolean
+            && col.DistinctCount <= LowDistinctThreshold
+            && col.NonNullCount > 100;
+
+        if (isConstantCol)
         {
             findings.Add(new NarrativeItem
             {
@@ -296,13 +320,26 @@ public class NarrativeService
         }
 
         // Low cardinality for non-boolean
-        if (col.Category != ColumnCategory.Boolean && col.DistinctCount <= LowDistinctThreshold && col.NonNullCount > 100)
+        if (isLowCardinalityCol)
         {
             findings.Add(new NarrativeItem
             {
                 Severity = NarrativeSeverity.Info,
                 Title = $"Low cardinality: {col.Name}",
                 Description = $"Column \"{col.Name}\" has only {col.DistinctCount} unique values across {col.NonNullCount:N0} rows.",
+                ColumnName = col.Name
+            });
+        }
+
+        // Low uniqueness score not already covered by constant-column or low-cardinality checks
+        // Note: severity intentionally capped at Warning per-column; Critical is surfaced in the file-level summary.
+        if (!isConstantCol && !isLowCardinalityCol && col.Score.Uniqueness < LowColumnUniqueness && col.NonNullCount > 0)
+        {
+            findings.Add(new NarrativeItem
+            {
+                Severity = col.Score.Uniqueness < CriticalUniquenessDimension ? NarrativeSeverity.Warning : NarrativeSeverity.Info,
+                Title = $"Low uniqueness: {col.Name}",
+                Description = $"Column \"{col.Name}\" has a uniqueness score of {col.Score.Uniqueness:F1}/25 — only {col.DistinctCount:N0} distinct value(s) among {col.NonNullCount:N0} non-null rows ({col.DistinctPercentage:F1}% distinct).",
                 ColumnName = col.Name
             });
         }
