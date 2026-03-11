@@ -111,13 +111,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
 
     // Column sort
     [ObservableProperty]
-    private string _columnSortBy = "Name";
-
-    [ObservableProperty]
-    private ObservableCollection<string> _columnSortOptions =
-    [
-        "Name", "Score \u2191", "Score \u2193", "Nulls \u2191", "Nulls \u2193"
-    ];
+    private string _columnSortBy = "Name ↑";
 
     // Dimension group-by
     [ObservableProperty]
@@ -280,6 +274,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             }
 
             HasProfile = true;
+            ExportHtmlReportCommand.NotifyCanExecuteChanged();
             AnalysisProgress = 100;
             StatusMessage = $"Analysis complete — {profile.ColumnCount} columns, {profile.RowCount:N0} rows, score: {profile.OverallScore.Total:F0}/100";
         }
@@ -373,6 +368,29 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     partial void OnColumnSortByChanged(string value)
     {
         ApplySortToColumns();
+    }
+
+    [RelayCommand]
+    private void SetSort(string sortBy)
+    {
+        // Extract column name (remove direction arrow)
+        var newColumnName = sortBy.Replace(" ↑", "").Replace(" ↓", "").Trim();
+        var currentColumnName = ColumnSortBy.Replace(" ↑", "").Replace(" ↓", "").Trim();
+
+        // If clicking the same column, toggle direction
+        if (newColumnName == currentColumnName)
+        {
+            // Toggle between ↑ and ↓
+            var newSort = ColumnSortBy.EndsWith("↑") 
+                ? ColumnSortBy.Replace(" ↑", " ↓") 
+                : ColumnSortBy.Replace(" ↓", " ↑");
+            ColumnSortBy = newSort;
+        }
+        else
+        {
+            // New column - default to ascending
+            ColumnSortBy = $"{newColumnName} ↑";
+        }
     }
 
     [RelayCommand]
@@ -525,7 +543,9 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             StatusMessage = $"Showing all {_allColumns.Count} columns";
     }
 
-    [RelayCommand]
+    private bool CanExportHtmlReport() => HasProfile;
+
+    [RelayCommand(CanExecute = nameof(CanExportHtmlReport))]
     private async Task ExportHtmlReportAsync()
     {
         if (FileProfile == null)
@@ -550,12 +570,20 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             StatusMessage = $"Report exported to {System.IO.Path.GetFileName(saveDialog.FileName)}";
 
             // Open in default browser
-            var psi = new System.Diagnostics.ProcessStartInfo
+            try
             {
-                FileName = saveDialog.FileName,
-                UseShellExecute = true
-            };
-            System.Diagnostics.Process.Start(psi);
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = saveDialog.FileName,
+                    UseShellExecute = true
+                };
+                System.Diagnostics.Process.Start(psi);
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // Fallback: use explorer.exe when no default browser is associated with .html
+                System.Diagnostics.Process.Start("explorer.exe", $"\"{saveDialog.FileName}\"");
+            }
         }
         catch (Exception ex)
         {
@@ -596,6 +624,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         GroupByStatusMessage = "";
         StatusMessage = "File loaded. Click Analyze to profile.";
         AnalyzeCommand.NotifyCanExecuteChanged();
+        ExportHtmlReportCommand.NotifyCanExecuteChanged();
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
@@ -660,10 +689,24 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
 
         var sorted = ColumnSortBy switch
         {
-            "Score \u2191" => source.OrderBy(c => c.Score.Total).ToList(),
-            "Score \u2193" => source.OrderByDescending(c => c.Score.Total).ToList(),
-            "Nulls \u2191" => source.OrderBy(c => c.NullPercentage).ToList(),
-            "Nulls \u2193" => source.OrderByDescending(c => c.NullPercentage).ToList(),
+            "Name ↑" => source.OrderBy(c => c.Name).ToList(),
+            "Name ↓" => source.OrderByDescending(c => c.Name).ToList(),
+            "Type ↑" => source.OrderBy(c => c.DuckDbType).ToList(),
+            "Type ↓" => source.OrderByDescending(c => c.DuckDbType).ToList(),
+            "Score ↑" => source.OrderBy(c => c.Score.Total).ToList(),
+            "Score ↓" => source.OrderByDescending(c => c.Score.Total).ToList(),
+            "Completeness ↑" => source.OrderBy(c => c.Score.Completeness).ToList(),
+            "Completeness ↓" => source.OrderByDescending(c => c.Score.Completeness).ToList(),
+            "Uniqueness ↑" => source.OrderBy(c => c.Score.Uniqueness).ToList(),
+            "Uniqueness ↓" => source.OrderByDescending(c => c.Score.Uniqueness).ToList(),
+            "Validity ↑" => source.OrderBy(c => c.Score.Validity).ToList(),
+            "Validity ↓" => source.OrderByDescending(c => c.Score.Validity).ToList(),
+            "Distribution ↑" => source.OrderBy(c => c.Score.Distribution).ToList(),
+            "Distribution ↓" => source.OrderByDescending(c => c.Score.Distribution).ToList(),
+            "Nulls ↑" => source.OrderBy(c => c.NullPercentage).ToList(),
+            "Nulls ↓" => source.OrderByDescending(c => c.NullPercentage).ToList(),
+            "Distinct ↑" => source.OrderBy(c => c.DistinctCount).ToList(),
+            "Distinct ↓" => source.OrderByDescending(c => c.DistinctCount).ToList(),
             _ => source.OrderBy(c => c.Name).ToList()
         };
         DisplayedColumns = new ObservableCollection<ColumnProfile>(sorted);

@@ -105,6 +105,8 @@ public class ValueFrequency
     public string Value { get; set; } = string.Empty;
     public long Count { get; set; }
     public double Percentage { get; set; }
+    /// <summary>Bar fill width 0–100, normalized so the top entry = 100.</summary>
+    public double RelativeWidth { get; set; }
 }
 
 /// <summary>
