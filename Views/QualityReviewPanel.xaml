@@ -292,44 +292,53 @@
                     <StackPanel>
                         <TextBlock Text="Data Quality Score" FontWeight="Bold" FontSize="13" Margin="0,0,0,6"/>
                         
-                        <controls:QualityGaugeControl HorizontalAlignment="Center"
-                            Score="{Binding OverallScore}"
-                            Grade="{Binding OverallGrade}"/>
-                        
-                        <!-- Component scores with color-coded bars -->
-                        <Grid Margin="0,8,0,0">
+                        <!-- Gauge + bars side by side -->
+                        <Grid Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*" MaxWidth="320"/>
                             </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition/>
-                                <RowDefinition/>
-                            </Grid.RowDefinitions>
-                            
-                            <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,6,6">
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
-                                         Text="{Binding CompletenessScore, StringFormat='Completeness {0:F1}/25', Mode=OneWay}"/>
-                                <ProgressBar Style="{StaticResource CompletenessBar}" Value="{Binding CompletenessScore}"/>
-                            </StackPanel>
-                            
-                            <StackPanel Grid.Row="0" Grid.Column="1" Margin="6,0,0,6">
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
-                                         Text="{Binding UniquenessScore, StringFormat='Uniqueness {0:F1}/25', Mode=OneWay}"/>
-                                <ProgressBar Style="{StaticResource UniquenessBar}" Value="{Binding UniquenessScore}"/>
-                            </StackPanel>
-                            
-                            <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,6,0">
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
-                                         Text="{Binding ValidityScore, StringFormat='Validity {0:F1}/25', Mode=OneWay}"/>
-                                <ProgressBar Style="{StaticResource ValidityBar}" Value="{Binding ValidityScore}"/>
-                            </StackPanel>
-                            
-                            <StackPanel Grid.Row="1" Grid.Column="1" Margin="6,0,0,0">
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
-                                         Text="{Binding DistributionScore, StringFormat='Distribution {0:F1}/25', Mode=OneWay}"/>
-                                <ProgressBar Style="{StaticResource DistributionBar}" Value="{Binding DistributionScore}"/>
-                            </StackPanel>
+
+                            <controls:QualityGaugeControl Grid.Column="0"
+                                VerticalAlignment="Center" Margin="0,0,16,0"
+                                Score="{Binding OverallScore}"
+                                Grade="{Binding OverallGrade}"/>
+
+                            <!-- Component scores with color-coded bars -->
+                            <Grid Grid.Column="1" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition/>
+                                    <RowDefinition/>
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,6,6">
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                             Text="{Binding CompletenessScore, StringFormat='Completeness {0:F1}/25', Mode=OneWay}"/>
+                                    <ProgressBar Style="{StaticResource CompletenessBar}" Value="{Binding CompletenessScore}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="0" Grid.Column="1" Margin="6,0,0,6">
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                             Text="{Binding UniquenessScore, StringFormat='Uniqueness {0:F1}/25', Mode=OneWay}"/>
+                                    <ProgressBar Style="{StaticResource UniquenessBar}" Value="{Binding UniquenessScore}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,6,0">
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                             Text="{Binding ValidityScore, StringFormat='Validity {0:F1}/25', Mode=OneWay}"/>
+                                    <ProgressBar Style="{StaticResource ValidityBar}" Value="{Binding ValidityScore}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="6,0,0,0">
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                             Text="{Binding DistributionScore, StringFormat='Distribution {0:F1}/25', Mode=OneWay}"/>
+                                    <ProgressBar Style="{StaticResource DistributionBar}" Value="{Binding DistributionScore}"/>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
                         
                         <!-- Scoring Key - 2 column grid layout -->
