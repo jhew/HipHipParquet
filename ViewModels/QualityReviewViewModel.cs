@@ -616,7 +616,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         SelectedFindingFilter = "All";
         DisplayedColumns.Clear();
         _allColumns.Clear();
-        ColumnSortBy = "Name";
+        ColumnSortBy = "Name ↑";
         GroupedResults.Clear();
         HasGroupedResults = false;
         IsGroupByExpanded = false;
@@ -680,8 +680,10 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     private void ApplySortToColumns()
     {
         // Sort the currently displayed (potentially filtered) set so active filters are preserved.
-        // Fall back to _allColumns only when DisplayedColumns hasn't been populated yet.
-        var source = (DisplayedColumns != null && DisplayedColumns.Count > 0)
+        // Fall back to _allColumns only when no profile has been loaded yet (DisplayedColumns
+        // not yet initialized). When HasProfile is true but DisplayedColumns is empty it means
+        // the user's filter returned zero results — preserve that empty set rather than resetting.
+        var source = HasProfile
             ? (IEnumerable<ColumnProfile>)DisplayedColumns
             : _allColumns;
 

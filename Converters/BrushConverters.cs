@@ -57,7 +57,8 @@ public class StringToBrushConverter : IValueConverter
 
 /// <summary>
 /// Given the current ColumnSortBy string and a column name as ConverterParameter,
-/// returns "↑", "↓", or "" depending on whether that column is the active sort and its direction.
+/// returns " ↑", " ↓", or "" (note the leading space used to separate the indicator
+/// from the header label) depending on whether that column is the active sort and its direction.
 /// Usage: Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Name}"
 /// </summary>
 public class SortIndicatorConverter : IValueConverter
