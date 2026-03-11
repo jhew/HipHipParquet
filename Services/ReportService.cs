@@ -296,7 +296,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .stat-value { display: block; font-size: 22px; font-weight: bold; color: #512BD4; }
 .stat-label { display: block; font-size: 11px; color: #888; margin-top: 2px; }
 .score-section { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; overflow: visible; min-height: 120px; }
-.score-components { flex: 1; min-width: 200px; }
+.score-components { flex: 1; min-width: 200px; max-width: 420px; }
 .score-bar { display: flex; align-items: center; margin-bottom: 6px; }
 .score-bar-label { width: 90px; font-size: 12px; color: #666; }
 .score-bar-track { flex: 1; height: 8px; background: #e8e8e8; border-radius: 4px; overflow: hidden; }

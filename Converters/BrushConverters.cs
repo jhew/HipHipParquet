@@ -54,3 +54,27 @@ public class StringToBrushConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotImplementedException();
 }
+
+/// <summary>
+/// Given the current ColumnSortBy string and a column name as ConverterParameter,
+/// returns " ↑", " ↓", or "" (note the leading space used to separate the indicator
+/// from the header label) depending on whether that column is the active sort and its direction.
+/// Usage: Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Name}"
+/// </summary>
+public class SortIndicatorConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is not string sortBy || parameter is not string columnName)
+            return string.Empty;
+
+        var active = sortBy.Replace(" ↑", "").Replace(" ↓", "").Trim();
+        if (!string.Equals(active, columnName, StringComparison.Ordinal))
+            return string.Empty;
+
+        return sortBy.EndsWith("↑") ? " ↑" : " ↓";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}

@@ -674,24 +674,40 @@ public class ParquetService : IDisposable
 
     private async Task GetTopValuesAsync(DuckDBConnection connection, string src, string col, ColumnProfile profile, int topN = 5)
     {
-        var sql = $@"SELECT {col}::VARCHAR AS val, COUNT(*) AS cnt 
-            FROM {src} 
-            WHERE {col} IS NOT NULL 
-            GROUP BY {col} 
-            ORDER BY cnt DESC 
-            LIMIT {topN}";
-
-        using var cmd = new DuckDBCommand(sql, connection);
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        try
         {
-            var count = Convert.ToInt64(reader["cnt"]);
-            profile.TopValues.Add(new ValueFrequency
+            // Use CAST instead of :: for better compatibility, and group by CAST value to match SELECT
+            var sql = $@"SELECT CAST({col} AS VARCHAR) AS val, COUNT(*) AS cnt 
+                FROM {src}
+                WHERE {col} IS NOT NULL 
+                GROUP BY CAST({col} AS VARCHAR)
+                ORDER BY cnt DESC 
+                LIMIT {topN}";
+
+            using var cmd = new DuckDBCommand(sql, connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
             {
-                Value = reader["val"]?.ToString() ?? "(null)",
-                Count = count,
-                Percentage = profile.NonNullCount == 0 ? 0 : Math.Round((double)count / profile.NonNullCount * 100, 2)
-            });
+                var count = Convert.ToInt64(reader["cnt"]);
+                profile.TopValues.Add(new ValueFrequency
+                {
+                    Value = reader["val"]?.ToString() ?? "(null)",
+                    Count = count,
+                    Percentage = profile.NonNullCount == 0 ? 0 : Math.Round((double)count / profile.NonNullCount * 100, 2)
+                });
+            }
+
+            // Normalize bar widths so the top entry = 100
+            if (profile.TopValues.Count > 0)
+            {
+                var maxCount = profile.TopValues[0].Count;
+                foreach (var tv in profile.TopValues)
+                    tv.RelativeWidth = maxCount == 0 ? 0 : Math.Round((double)tv.Count / maxCount * 100, 1);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to retrieve top values for column {Column} in {Source}", col, src);
         }
     }
 
@@ -711,22 +727,29 @@ public class ParquetService : IDisposable
             GROUP BY bucket
             ORDER BY bucket";
 
-        using var cmd = new DuckDBCommand(sql, connection);
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        try
         {
-            var bucketIndex = Convert.ToInt32(reader["bucket"]);
-            if (bucketIndex < 1 || bucketIndex > buckets) continue;
-
-            var lowerBound = profile.Min.Value + (bucketIndex - 1) * bucketSize;
-            var upperBound = profile.Min.Value + bucketIndex * bucketSize;
-
-            profile.Histogram.Add(new HistogramBucket
+            using var cmd = new DuckDBCommand(sql, connection);
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
             {
-                LowerBound = lowerBound,
-                UpperBound = upperBound,
-                Count = Convert.ToInt64(reader["cnt"])
-            });
+                var bucketIndex = Convert.ToInt32(reader["bucket"]);
+                if (bucketIndex < 1 || bucketIndex > buckets) continue;
+
+                var lowerBound = profile.Min.Value + (bucketIndex - 1) * bucketSize;
+                var upperBound = profile.Min.Value + bucketIndex * bucketSize;
+
+                profile.Histogram.Add(new HistogramBucket
+                {
+                    LowerBound = lowerBound,
+                    UpperBound = upperBound,
+                    Count = Convert.ToInt64(reader["cnt"])
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to retrieve histogram for column {Column} in {Source}", col, src);
         }
     }
 

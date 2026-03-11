@@ -10,24 +10,43 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
         <conv:StringToBrushConverter x:Key="StringToBrushConverter"/>
+        <conv:SortIndicatorConverter x:Key="SortIndicatorConverter"/>
         
         <!-- Card style for sections -->
         <Style x:Key="SectionCard" TargetType="Border">
             <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#E0E0E0"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="6"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
-            <Setter Property="Padding" Value="12"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Margin" Value="0,0,0,16"/>
+            <Setter Property="Padding" Value="20"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#000000" BlurRadius="8" ShadowDepth="1" Opacity="0.08"/>
+                </Setter.Value>
+            </Setter>
         </Style>
         
-        <!-- Score bar style -->
+        <!-- Score bar style - default (Completeness) -->
         <Style x:Key="ScoreBar" TargetType="ProgressBar">
             <Setter Property="Height" Value="6"/>
             <Setter Property="Maximum" Value="25"/>
-            <Setter Property="Foreground" Value="#512BD4"/>
+            <Setter Property="Foreground" Value="#4CAF50"/>
             <Setter Property="Background" Value="#E8E8E8"/>
             <Setter Property="Margin" Value="0,2,0,4"/>
+        </Style>
+        
+        <!-- Score bar colors for each dimension -->
+        <Style x:Key="CompletenessBar" TargetType="ProgressBar" BasedOn="{StaticResource ScoreBar}">
+            <Setter Property="Foreground" Value="#4CAF50"/>
+        </Style>
+        <Style x:Key="UniquenessBar" TargetType="ProgressBar" BasedOn="{StaticResource ScoreBar}">
+            <Setter Property="Foreground" Value="#2196F3"/>
+        </Style>
+        <Style x:Key="ValidityBar" TargetType="ProgressBar" BasedOn="{StaticResource ScoreBar}">
+            <Setter Property="Foreground" Value="#FF9800"/>
+        </Style>
+        <Style x:Key="DistributionBar" TargetType="ProgressBar" BasedOn="{StaticResource ScoreBar}">
+            <Setter Property="Foreground" Value="#9C27B0"/>
         </Style>
 
         <!-- Small badge style -->
@@ -62,6 +81,29 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        
+        <!-- Export button style - matches Analyze button colors -->
+        <Style x:Key="ExportButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#512BD4"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F0F0F0"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#E0E0E0"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#E8E8E8"/>
+                    <Setter Property="Foreground" Value="#999999"/>
+                    <Setter Property="Cursor" Value="Arrow"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
     
     <Grid>
@@ -71,8 +113,14 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         
-        <!-- Header -->
-        <Border Grid.Row="0" Background="#512BD4" Padding="12,8">
+        <!-- Header with gradient -->
+        <Border Grid.Row="0" Padding="12,8">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#512BD4" Offset="0"/>
+                    <GradientStop Color="#7B5FE0" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -96,10 +144,8 @@
                             BorderThickness="0" Cursor="Hand"
                             Visibility="{Binding CanCancel, Converter={StaticResource BoolToVis}}"/>
                     <Button Content="📄 Export" 
-                            Command="{Binding ExportHtmlReportCommand}" 
-                            Background="Transparent" Foreground="White" 
-                            FontWeight="SemiBold" Padding="8,4"
-                            BorderBrush="White" BorderThickness="1" Cursor="Hand"/>
+                            Command="{Binding ExportHtmlReportCommand}"
+                            Style="{StaticResource ExportButtonStyle}"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -246,68 +292,126 @@
                     <StackPanel>
                         <TextBlock Text="Data Quality Score" FontWeight="Bold" FontSize="13" Margin="0,0,0,6"/>
                         
-                        <controls:QualityGaugeControl HorizontalAlignment="Center"
-                            Score="{Binding OverallScore}"
-                            Grade="{Binding OverallGrade}"/>
-                        
-                        <!-- Component scores -->
-                        <Grid Margin="0,8,0,0">
+                        <!-- Gauge + bars side by side -->
+                        <Grid Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*" MaxWidth="320"/>
                             </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition/>
-                                <RowDefinition/>
-                            </Grid.RowDefinitions>
-                            
-                            <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,6,6">
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
-                                         Text="{Binding CompletenessScore, StringFormat='Completeness {0:F1}/25', Mode=OneWay}"/>
-                                <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding CompletenessScore}"/>
-                            </StackPanel>
-                            
-                            <StackPanel Grid.Row="0" Grid.Column="1" Margin="6,0,0,6">
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
-                                         Text="{Binding UniquenessScore, StringFormat='Uniqueness {0:F1}/25', Mode=OneWay}"/>
-                                <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding UniquenessScore}"/>
-                            </StackPanel>
-                            
-                            <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,6,0">
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
-                                         Text="{Binding ValidityScore, StringFormat='Validity {0:F1}/25', Mode=OneWay}"/>
-                                <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding ValidityScore}"/>
-                            </StackPanel>
-                            
-                            <StackPanel Grid.Row="1" Grid.Column="1" Margin="6,0,0,0">
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
-                                         Text="{Binding DistributionScore, StringFormat='Distribution {0:F1}/25', Mode=OneWay}"/>
-                                <ProgressBar Style="{StaticResource ScoreBar}" Value="{Binding DistributionScore}"/>
-                            </StackPanel>
+
+                            <controls:QualityGaugeControl Grid.Column="0"
+                                VerticalAlignment="Center" Margin="0,0,16,0"
+                                Score="{Binding OverallScore}"
+                                Grade="{Binding OverallGrade}"/>
+
+                            <!-- Component scores with color-coded bars -->
+                            <Grid Grid.Column="1" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition/>
+                                    <RowDefinition/>
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,6,6">
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                             Text="{Binding CompletenessScore, StringFormat='Completeness {0:F1}/25', Mode=OneWay}"/>
+                                    <ProgressBar Style="{StaticResource CompletenessBar}" Value="{Binding CompletenessScore}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="0" Grid.Column="1" Margin="6,0,0,6">
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                             Text="{Binding UniquenessScore, StringFormat='Uniqueness {0:F1}/25', Mode=OneWay}"/>
+                                    <ProgressBar Style="{StaticResource UniquenessBar}" Value="{Binding UniquenessScore}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,6,0">
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                             Text="{Binding ValidityScore, StringFormat='Validity {0:F1}/25', Mode=OneWay}"/>
+                                    <ProgressBar Style="{StaticResource ValidityBar}" Value="{Binding ValidityScore}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="6,0,0,0">
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                             Text="{Binding DistributionScore, StringFormat='Distribution {0:F1}/25', Mode=OneWay}"/>
+                                    <ProgressBar Style="{StaticResource DistributionBar}" Value="{Binding DistributionScore}"/>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
                         
-                        <!-- Scoring Key -->
-                        <Border Background="#F5F5F5" CornerRadius="4" Padding="10" Margin="0,10,0,0">
+                        <!-- Scoring Key - 2 column grid layout -->
+                        <Border Background="#F5F5F5" CornerRadius="8" Padding="16" Margin="0,10,0,0">
                             <StackPanel>
-                                <TextBlock Text="📖 Scoring Key" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,6"/>
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,3"
+                                <TextBlock Text="📖 Scoring Key" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,8" Foreground="#333"/>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#666" TextWrapping="Wrap" Margin="0,0,0,8"
                                          Text="Each dimension is scored 0–25. Total score = sum of all four (0–100)."
                                          FontStyle="Italic"/>
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,2"
-                                         Text="Completeness — Measures how few null/missing values exist. 0% nulls = 25/25."/>
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,2"
-                                         Text="Uniqueness — Measures value diversity. Higher distinct-value ratios score higher; constant columns score low."/>
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,2"
-                                         Text="Validity — Measures type consistency and value correctness. Penalizes empty strings, non-nullable columns with nulls, and suspicious patterns."/>
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#555" TextWrapping="Wrap"
-                                         Text="Distribution — Measures data spread. Penalizes high outlier rates, extreme skew, and single-value dominance."/>
-                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                    <Ellipse Width="9" Height="9" Fill="#4CAF50" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                    <TextBox Style="{StaticResource SelectableText}" Text="80–100 Good" FontSize="9" Foreground="#999" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                    <Ellipse Width="9" Height="9" Fill="#FF9800" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                    <TextBox Style="{StaticResource SelectableText}" Text="60–79 Fair" FontSize="9" Foreground="#999" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                    <Ellipse Width="9" Height="9" Fill="#F44336" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                    <TextBox Style="{StaticResource SelectableText}" Text="&lt;60 Needs Review" FontSize="9" Foreground="#999" VerticalAlignment="Center"/>
+                                
+                                <!-- 2-column grid of dimensions -->
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
+                                    
+                                    <!-- Completeness -->
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,8">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <Ellipse Width="6" Height="6" Fill="#4CAF50" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Completeness" FontWeight="600" FontSize="10" Foreground="#333"/>
+                                        </StackPanel>
+                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="#666" TextWrapping="Wrap"
+                                                 Text="Measures how few null/missing values exist. 0% nulls = 25/25."/>
+                                    </StackPanel>
+                                    
+                                    <!-- Uniqueness -->
+                                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="8,0,0,8">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <Ellipse Width="6" Height="6" Fill="#2196F3" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Uniqueness" FontWeight="600" FontSize="10" Foreground="#333"/>
+                                        </StackPanel>
+                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="#666" TextWrapping="Wrap"
+                                                 Text="Measures value diversity. Higher distinct-value ratios score higher; constant columns score low."/>
+                                    </StackPanel>
+                                    
+                                    <!-- Validity -->
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,0">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <Ellipse Width="6" Height="6" Fill="#FF9800" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Validity" FontWeight="600" FontSize="10" Foreground="#333"/>
+                                        </StackPanel>
+                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="#666" TextWrapping="Wrap"
+                                                 Text="Measures type consistency and value correctness. Penalizes empty strings and suspicious patterns."/>
+                                    </StackPanel>
+                                    
+                                    <!-- Distribution -->
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,0">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <Ellipse Width="6" Height="6" Fill="#9C27B0" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Distribution" FontWeight="600" FontSize="10" Foreground="#333"/>
+                                        </StackPanel>
+                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="#666" TextWrapping="Wrap"
+                                                 Text="Measures data spread. Penalizes high outlier rates, extreme skew, and single-value dominance."/>
+                                    </StackPanel>
+                                </Grid>
+                                
+                                <!-- Grade badges -->
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Background="#E8F5E9" BorderBrush="#C8E6C9" BorderThickness="1" CornerRadius="14" Padding="10,3" Margin="0,0,6,0">
+                                        <TextBlock FontSize="9" FontWeight="500" Foreground="#2E7D32">🟢 80–100 Good</TextBlock>
+                                    </Border>
+                                    <Border Background="#FFF3E0" BorderBrush="#FFE0B2" BorderThickness="1" CornerRadius="14" Padding="10,3" Margin="0,0,6,0">
+                                        <TextBlock FontSize="9" FontWeight="500" Foreground="#E65100">🟡 60–79 Fair</TextBlock>
+                                    </Border>
+                                    <Border Background="#FFEBEE" BorderBrush="#FFCDD2" BorderThickness="1" CornerRadius="14" Padding="10,3">
+                                        <TextBlock FontSize="9" FontWeight="500" Foreground="#C62828">🔴 &lt;60 Needs Review</TextBlock>
+                                    </Border>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -542,11 +646,10 @@
                 <Border Style="{StaticResource SectionCard}"
                         Visibility="{Binding HasProfile, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
-                        <!-- Header with toggle and sort -->
+                        <!-- Header with toggle -->
                         <Grid Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <Button Command="{Binding ToggleColumnProfilesExpandedCommand}"
@@ -557,13 +660,7 @@
                                     <Run Text="{Binding DisplayedColumns.Count, StringFormat='({0})', Mode=OneWay}" Foreground="Gray"/>
                                 </TextBlock>
                             </Button>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                                <TextBlock Text="Sort:" FontSize="10" Foreground="#999" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                <ComboBox ItemsSource="{Binding ColumnSortOptions}"
-                                          SelectedItem="{Binding ColumnSortBy}"
-                                          FontSize="10" Width="80" Padding="4,2"/>
-                            </StackPanel>
-                            <Button Grid.Column="2" Command="{Binding ToggleColumnProfilesExpandedCommand}"
+                            <Button Grid.Column="1" Command="{Binding ToggleColumnProfilesExpandedCommand}"
                                     Background="Transparent" BorderThickness="0" Cursor="Hand" Padding="0"
                                     VerticalAlignment="Center">
                                 <TextBlock FontSize="12" Foreground="#512BD4">
@@ -597,7 +694,7 @@
                             <!-- Horizontal + Vertical scrollable table -->
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                 <StackPanel MinWidth="720">
-                                    <!-- Table header -->
+                                    <!-- Table header (sortable columns) -->
                                     <Border Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4,4,0,0">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -613,21 +710,91 @@
                                                 <ColumnDefinition Width="70"/>
                                                 <ColumnDefinition Width="70"/>
                                                 <ColumnDefinition Width="70"/>
-                                                <ColumnDefinition Width="*" MinWidth="80"/>
+                                                <ColumnDefinition Width="160" MinWidth="80" MaxWidth="160"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="COLUMN" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="6,5"/>
-                                            <TextBlock Grid.Column="1" Text="TYPE" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
-                                            <TextBlock Grid.Column="2" Text="SCR" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="2,5" HorizontalAlignment="Center"/>
-                                            <TextBlock Grid.Column="3" Text="C" FontSize="9" FontWeight="Bold" Foreground="#4CAF50" Padding="0,5" HorizontalAlignment="Center" ToolTip="Completeness"/>
-                                            <TextBlock Grid.Column="4" Text="U" FontSize="9" FontWeight="Bold" Foreground="#2196F3" Padding="0,5" HorizontalAlignment="Center" ToolTip="Uniqueness"/>
-                                            <TextBlock Grid.Column="5" Text="V" FontSize="9" FontWeight="Bold" Foreground="#FF9800" Padding="0,5" HorizontalAlignment="Center" ToolTip="Validity"/>
-                                            <TextBlock Grid.Column="6" Text="D" FontSize="9" FontWeight="Bold" Foreground="#9C27B0" Padding="0,5" HorizontalAlignment="Center" ToolTip="Distribution"/>
-                                            <TextBlock Grid.Column="7" Text="NULLS" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="2,5"/>
-                                            <TextBlock Grid.Column="8" Text="DIST" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="2,5" ToolTip="Distinct values"/>
-                                            <TextBlock Grid.Column="9" Text="MIN" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
-                                            <TextBlock Grid.Column="10" Text="MAX" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
-                                            <TextBlock Grid.Column="11" Text="MEAN" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
-                                            <TextBlock Grid.Column="12" Text="DISTRIBUTION" FontSize="9" FontWeight="Bold" Foreground="#666" Padding="3,5"/>
+                                            
+                                            <!-- Sortable header buttons with toggle direction logic -->
+                                            <Button Grid.Column="0" Command="{Binding SetSortCommand}" CommandParameter="Name ↑"
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Padding="6,5" HorizontalContentAlignment="Left">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
+                                                    <Run Text="COLUMN"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Name, Mode=OneWay}" Foreground="#512BD4"/>
+                                                </TextBlock>
+                                            </Button>
+                                            
+                                            <Button Grid.Column="1" Command="{Binding SetSortCommand}" CommandParameter="Type ↑"
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Padding="3,5" HorizontalContentAlignment="Left">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
+                                                    <Run Text="TYPE"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Type, Mode=OneWay}" Foreground="#512BD4"/>
+                                                </TextBlock>
+                                            </Button>
+                                            
+                                            <Button Grid.Column="2" Command="{Binding SetSortCommand}" CommandParameter="Score ↑"
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Padding="2,5" HorizontalContentAlignment="Center">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
+                                                    <Run Text="SCR"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Score, Mode=OneWay}" Foreground="#512BD4"/>
+                                                </TextBlock>
+                                            </Button>
+                                            
+                                            <Button Grid.Column="3" Command="{Binding SetSortCommand}" CommandParameter="Completeness ↑"
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Padding="0,5" HorizontalContentAlignment="Center"
+                                                    ToolTip="Completeness">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#4CAF50">
+                                                    <Run Text="C"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Completeness, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </Button>
+                                            
+                                            <Button Grid.Column="4" Command="{Binding SetSortCommand}" CommandParameter="Uniqueness ↑"
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Padding="0,5" HorizontalContentAlignment="Center"
+                                                    ToolTip="Uniqueness">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#2196F3">
+                                                    <Run Text="U"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Uniqueness, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </Button>
+                                            
+                                            <Button Grid.Column="5" Command="{Binding SetSortCommand}" CommandParameter="Validity ↑"
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Padding="0,5" HorizontalContentAlignment="Center"
+                                                    ToolTip="Validity">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#FF9800">
+                                                    <Run Text="V"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Validity, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </Button>
+                                            
+                                            <Button Grid.Column="6" Command="{Binding SetSortCommand}" CommandParameter="Distribution ↑"
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Padding="0,5" HorizontalContentAlignment="Center"
+                                                    ToolTip="Distribution">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#9C27B0">
+                                                    <Run Text="D"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Distribution, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </Button>
+                                            
+                                            <Button Grid.Column="7" Command="{Binding SetSortCommand}" CommandParameter="Nulls ↑"
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Padding="2,5" HorizontalContentAlignment="Left">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
+                                                    <Run Text="NULLS"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Nulls, Mode=OneWay}" Foreground="#512BD4"/>
+                                                </TextBlock>
+                                            </Button>
+                                            
+                                            <Button Grid.Column="8" Command="{Binding SetSortCommand}" CommandParameter="Distinct ↑"
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Padding="2,5" HorizontalContentAlignment="Left"
+                                                    ToolTip="Distinct values">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
+                                                    <Run Text="DIST"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Distinct, Mode=OneWay}" Foreground="#512BD4"/>
+                                                </TextBlock>
+                                            </Button>
+                                            
+                                            <TextBlock Grid.Column="9" Text="MIN" FontSize="9" FontWeight="Bold" Foreground="#999" Padding="3,5"/>
+                                            <TextBlock Grid.Column="10" Text="MAX" FontSize="9" FontWeight="Bold" Foreground="#999" Padding="3,5"/>
+                                            <TextBlock Grid.Column="11" Text="MEAN" FontSize="9" FontWeight="Bold" Foreground="#999" Padding="3,5"/>
+                                            <TextBlock Grid.Column="12" Text="DISTRIBUTION" FontSize="9" FontWeight="Bold" Foreground="#999" Padding="3,5"/>
                                         </Grid>
                                     </Border>
 
@@ -681,7 +848,7 @@
                                                                     <ColumnDefinition Width="70"/>
                                                                     <ColumnDefinition Width="70"/>
                                                                     <ColumnDefinition Width="70"/>
-                                                                    <ColumnDefinition Width="*" MinWidth="80"/>
+                                                                    <ColumnDefinition Width="160" MinWidth="80" MaxWidth="160"/>
                                                                 </Grid.ColumnDefinitions>
 
                                                                 <!-- Column name -->
@@ -735,10 +902,36 @@
                                                                            Padding="3,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                                                            ToolTip="{Binding DisplayMean}"/>
 
-                                                                <!-- Distribution sparkline -->
-                                                                <controls:SparklineControl Grid.Column="12" Buckets="{Binding Histogram}"
-                                                                                           Height="20" Margin="3,1,3,1"
-                                                                                           VerticalAlignment="Center"/>
+                                                                <!-- Distribution: frequency rows (label | bar | %) -->
+                                                                <ItemsControl Grid.Column="12" ItemsSource="{Binding TopValues}"
+                                                                              Margin="3,2,3,2" VerticalAlignment="Center">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <Grid Margin="0,0,0,1">
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="46"/>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                    <ColumnDefinition Width="26"/>
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <TextBlock Grid.Column="0" Text="{Binding Value}"
+                                                                                           FontSize="8" Foreground="#666"
+                                                                                           TextTrimming="CharacterEllipsis"
+                                                                                           VerticalAlignment="Center"
+                                                                                           HorizontalAlignment="Right"
+                                                                                           Margin="0,0,3,0"
+                                                                                           ToolTip="{Binding Value}"/>
+                                                                                <ProgressBar Grid.Column="1" Value="{Binding RelativeWidth}" Maximum="100"
+                                                                                             Height="5" VerticalAlignment="Center"
+                                                                                             Background="#EEEEEE" Foreground="#7B5FE0"
+                                                                                             BorderThickness="0"/>
+                                                                                <TextBlock Grid.Column="2" FontSize="8" Foreground="#999"
+                                                                                           VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                                                    <Run Text="{Binding Percentage, StringFormat={}{0:F0}, Mode=OneWay}"/><Run Text="%"/>
+                                                                                </TextBlock>
+                                                                            </Grid>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
                                                             </Grid>
                                                         </Border>
                                                     </DataTemplate>
