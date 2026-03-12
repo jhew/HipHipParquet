@@ -654,7 +654,32 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error loading file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            // For CSV/TSV/JSON files, offer to re-open the import dialog so the user can
+            // adjust settings (e.g. enable "Skip malformed rows") instead of starting over.
+            var format = Services.FileFormatDetector.DetectFormat(filePath);
+            if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
+            {
+                var retry = MessageBox.Show(
+                    $"Error loading file: {ex.Message}\n\nWould you like to return to the import settings to adjust options (e.g. enable 'Skip malformed rows')?",
+                    "Import Error",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (retry == MessageBoxResult.Yes)
+                {
+                    var result = ShowFileImportDialog(filePath, format, csvOptions, jsonOptions);
+                    if (result.Imported)
+                    {
+                        await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
+                        return;  // Recursive call will handle UI updates; finally block will hide overlay
+                    }
+                }
+            }
+            else
+            {
+                MessageBox.Show($"Error loading file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
             StatusText.Text = "Error loading file";
             
             // Reset UI
@@ -663,7 +688,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            HideLoading();
+            HideLoading();  // Always hide overlay, even after exception or early return
         }
     }
     

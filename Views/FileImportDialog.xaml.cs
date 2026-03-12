@@ -469,6 +469,24 @@ public partial class FileImportDialog : Window
         RefreshPreview();
     }
 
+    private void OnCopyErrorClick(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(ErrorText.Text))
+        {
+            System.Windows.Clipboard.SetText(ErrorText.Text);
+            CopyErrorButton.Content = "✓ Copied";
+            // Revert button text after 1.5 seconds
+            var timer = new System.Timers.Timer(1500);
+            timer.Elapsed += (_, _) =>
+            {
+                Dispatcher.Invoke(() => CopyErrorButton.Content = "📋 Copy");
+                timer.Stop();
+                timer.Dispose();
+            };
+            timer.Start();
+        }
+    }
+
     private void OnDismissError(object sender, RoutedEventArgs e)
     {
         ErrorPanel.Visibility = Visibility.Collapsed;
