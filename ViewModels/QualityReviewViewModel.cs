@@ -581,8 +581,23 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             }
             catch (System.ComponentModel.Win32Exception)
             {
-                // Fallback: use explorer.exe when no default browser is associated with .html
-                System.Diagnostics.Process.Start("explorer.exe", $"\"{saveDialog.FileName}\"");
+                // No default browser associated with .html — open containing folder instead
+                try
+                {
+                    System.Diagnostics.Process.Start("explorer.exe",
+                        $"/select,\"{saveDialog.FileName}\"");
+                }
+                catch (Exception ex)
+                {
+                    // Log the failure to launch explorer, but still provide a user-friendly message
+                    _logger.LogError(ex, "Failed to open explorer.exe for exported quality report at path {Path}", saveDialog.FileName);
+                    StatusMessage = $"Report saved to {saveDialog.FileName} — open it manually to view.";
+                }
+            }
+            catch (System.Exception)
+            {
+                // Fallback for other exceptions from Process.Start (ArgumentException, PathTooLongException, etc.)
+                StatusMessage = $"Report saved to {saveDialog.FileName} — open it manually to view.";
             }
         }
         catch (Exception ex)

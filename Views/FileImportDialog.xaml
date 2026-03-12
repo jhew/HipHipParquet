@@ -242,26 +242,9 @@
                 <!-- Error panel -->
                 <Border x:Name="ErrorPanel" Grid.Row="2" Background="#FFF3E0" BorderBrush="#FFB74D" 
                         BorderThickness="0,1,0,0" Padding="12,10" Visibility="Collapsed">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <DockPanel Grid.Row="0">
-                            <TextBlock Text="⚠️" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Top"/>
-                            <StackPanel>
-                                <TextBlock Text="Import Error" FontWeight="SemiBold" Foreground="#E65100" FontSize="12"/>
-                                <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Foreground="#BF360C" 
-                                           FontSize="11" Margin="0,4,0,0" MaxHeight="80"/>
-                            </StackPanel>
-                        </DockPanel>
-
-                        <TextBlock Grid.Row="1" x:Name="ErrorSuggestions" TextWrapping="Wrap" FontSize="11"
-                                   Foreground="#795548" Margin="24,8,0,0" Visibility="Collapsed"/>
-
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="24,8,0,0">
+                    <DockPanel>
+                        <!-- Buttons anchored at bottom -->
+                        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="12,8,0,0">
                             <Button x:Name="SuggestSkipErrorsButton" Content="Enable 'Skip errors' and retry"
                                     Padding="8,4" Background="#FF9800" Foreground="White" BorderThickness="0"
                                     Click="OnSuggestSkipErrors" Visibility="Collapsed" Margin="0,0,6,0"/>
@@ -270,7 +253,31 @@
                                     Click="OnSuggestEncoding" Visibility="Collapsed" Margin="0,0,6,0"/>
                             <Button Content="Dismiss" Padding="8,4" Click="OnDismissError"/>
                         </StackPanel>
-                    </Grid>
+
+                        <!-- Scrollable error content area -->
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="120" Margin="0,0,0,8">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock Text="⚠️" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Top"/>
+                                    <StackPanel>
+                                        <DockPanel>
+                                            <Button x:Name="CopyErrorButton" DockPanel.Dock="Right" Content="📋 Copy" 
+                                                    Padding="6,2" Background="Transparent" Foreground="#E65100" 
+                                                    BorderThickness="1" BorderBrush="#E65100" FontSize="10"
+                                                    Click="OnCopyErrorClick" Margin="8,0,0,0"/>
+                                            <TextBlock Text="Import Error" FontWeight="SemiBold" Foreground="#E65100" FontSize="12"/>
+                                        </DockPanel>
+                                        <TextBox x:Name="ErrorText" TextWrapping="Wrap" Foreground="#BF360C" 
+                                                 FontSize="11" Margin="0,4,0,0" IsReadOnly="True" Background="Transparent"
+                                                 BorderThickness="0" Padding="0" VerticalScrollBarVisibility="Hidden"/>
+                                    </StackPanel>
+                                </DockPanel>
+
+                                <TextBlock x:Name="ErrorSuggestions" TextWrapping="Wrap" FontSize="11"
+                                           Foreground="#795548" Margin="24,0,0,0" Visibility="Collapsed"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DockPanel>
                 </Border>
             </Grid>
         </Grid>

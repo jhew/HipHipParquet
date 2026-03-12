@@ -571,102 +571,144 @@ public partial class MainWindow : Window
     {
         try
         {
-            // Show loading overlay
             ShowLoading("Loading file...");
 
-            var format = Services.FileFormatDetector.DetectFormat(filePath);
-            _currentFormat = format;
-            _activeCsvOptions = csvOptions;
-            _activeJsonOptions = jsonOptions;
+            // Detect format once at the start
+            _currentFormat = Services.FileFormatDetector.DetectFormat(filePath);
 
-            // Show info bar for unknown extensions defaulting to CSV (saved for after the main status line)
-            bool isUnknownExtension = Services.FileFormatDetector.IsUnknownExtension(filePath);
-            var unknownExt = isUnknownExtension ? System.IO.Path.GetExtension(filePath) : null;
-
-            // Determine row limit
-            var effectiveLimit = rowLimit ?? RowLimitBatch;
-            _currentRowLimit = effectiveLimit;
-
-            // Get ParquetService
-            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
-                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
-            _parquetService?.Dispose();
-            _parquetService = new ParquetService(logger);
-            
-            // Load file info and data (with row limit)
-            var fileInfo = await _parquetService.GetFileInfoAsync(filePath, csvOptions, jsonOptions);
-            _totalRowCount = fileInfo.RowCount;
-
-            ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
-            var dataTable = await _parquetService.LoadFileAsync(filePath, csvOptions, 
-                _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null, jsonOptions);
-
-            // Compute row-number column on a background thread (avoids stalling the UI for large files).
-            ShowLoading("Indexing rows...");
-            await Task.Run(() =>
+            // Retry loop: keeps the overlay showing throughout all attempts
+            while (true)
             {
-                if (!dataTable.Columns.Contains("__RowNumber"))
+                try
                 {
-                    var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
-                    rowNumColumn.SetOrdinal(0);
-                    for (int i = 0; i < dataTable.Rows.Count; i++)
-                        dataTable.Rows[i]["__RowNumber"] = i + 1;
+                    await LoadFileInternalAsync(filePath, csvOptions, rowLimit, jsonOptions);
+                    return;  // Success
                 }
-            });
-            
-            // Update schema panel
-            UpdateSchemaPanel(filePath, fileInfo);
-            
-            // Setup data grid (row-number column already present)
-            ShowLoading("Building grid...");
-            SetupDataGrid(dataTable, fileInfo.Columns);
-            
-            // Switch UI
-            EmptyStatePanel.Visibility = Visibility.Collapsed;
-            DataGridContainer.Visibility = Visibility.Visible;
+                catch (Exception ex)
+                {
+                    // For CSV/TSV/JSON, offer to retry with adjusted settings
+                    if (_currentFormat == SupportedFileFormat.Csv || _currentFormat == SupportedFileFormat.Tsv || _currentFormat == SupportedFileFormat.Json)
+                    {
+                        var retry = MessageBox.Show(
+                            $"Error loading file: {ex.Message}\n\nWould you like to return to the import settings to adjust options (e.g. enable 'Skip malformed rows')?",
+                            "Import Error",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Warning);
 
-            // Update load-more banner
-            UpdateLoadMoreBanner(dataTable.Rows.Count);
-            
-            // Add to recent files
-            AddToRecentFiles(filePath);
-            
-            // Track current file and reset unsaved changes
-            _currentFilePath = filePath;
-            _hasUnsavedChanges = false;
-            UpdateWindowTitle();
-            EnableSaveMenuItems();
+                        if (retry == MessageBoxResult.Yes)
+                        {
+                            var result = ShowFileImportDialog(filePath, _currentFormat, csvOptions, jsonOptions);
+                            if (result.Imported)
+                            {
+                                // Update options for next retry iteration and loop
+                                csvOptions = result.CsvOptions;
+                                jsonOptions = result.JsonOptions;
+                                continue;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Error loading file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
 
-            // Update format badge
-            UpdateFormatBadge(format);
-
-            // Setup file watcher
-            SetupFileWatcher(filePath);
-
-            // Notify Quality panel of new file
-            _qualityViewModel?.SetFilePath(filePath, csvOptions, jsonOptions);
-            
-            StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
-
-            // Append unknown-extension notice after the main status message
-            if (unknownExt != null)
-                StatusText.Text += $" — unknown extension '{unknownExt}' treated as CSV";
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Error loading file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            StatusText.Text = "Error loading file";
-            
-            // Reset UI
-            EmptyStatePanel.Visibility = Visibility.Visible;
-            DataGridContainer.Visibility = Visibility.Collapsed;
+                    // If we get here, either non-CSV format or user declined retry — give up
+                    StatusText.Text = "Error loading file";
+                    EmptyStatePanel.Visibility = Visibility.Visible;
+                    DataGridContainer.Visibility = Visibility.Collapsed;
+                    return;
+                }
+            }
         }
         finally
         {
-            HideLoading();
+            HideLoading();  // Always hide overlay exactly once after all retries complete
         }
     }
-    
+
+    /// <summary>
+    /// Core file loading logic: reads file data, updates UI, and populates grid.
+    /// Called by LoadFileAsync in a retry loop so retries don't add stack frames.
+    /// </summary>
+    private async Task LoadFileInternalAsync(string filePath, CsvImportOptions? csvOptions, int? rowLimit, JsonImportOptions? jsonOptions)
+    {
+        var format = _currentFormat;
+        _activeCsvOptions = csvOptions;
+        _activeJsonOptions = jsonOptions;
+
+        // Show info bar for unknown extensions defaulting to CSV (saved for after the main status line)
+        bool isUnknownExtension = Services.FileFormatDetector.IsUnknownExtension(filePath);
+        var unknownExt = isUnknownExtension ? System.IO.Path.GetExtension(filePath) : null;
+
+        // Determine row limit
+        var effectiveLimit = rowLimit ?? RowLimitBatch;
+        _currentRowLimit = effectiveLimit;
+
+        // Get ParquetService
+        var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+            ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+        _parquetService?.Dispose();
+        _parquetService = new ParquetService(logger);
+        
+        // Load file info and data (with row limit)
+        var fileInfo = await _parquetService.GetFileInfoAsync(filePath, csvOptions, jsonOptions);
+        _totalRowCount = fileInfo.RowCount;
+
+        ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
+        var dataTable = await _parquetService.LoadFileAsync(filePath, csvOptions, 
+            _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null, jsonOptions);
+
+        // Compute row-number column on a background thread (avoids stalling the UI for large files).
+        ShowLoading("Indexing rows...");
+        await Task.Run(() =>
+        {
+            if (!dataTable.Columns.Contains("__RowNumber"))
+            {
+                var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
+                rowNumColumn.SetOrdinal(0);
+                for (int i = 0; i < dataTable.Rows.Count; i++)
+                    dataTable.Rows[i]["__RowNumber"] = i + 1;
+            }
+        });
+        
+        // Update schema panel
+        UpdateSchemaPanel(filePath, fileInfo);
+        
+        // Setup data grid (row-number column already present)
+        ShowLoading("Building grid...");
+        SetupDataGrid(dataTable, fileInfo.Columns);
+        
+        // Switch UI
+        EmptyStatePanel.Visibility = Visibility.Collapsed;
+        DataGridContainer.Visibility = Visibility.Visible;
+
+        // Update load-more banner
+        UpdateLoadMoreBanner(dataTable.Rows.Count);
+        
+        // Add to recent files
+        AddToRecentFiles(filePath);
+        
+        // Track current file and reset unsaved changes
+        _currentFilePath = filePath;
+        _hasUnsavedChanges = false;
+        UpdateWindowTitle();
+        EnableSaveMenuItems();
+
+        // Update format badge
+        UpdateFormatBadge(format);
+
+        // Setup file watcher
+        SetupFileWatcher(filePath);
+
+        // Notify Quality panel of new file
+        _qualityViewModel?.SetFilePath(filePath, csvOptions, jsonOptions);
+        
+        StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
+
+        // Append unknown-extension notice after the main status message
+        if (unknownExt != null)
+            StatusText.Text += $" — unknown extension '{unknownExt}' treated as CSV";
+    }
     private void UpdateWindowTitle()
     {
         const string appTitle = "HipHipParquet \u2014 Data Quality Viewer";
