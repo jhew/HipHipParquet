@@ -587,9 +587,10 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
                     System.Diagnostics.Process.Start("explorer.exe",
                         $"/select,\"{saveDialog.FileName}\"");
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // If explorer fails too, just tell the user where to find the file
+                    // Log the failure to launch explorer, but still provide a user-friendly message
+                    _logger.LogError(ex, "Failed to open explorer.exe for exported quality report at path {Path}", saveDialog.FileName);
                     StatusMessage = $"Report saved to {saveDialog.FileName} — open it manually to view.";
                 }
             }

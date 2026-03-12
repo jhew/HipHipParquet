@@ -473,17 +473,33 @@ public partial class FileImportDialog : Window
     {
         if (!string.IsNullOrEmpty(ErrorText.Text))
         {
-            System.Windows.Clipboard.SetText(ErrorText.Text);
-            CopyErrorButton.Content = "✓ Copied";
-            // Revert button text after 1.5 seconds
-            var timer = new System.Timers.Timer(1500);
-            timer.Elapsed += (_, _) =>
+            try
             {
-                Dispatcher.Invoke(() => CopyErrorButton.Content = "📋 Copy");
-                timer.Stop();
-                timer.Dispose();
-            };
-            timer.Start();
+                System.Windows.Clipboard.SetText(ErrorText.Text);
+                CopyErrorButton.Content = "✓ Copied";
+                
+                // Revert button text after 1.5 seconds using DispatcherTimer (UI thread-safe)
+                var timer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(1500)
+                };
+                timer.Tick += (_, _) =>
+                {
+                    CopyErrorButton.Content = "📋 Copy";
+                    timer.Stop();
+                };
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                // Keep dialog stable and inform user of clipboard failure
+                CopyErrorButton.Content = "Copy failed";
+                MessageBox.Show(
+                    $"Failed to copy error details to clipboard: {ex.Message}\n\nPlease try again or manually select and copy the error text.",
+                    "Clipboard Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
         }
     }
 

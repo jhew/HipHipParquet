@@ -656,8 +656,9 @@ public partial class MainWindow : Window
         {
             // For CSV/TSV/JSON files, offer to re-open the import dialog so the user can
             // adjust settings (e.g. enable "Skip malformed rows") instead of starting over.
-            var format = Services.FileFormatDetector.DetectFormat(filePath);
-            if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
+            // Note: _currentFormat was already set at the start of this method, so reuse it
+            // instead of calling DetectFormat() again (which could throw if filePath is invalid).
+            if (_currentFormat == SupportedFileFormat.Csv || _currentFormat == SupportedFileFormat.Tsv || _currentFormat == SupportedFileFormat.Json)
             {
                 var retry = MessageBox.Show(
                     $"Error loading file: {ex.Message}\n\nWould you like to return to the import settings to adjust options (e.g. enable 'Skip malformed rows')?",
@@ -667,11 +668,12 @@ public partial class MainWindow : Window
 
                 if (retry == MessageBoxResult.Yes)
                 {
-                    var result = ShowFileImportDialog(filePath, format, csvOptions, jsonOptions);
+                    var result = ShowFileImportDialog(filePath, _currentFormat, csvOptions, jsonOptions);
                     if (result.Imported)
                     {
-                        await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
-                        return;  // Recursive call will handle UI updates; finally block will hide overlay
+                        // Fire-and-forget: don't await or recursively call; let new invocation run independently
+                        _ = LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
+                        return;  // Exit this attempt; new invocation will handle UI updates
                     }
                 }
             }
