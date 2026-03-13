@@ -100,20 +100,9 @@ HipHipParquet provides data analysts and engineers with a local, offline tool fo
 
 Download from the [Releases](https://github.com/jhew/HipHipParquet/releases) page.
 
-**Installer (recommended):** Download `HipHipParquet-1.4.0-Setup.exe` and run it. The wizard installs the application and creates Start Menu and optional desktop shortcuts. Requires the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0). The installer will prompt to download it if not present.
+**Installer (recommended):** Download `HipHipParquet-1.4.0-Setup.exe` and run it. The wizard installs the application and creates Start Menu and optional desktop shortcuts.
 
-**Portable:** Download `HipHipParquet-1.4.0-Portable.zip`, extract to any folder, and run `HipHipParquet.exe`. Requires the .NET 8 Desktop Runtime.
-
-### Build from Source
-
-Requirements: Windows 10/11, [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-
-```powershell
-git clone https://github.com/jhew/HipHipParquet.git
-cd HipHipParquet
-dotnet build
-dotnet run
-```
+**Portable:** Download `HipHipParquet-1.4.0-Portable.zip`, extract to any folder, and run `HipHipParquet.exe`.
 
 ## Usage
 
@@ -149,32 +138,10 @@ HipHipParquet/
   Views/             XAML windows and dialogs
 ```
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Commit with a descriptive message and open a pull request
-
-Development tools: Visual Studio 2022 or VS Code with the C# Dev Kit extension.
-
-## License
-
-MIT. See [LICENSE](LICENSE) for details.
-
 ## Acknowledgments
 
 - [DuckDB](https://duckdb.org/) — in-process analytical SQL engine
 - [Apache Parquet](https://parquet.apache.org/) — columnar storage format
 - [CommunityToolkit.Mvvm](https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/) — MVVM toolkit for .NET
 - [WPF](https://docs.microsoft.com/en-us/dotnet/desktop/wpf/) — Windows desktop UI framework
-
-
-## Supported Formats
-
-| Format | Read | Write |
-|--------|------|-------|
-| Parquet | Yes | Yes |
-| CSV / TSV | Yes | Yes |
-| JSON / NDJSON | Yes | Yes |
-| Excel (.xlsx) | Yes | No |
 
