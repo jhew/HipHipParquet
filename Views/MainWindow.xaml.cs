@@ -13,14 +13,17 @@ using System.Windows.Media;
 using System.Windows.Controls.Primitives;
 using System.IO;
 
+using System.Windows.Input;
+
 namespace HipHipParquet.Views;
 
 public partial class MainWindow : Window
 {
+    public static readonly RoutedUICommand GoToRowCommand = new("Go to Row", "GoToRow", typeof(MainWindow));
+    public static readonly RoutedUICommand FocusSearchCommand = new("Focus Search", "FocusSearch", typeof(MainWindow));
+
     private DataTable? _originalData;
     private DataView? _dataView;
-    private readonly List<TextBox> _searchBoxes = new();
-    private ScrollViewer? _searchScrollViewer;
     private readonly List<string> _recentFiles = new();
     private const int MaxRecentFiles = 10;
     private const string RecentFilesKey = "RecentFiles";
@@ -32,8 +35,13 @@ public partial class MainWindow : Window
     private List<object>? _savedSelectedItems;
     private bool _closingConfirmed = false;
 
+    // ── Column filter state (Fabric Lakehouse-style dropdowns) ────────────
+    private readonly Dictionary<string, ColumnFilterState> _columnFilters = new();
+    private const int MaxDistinctValues = 500;
+    private const string BlankDisplayValue = "(Blank)";
+
     // ── Filter / sort state (preserved across reloads) ────────────────────
-    private readonly Dictionary<string, string> _savedColumnSearchTexts = new();
+    private readonly Dictionary<string, HashSet<string>> _savedColumnFilterSelections = new();
     private string _savedGlobalSearch = string.Empty;
     private string _savedSort = string.Empty;
     // ── Row limiting ─────────────────────────────────────────────────────
@@ -70,7 +78,7 @@ public partial class MainWindow : Window
         _filterDebounceTimer.Tick += (_, _) =>
         {
             _filterDebounceTimer.Stop();
-            ApplyFilters();
+            ApplyAllFilters();
         };
     }
     
@@ -233,23 +241,6 @@ public partial class MainWindow : Window
         }
     }
     
-    private void OnToggleFilterRowClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem menuItem)
-        {
-            if (menuItem.IsChecked)
-            {
-                // Show filter row
-                SearchPanelContainer.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                // Hide filter row
-                SearchPanelContainer.Visibility = Visibility.Collapsed;
-            }
-        }
-    }
-
     private void OnToggleQualityPanelClick(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem menuItem)
@@ -867,8 +858,15 @@ public partial class MainWindow : Window
         }
     }
     
+    private DataFileInfo? _lastSchemaInfo;
+    private string? _lastSchemaFilePath;
+
     private void UpdateSchemaPanel(string filePath, DataFileInfo fileInfo)
     {
+        _lastSchemaInfo = fileInfo;
+        _lastSchemaFilePath = filePath;
+        CopySchemaButton.IsEnabled = true;
+
         SchemaPanel.Children.Clear();
         
         // Title
@@ -923,6 +921,22 @@ public partial class MainWindow : Window
             SchemaPanel.Children.Add(colBlock);
         }
     }
+
+    private void OnCopySchemaClick(object sender, RoutedEventArgs e)
+    {
+        if (_lastSchemaInfo == null || _lastSchemaFilePath == null) return;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"File: {System.IO.Path.GetFileName(_lastSchemaFilePath)}");
+        sb.AppendLine($"Format: {Services.FileFormatDetector.GetFormatDisplayName(_lastSchemaInfo.Format)}");
+        sb.AppendLine($"Rows: {_lastSchemaInfo.RowCount:N0}");
+        sb.AppendLine($"Columns ({_lastSchemaInfo.Columns.Count}):");
+        foreach (var col in _lastSchemaInfo.Columns)
+            sb.AppendLine($"  {col.Name} ({col.Type})");
+
+        Clipboard.SetText(sb.ToString());
+        StatusText.Text = "Schema copied to clipboard";
+    }
     
     private void SetupDataGrid(DataTable dataTable, List<ColumnInfo>? columns)
     {
@@ -937,21 +951,17 @@ public partial class MainWindow : Window
             
             // Clear existing
             DataGrid.Columns.Clear();
-            SearchPanel.Children.Clear();
-            _searchBoxes.Clear();
+            _columnFilters.Clear();
             
             // Guard against double-subscription on repeated loads
             DataGrid.Sorting -= OnDataGridSorting;
             DataGrid.Sorting += OnDataGridSorting;
             
-            _searchScrollViewer = FindVisualChild<ScrollViewer>(DataGridContainer);
-            
-            // Row number column + search panel spacer
+            // Row number column
             var rowNumberColumn = CreateRowNumberColumn();
             DataGrid.Columns.Add(rowNumberColumn);
-            SearchPanel.Children.Add(CreateRowNumberSpacer(rowNumberColumn));
             
-            // Data columns and per-column search boxes
+            // Data columns with filter dropdown headers
             for (int i = 0; i < dataTable.Columns.Count; i++)
             {
                 var column = dataTable.Columns[i];
@@ -960,15 +970,13 @@ public partial class MainWindow : Window
                 var columnInfo = columns?.FirstOrDefault(c => c.Name == column.ColumnName);
                 var gridColumn = CreateDataColumn(column, columnInfo, i);
                 DataGrid.Columns.Add(gridColumn);
-
-                var searchBox = CreateSearchBox(gridColumn, column.ColumnName);
-                _searchBoxes.Add(searchBox);
-                SearchPanel.Children.Add(searchBox);
             }
             
             DataGrid.ItemsSource = _dataView;
 
             RestoreFilterState();
+            UpdateRowCount();
+            UpdateFilterBadge();
         }
         catch (Exception ex)
         {
@@ -981,7 +989,7 @@ public partial class MainWindow : Window
     {
         var col = new DataGridTextColumn
         {
-            Header = "#",
+            Header = CreateRowNumberHeader(),
             Width = 80,
             MinWidth = 40,
             IsReadOnly = true,
@@ -1006,63 +1014,243 @@ public partial class MainWindow : Window
         return col;
     }
 
-    private Border CreateRowNumberSpacer(DataGridTextColumn rowNumberColumn)
+    private FrameworkElement CreateRowNumberHeader()
     {
-        var spacer = new Border
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var label = new TextBlock
         {
-            MinWidth = 40,
-            Background = new SolidColorBrush(Color.FromRgb(248, 248, 248))
+            Text = "#",
+            FontWeight = FontWeights.Bold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
         };
-        var binding = new System.Windows.Data.Binding("ActualWidth")
+        Grid.SetColumn(label, 0);
+        grid.Children.Add(label);
+
+        var goToButton = new Button
         {
-            Source = rowNumberColumn,
-            Mode = System.Windows.Data.BindingMode.OneWay
+            Content = "\u25BC", // ▼
+            FontSize = 8,
+            Padding = new Thickness(3, 1, 3, 1),
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
+            ToolTip = "Go to row..."
         };
-        spacer.SetBinding(FrameworkElement.WidthProperty, binding);
-        return spacer;
+        goToButton.Click += OnGoToRowButtonClick;
+        Grid.SetColumn(goToButton, 1);
+        grid.Children.Add(goToButton);
+
+        return grid;
+    }
+
+    private void OnGoToRowButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button) return;
+        if (_originalData == null || _dataView == null) return;
+
+        var popup = new Popup
+        {
+            PlacementTarget = button,
+            Placement = PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+            PopupAnimation = PopupAnimation.Fade
+        };
+
+        var border = new Border
+        {
+            Background = System.Windows.Media.Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8),
+            Width = 200,
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 8,
+                Opacity = 0.2,
+                ShadowDepth = 2,
+                Color = Colors.Black
+            }
+        };
+
+        var mainPanel = new StackPanel();
+
+        // Sort buttons
+        mainPanel.Children.Add(CreateSortButtonsPanel("__RowNumber", popup));
+
+        var header = new TextBlock
+        {
+            Text = "Go to Row",
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 13,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        mainPanel.Children.Add(header);
+
+        var totalRows = _dataView.Count;
+        var hint = new TextBlock
+        {
+            Text = $"Enter row number (1–{totalRows:N0})",
+            Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
+            FontSize = 11,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        mainPanel.Children.Add(hint);
+
+        var rowInput = new TextBox
+        {
+            Padding = new Thickness(4, 3, 4, 3),
+            FontSize = 12
+        };
+        mainPanel.Children.Add(rowInput);
+
+        var errorText = new TextBlock
+        {
+            Foreground = System.Windows.Media.Brushes.Red,
+            FontSize = 11,
+            Margin = new Thickness(0, 2, 0, 0),
+            Visibility = Visibility.Collapsed
+        };
+        mainPanel.Children.Add(errorText);
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 6, 0, 0)
+        };
+
+        var goButton = new Button
+        {
+            Content = "Go",
+            Padding = new Thickness(16, 4, 16, 4),
+            Background = new SolidColorBrush(Color.FromRgb(81, 43, 212)),
+            Foreground = System.Windows.Media.Brushes.White,
+            BorderThickness = new Thickness(0),
+            FontSize = 12
+        };
+
+        void DoGoToRow()
+        {
+            if (!int.TryParse(rowInput.Text?.Trim(), out int targetRow) || targetRow < 1 || targetRow > totalRows)
+            {
+                errorText.Text = $"Enter a number between 1 and {totalRows:N0}";
+                errorText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            popup.IsOpen = false;
+
+            // Find the row in the current view and scroll to it
+            var rowIndex = targetRow - 1;
+            if (rowIndex < _dataView.Count)
+            {
+                DataGrid.ScrollIntoView(DataGrid.Items[rowIndex]);
+                DataGrid.SelectedIndex = rowIndex;
+                DataGrid.Focus();
+                StatusText.Text = $"Jumped to row {targetRow:N0}";
+            }
+        }
+
+        goButton.Click += (s, _) => DoGoToRow();
+        rowInput.KeyDown += (s, args) =>
+        {
+            if (args.Key == System.Windows.Input.Key.Enter)
+                DoGoToRow();
+        };
+
+        buttonPanel.Children.Add(goButton);
+        mainPanel.Children.Add(buttonPanel);
+
+        border.Child = mainPanel;
+        popup.Child = border;
+        popup.IsOpen = true;
+
+        // Focus the input when popup opens
+        popup.Opened += (s, _) => rowInput.Focus();
+    }
+
+    private void OnGoToRowShortcut(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (_originalData == null || _dataView == null) return;
+
+        // Find the go-to-row button in the # column header and simulate a click
+        foreach (var col in DataGrid.Columns)
+        {
+            if (col.SortMemberPath == "__RowNumber" && col.Header is Grid headerGrid)
+            {
+                foreach (var child in headerGrid.Children)
+                {
+                    if (child is Button btn && btn.ToolTip?.ToString() == "Go to row...")
+                    {
+                        OnGoToRowButtonClick(btn, new RoutedEventArgs());
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    private void OnFocusSearchShortcut(object sender, ExecutedRoutedEventArgs e)
+    {
+        GlobalSearchBox.Focus();
+        GlobalSearchBox.SelectAll();
     }
 
     private DataGridTextColumn CreateDataColumn(DataColumn column, ColumnInfo? columnInfo, int index)
     {
-        return new DataGridTextColumn
+        var columnName = column.ColumnName;
+        // Initialize filter state for this column
+        _columnFilters[columnName] = new ColumnFilterState();
+
+        var gridColumn = new DataGridTextColumn
         {
-            Header = CreateColumnHeader(column.ColumnName, columnInfo?.Type ?? "unknown", index),
-            Binding = new System.Windows.Data.Binding($"[{column.ColumnName}]"),
+            Header = CreateColumnHeader(columnName, columnInfo?.Type ?? "unknown", index),
+            Binding = new System.Windows.Data.Binding($"[{columnName}]"),
             Width = DataGridLength.Auto,
             MinWidth = 100,
             CanUserSort = true,
             CanUserResize = true,
-            SortMemberPath = column.ColumnName
+            SortMemberPath = columnName
         };
+
+        // Right-align numeric columns
+        if (IsNumericType(column.DataType))
+        {
+            var cellStyle = new Style(typeof(DataGridCell));
+            cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Right));
+            gridColumn.CellStyle = cellStyle;
+
+            var elementStyle = new Style(typeof(TextBlock));
+            elementStyle.Setters.Add(new Setter(TextBlock.TextAlignmentProperty, TextAlignment.Right));
+            gridColumn.ElementStyle = elementStyle;
+        }
+
+        return gridColumn;
     }
 
-    private TextBox CreateSearchBox(DataGridTextColumn gridColumn, string columnName)
+    private static bool IsNumericType(Type type)
     {
-        var searchBox = new TextBox
-        {
-            Margin = new Thickness(0, 2, 0, 2),
-            Tag = columnName,
-            ToolTip = $"Search {columnName}...",
-            MinWidth = 100
-        };
-        var binding = new System.Windows.Data.Binding("ActualWidth")
-        {
-            Source = gridColumn,
-            Mode = System.Windows.Data.BindingMode.OneWay
-        };
-        searchBox.SetBinding(FrameworkElement.WidthProperty, binding);
-        searchBox.TextChanged += OnSearchTextChanged;
-        return searchBox;
+        return type == typeof(int) || type == typeof(long) || type == typeof(short) ||
+               type == typeof(byte) || type == typeof(double) || type == typeof(float) ||
+               type == typeof(decimal) || type == typeof(uint) || type == typeof(ulong) ||
+               type == typeof(ushort);
     }
 
     private void SnapshotFilterState()
     {
-        _savedColumnSearchTexts.Clear();
-        foreach (var box in _searchBoxes)
+        _savedColumnFilterSelections.Clear();
+        foreach (var kvp in _columnFilters)
         {
-            var colName = box.Tag?.ToString();
-            if (!string.IsNullOrEmpty(colName) && !string.IsNullOrEmpty(box.Text))
-                _savedColumnSearchTexts[colName] = box.Text;
+            if (kvp.Value.IsActive)
+                _savedColumnFilterSelections[kvp.Key] = new HashSet<string>(kvp.Value.SelectedValues);
         }
         _savedGlobalSearch = GlobalSearchBox?.Text ?? string.Empty;
         _savedSort = _dataView?.Sort ?? string.Empty;
@@ -1070,12 +1258,17 @@ public partial class MainWindow : Window
 
     private void RestoreFilterState()
     {
-        // Re-populate search boxes whose column still exists in the new load
-        foreach (var box in _searchBoxes)
+        // Re-apply saved column filters whose column still exists
+        foreach (var kvp in _savedColumnFilterSelections)
         {
-            var colName = box.Tag?.ToString();
-            if (!string.IsNullOrEmpty(colName) && _savedColumnSearchTexts.TryGetValue(colName, out var text))
-                box.Text = text;
+            if (_columnFilters.TryGetValue(kvp.Key, out var state))
+            {
+                // Collect distinct values first so we can apply the saved selection
+                CollectDistinctValues(kvp.Key, state);
+                state.SelectedValues = new HashSet<string>(kvp.Value);
+                state.IsActive = true;
+                UpdateFilterIndicator(kvp.Key);
+            }
         }
 
         if (!string.IsNullOrEmpty(_savedGlobalSearch) && GlobalSearchBox != null)
@@ -1087,32 +1280,457 @@ public partial class MainWindow : Window
             catch { /* column may no longer exist in the reloaded schema */ }
         }
 
-        if (_savedColumnSearchTexts.Count > 0 || !string.IsNullOrEmpty(_savedGlobalSearch))
-            ApplyFilters();
+        if (_savedColumnFilterSelections.Count > 0 || !string.IsNullOrEmpty(_savedGlobalSearch))
+            ApplyAllFilters();
     }
 
     private FrameworkElement CreateColumnHeader(string name, string type, int index)
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal };
-        
-        var icon = new TextBlock
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        // Left side: type icon + column name
+        var namePanel = new DockPanel { LastChildFill = true };
+        namePanel.Children.Add(new TextBlock
         {
             Text = GetTypeIcon(type),
-            Margin = new Thickness(0, 0, 4, 0)
-        };
-        
-        var text = new TextBlock
+            Margin = new Thickness(0, 0, 4, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        DockPanel.SetDock(namePanel.Children[0], Dock.Left);
+        var nameBlock = new TextBlock
         {
             Text = name,
-            FontWeight = FontWeights.SemiBold
+            FontWeight = FontWeights.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = name
         };
-        
-        panel.Children.Add(icon);
-        panel.Children.Add(text);
-        
-        return panel;
+        namePanel.Children.Add(nameBlock);
+        Grid.SetColumn(namePanel, 0);
+        grid.Children.Add(namePanel);
+
+        // Right side: filter button with indicator
+        var filterPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 0, 0) };
+
+        // Filter active indicator (small colored dot, hidden by default)
+        var indicator = new Border
+        {
+            Width = 6,
+            Height = 6,
+            CornerRadius = new CornerRadius(3),
+            Background = new SolidColorBrush(Color.FromRgb(81, 43, 212)), // #512BD4
+            Margin = new Thickness(0, 0, 2, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+            Tag = $"indicator_{name}"
+        };
+        filterPanel.Children.Add(indicator);
+
+        // Filter dropdown button (funnel icon)
+        var filterButton = new Button
+        {
+            Content = "\u25BC", // ▼ down arrow
+            FontSize = 8,
+            Padding = new Thickness(3, 1, 3, 1),
+            Margin = new Thickness(0),
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
+            Tag = name,
+            ToolTip = $"Filter {name}"
+        };
+        filterButton.Click += OnFilterButtonClick;
+        filterPanel.Children.Add(filterButton);
+
+        Grid.SetColumn(filterPanel, 1);
+        grid.Children.Add(filterPanel);
+
+        return grid;
+    }
+
+    private void UpdateFilterIndicator(string columnName)
+    {
+        // Find the indicator in the column header by scanning DataGrid columns
+        foreach (var col in DataGrid.Columns)
+        {
+            if (col.SortMemberPath == columnName && col.Header is Grid headerGrid)
+            {
+                foreach (var child in headerGrid.Children)
+                {
+                    if (child is StackPanel sp)
+                    {
+                        foreach (var spChild in sp.Children)
+                        {
+                            if (spChild is Border border && border.Tag?.ToString() == $"indicator_{columnName}")
+                            {
+                                var isActive = _columnFilters.TryGetValue(columnName, out var state) && state.IsActive;
+                                border.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void OnFilterButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string columnName) return;
+        if (!_columnFilters.TryGetValue(columnName, out var filterState)) return;
+
+        // Lazy-load distinct values on first open
+        if (!filterState.IsLoaded)
+            CollectDistinctValues(columnName, filterState);
+
+        ShowFilterPopup(button, columnName, filterState);
+    }
+
+    private void CollectDistinctValues(string columnName, ColumnFilterState state)
+    {
+        if (_originalData == null || state.IsLoaded) return;
+
+        var distinctValues = new HashSet<string>();
+        bool hasBlank = false;
+        bool truncated = false;
+
+        foreach (DataRow row in _originalData.Rows)
+        {
+            var val = row[columnName];
+            if (val == null || val == DBNull.Value || string.IsNullOrWhiteSpace(val.ToString()))
+            {
+                hasBlank = true;
+            }
+            else
+            {
+                distinctValues.Add(val.ToString()!);
+            }
+
+            if (!truncated && distinctValues.Count >= MaxDistinctValues)
+                truncated = true;
+        }
+
+        var totalDistinct = distinctValues.Count;
+        var limited = truncated
+            ? distinctValues.Take(MaxDistinctValues).OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList()
+            : distinctValues.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList();
+
+        if (hasBlank)
+            limited.Insert(0, BlankDisplayValue);
+
+        state.AllValues = limited;
+        state.IsTruncated = truncated && totalDistinct > MaxDistinctValues;
+        state.TotalDistinctCount = totalDistinct;
+        // Default: all values selected (no filter)
+        if (state.SelectedValues.Count == 0)
+            state.SelectedValues = new HashSet<string>(limited);
+        state.IsLoaded = true;
+    }
+
+    private void ShowFilterPopup(Button anchor, string columnName, ColumnFilterState filterState)
+    {
+        var popup = new Popup
+        {
+            PlacementTarget = anchor,
+            Placement = PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+            PopupAnimation = PopupAnimation.Fade
+        };
+
+        var border = new Border
+        {
+            Background = System.Windows.Media.Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8),
+            Width = 260,
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 8,
+                Opacity = 0.2,
+                ShadowDepth = 2,
+                Color = Colors.Black
+            }
+        };
+
+        var mainPanel = new StackPanel();
+
+        // Sort buttons
+        mainPanel.Children.Add(CreateSortButtonsPanel(columnName, popup));
+
+        // Header
+        var header = new TextBlock
+        {
+            Text = $"Filter: {columnName}",
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 13,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        mainPanel.Children.Add(header);
+
+        // Search box
+        var searchBox = new TextBox
+        {
+            Margin = new Thickness(0, 0, 0, 6),
+            Padding = new Thickness(4, 3, 4, 3),
+            FontSize = 12
+        };
+        // Placeholder watermark via adorner-style approach: use GotFocus/LostFocus
+        var searchPlaceholder = new TextBlock
+        {
+            Text = "Search values...",
+            Foreground = new SolidColorBrush(Color.FromRgb(160, 160, 160)),
+            IsHitTestVisible = false,
+            Margin = new Thickness(5, 3, 0, 0),
+            FontSize = 12
+        };
+        var searchContainer = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        searchContainer.Children.Add(searchBox);
+        searchContainer.Children.Add(searchPlaceholder);
+        searchBox.TextChanged += (s, _) =>
+        {
+            searchPlaceholder.Visibility = string.IsNullOrEmpty(searchBox.Text) ? Visibility.Visible : Visibility.Collapsed;
+        };
+        mainPanel.Children.Add(searchContainer);
+
+        // Truncation notice when distinct values exceed the limit
+        if (filterState.IsTruncated)
+        {
+            var truncNotice = new TextBlock
+            {
+                Text = $"Showing first {MaxDistinctValues:N0} of {filterState.TotalDistinctCount:N0} values",
+                Foreground = new SolidColorBrush(Color.FromRgb(180, 130, 0)),
+                FontSize = 11,
+                FontStyle = FontStyles.Italic,
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+            mainPanel.Children.Add(truncNotice);
+        }
+
+        // Select All checkbox
+        var selectAllCheckBox = new CheckBox
+        {
+            Content = "Select All",
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 12,
+            Margin = new Thickness(0, 0, 0, 4),
+            IsThreeState = true
+        };
+        mainPanel.Children.Add(selectAllCheckBox);
+
+        // Separator
+        mainPanel.Children.Add(new Separator { Margin = new Thickness(0, 2, 0, 4) });
+
+        // Scrollable checkbox list
+        var checkboxPanel = new StackPanel();
+        var scrollViewer = new ScrollViewer
+        {
+            MaxHeight = 300,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = checkboxPanel
+        };
+        mainPanel.Children.Add(scrollViewer);
+
+        // Build checkbox items
+        var checkBoxes = new List<CheckBox>();
+        foreach (var value in filterState.AllValues)
+        {
+            var cb = new CheckBox
+            {
+                Content = value,
+                IsChecked = filterState.SelectedValues.Contains(value),
+                Margin = new Thickness(0, 1, 0, 1),
+                FontSize = 12,
+                Tag = value
+            };
+            checkBoxes.Add(cb);
+            checkboxPanel.Children.Add(cb);
+        }
+
+        // Update Select All state based on current selection
+        UpdateSelectAllState(selectAllCheckBox, checkBoxes);
+
+        // Select All click handler
+        selectAllCheckBox.Checked += (s, _) =>
+        {
+            foreach (var cb in checkBoxes)
+            {
+                if (cb.Visibility == Visibility.Visible)
+                    cb.IsChecked = true;
+            }
+        };
+        selectAllCheckBox.Unchecked += (s, _) =>
+        {
+            foreach (var cb in checkBoxes)
+            {
+                if (cb.Visibility == Visibility.Visible)
+                    cb.IsChecked = false;
+            }
+        };
+
+        // Individual checkbox changes update Select All state
+        foreach (var cb in checkBoxes)
+        {
+            cb.Checked += (s, _) => UpdateSelectAllState(selectAllCheckBox, checkBoxes);
+            cb.Unchecked += (s, _) => UpdateSelectAllState(selectAllCheckBox, checkBoxes);
+        }
+
+        // Search box filters the checkbox list
+        searchBox.TextChanged += (s, _) =>
+        {
+            var searchText = searchBox.Text?.Trim() ?? string.Empty;
+            foreach (var cb in checkBoxes)
+            {
+                var val = cb.Tag?.ToString() ?? string.Empty;
+                cb.Visibility = string.IsNullOrEmpty(searchText) ||
+                    val.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+                    ? Visibility.Visible : Visibility.Collapsed;
+            }
+            UpdateSelectAllState(selectAllCheckBox, checkBoxes);
+        };
+
+        // Separator before buttons
+        mainPanel.Children.Add(new Separator { Margin = new Thickness(0, 4, 0, 4) });
+
+        // Buttons panel
+        var buttonPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+
+        var clearButton = new Button
+        {
+            Content = "Clear",
+            Padding = new Thickness(12, 4, 12, 4),
+            Margin = new Thickness(0, 0, 6, 0),
+            FontSize = 12
+        };
+        clearButton.Click += (s, _) =>
+        {
+            // Clear filter: select all values
+            foreach (var cb in checkBoxes)
+                cb.IsChecked = true;
+            filterState.SelectedValues = new HashSet<string>(filterState.AllValues);
+            filterState.IsActive = false;
+            UpdateFilterIndicator(columnName);
+            ApplyAllFilters();
+            popup.IsOpen = false;
+        };
+        buttonPanel.Children.Add(clearButton);
+
+        var applyButton = new Button
+        {
+            Content = "Apply",
+            Padding = new Thickness(12, 4, 12, 4),
+            Background = new SolidColorBrush(Color.FromRgb(81, 43, 212)), // #512BD4
+            Foreground = System.Windows.Media.Brushes.White,
+            BorderThickness = new Thickness(0),
+            FontSize = 12
+        };
+        applyButton.Click += (s, _) =>
+        {
+            // Apply filter: read checked values
+            var selected = new HashSet<string>();
+            foreach (var cb in checkBoxes)
+            {
+                if (cb.IsChecked == true && cb.Tag is string val)
+                    selected.Add(val);
+            }
+            filterState.SelectedValues = selected;
+            filterState.IsActive = selected.Count < filterState.AllValues.Count;
+            UpdateFilterIndicator(columnName);
+            ApplyAllFilters();
+            popup.IsOpen = false;
+        };
+        buttonPanel.Children.Add(applyButton);
+
+        mainPanel.Children.Add(buttonPanel);
+
+        border.Child = mainPanel;
+        popup.Child = border;
+        popup.IsOpen = true;
+    }
+
+    private static void UpdateSelectAllState(CheckBox selectAll, List<CheckBox> checkBoxes)
+    {
+        var visibleBoxes = checkBoxes.Where(cb => cb.Visibility == Visibility.Visible).ToList();
+        var checkedCount = visibleBoxes.Count(cb => cb.IsChecked == true);
+
+        // Temporarily remove handler to avoid recursive trigger
+        selectAll.IsThreeState = true;
+        if (checkedCount == 0)
+            selectAll.IsChecked = false;
+        else if (checkedCount == visibleBoxes.Count)
+            selectAll.IsChecked = true;
+        else
+            selectAll.IsChecked = null; // indeterminate
     }
     
+    private void ApplySort(string sortMemberPath, ListSortDirection direction)
+    {
+        if (_dataView == null) return;
+
+        _dataView.Sort = $"{sortMemberPath} {(direction == ListSortDirection.Ascending ? "ASC" : "DESC")}";
+
+        // Update the DataGrid column header sort indicator
+        foreach (var col in DataGrid.Columns)
+        {
+            if (col.SortMemberPath == sortMemberPath)
+                col.SortDirection = direction;
+            else
+                col.SortDirection = null;
+        }
+
+        var displayName = sortMemberPath == "__RowNumber" ? "#" : sortMemberPath;
+        StatusText.Text = $"Sorted by {displayName} ({(direction == ListSortDirection.Ascending ? "ascending" : "descending")})";
+    }
+
+    private FrameworkElement CreateSortButtonsPanel(string sortMemberPath, Popup popup)
+    {
+        var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
+
+        var ascButton = new Button
+        {
+            Content = "\u2B06 Sort Ascending",
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(6, 4, 6, 4),
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            FontSize = 12
+        };
+        ascButton.Click += (s, _) =>
+        {
+            popup.IsOpen = false;
+            ApplySort(sortMemberPath, ListSortDirection.Ascending);
+        };
+        panel.Children.Add(ascButton);
+
+        var descButton = new Button
+        {
+            Content = "\u2B07 Sort Descending",
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(6, 4, 6, 4),
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            FontSize = 12
+        };
+        descButton.Click += (s, _) =>
+        {
+            popup.IsOpen = false;
+            ApplySort(sortMemberPath, ListSortDirection.Descending);
+        };
+        panel.Children.Add(descButton);
+
+        panel.Children.Add(new Separator { Margin = new Thickness(0, 4, 0, 4) });
+
+        return panel;
+    }
+
     private void OnDataGridSorting(object sender, DataGridSortingEventArgs e)
     {
         try
@@ -1134,14 +1752,7 @@ public partial class MainWindow : Window
                 direction = ListSortDirection.Descending;
             }
             
-            // Apply sort
-            _dataView.Sort = $"{sortMemberPath} {(direction == ListSortDirection.Ascending ? "ASC" : "DESC")}";
-            
-            // Update column sort direction
-            column.SortDirection = direction;
-            
-            var displayName = sortMemberPath == "__RowNumber" ? "#" : sortMemberPath;
-            StatusText.Text = $"Sorted by {displayName} ({(direction == ListSortDirection.Ascending ? "ascending" : "descending")})";
+            ApplySort(sortMemberPath, direction);
         }
         catch (Exception ex)
         {
@@ -1150,34 +1761,45 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (sender is TextBox && _dataView != null)
-        {
-            // Debounce: restart the timer on every keystroke.
-            _filterDebounceTimer.Stop();
-            _filterDebounceTimer.Start();
-        }
-    }
-    
-    private void ApplyFilters()
+    private void ApplyAllFilters()
     {
         if (_dataView == null) return;
         
         var filters = new List<string>();
         
-        // Add column-specific filters from search boxes
-        for (int i = 0; i < _searchBoxes.Count; i++)
+        // Add column-specific value filters
+        foreach (var kvp in _columnFilters)
         {
-            var searchText = _searchBoxes[i].Text?.Trim();
-            var columnName = _searchBoxes[i].Tag?.ToString();
+            if (!kvp.Value.IsActive) continue;
             
-            if (!string.IsNullOrEmpty(searchText) && !string.IsNullOrEmpty(columnName))
+            var columnName = kvp.Key;
+            var selected = kvp.Value.SelectedValues;
+            
+            if (selected.Count == 0)
             {
-                // Escape single quotes (DataView), then escape DataView LIKE wildcards in the value
-                var escaped = EscapeDataViewLikeValue(searchText.Replace("'", "''"));
-                filters.Add($"Convert([{columnName}], 'System.String') LIKE '*{escaped}*'");
+                // Nothing selected means show no rows for this column
+                filters.Add("1=0");
+                continue;
             }
+
+            var conditions = new List<string>();
+            bool includeBlank = selected.Contains(BlankDisplayValue);
+
+            foreach (var val in selected)
+            {
+                if (val == BlankDisplayValue) continue;
+                var escaped = val.Replace("'", "''");
+                conditions.Add($"Convert([{columnName}], 'System.String') = '{escaped}'");
+            }
+
+            if (includeBlank)
+            {
+                conditions.Add($"Convert([{columnName}], 'System.String') = ''");
+                conditions.Add($"[{columnName}] IS NULL");
+            }
+
+            if (conditions.Count > 0)
+                filters.Add($"({string.Join(" OR ", conditions)})");
         }
         
         // Add global search filter (OR condition across all data columns)
@@ -1203,7 +1825,7 @@ public partial class MainWindow : Window
         {
             _dataView.RowFilter = filters.Count > 0 ? string.Join(" AND ", filters) : string.Empty;
             
-            var columnCount = _searchBoxes.Count(sb => !string.IsNullOrWhiteSpace(sb.Text));
+            var columnCount = _columnFilters.Count(kvp => kvp.Value.IsActive);
             var hasGlobal = !string.IsNullOrWhiteSpace(GlobalSearchBox.Text);
             
             if (columnCount > 0 && hasGlobal)
@@ -1214,6 +1836,9 @@ public partial class MainWindow : Window
                 StatusText.Text = "Filtered by global search";
             else
                 StatusText.Text = "Ready";
+
+            UpdateFilterBadge();
+            UpdateRowCount();
         }
         catch
         {
@@ -1225,11 +1850,54 @@ public partial class MainWindow : Window
     
     private void OnDataGridScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        // Sync horizontal scroll between search panel and data grid
-        if (_searchScrollViewer != null && e.HorizontalChange != 0)
+        // Scroll sync removed — search panel no longer exists
+    }
+
+    private void OnClearAllFiltersClick(object sender, RoutedEventArgs e)
+    {
+        foreach (var kvp in _columnFilters)
         {
-            _searchScrollViewer.ScrollToHorizontalOffset(e.HorizontalOffset);
+            if (kvp.Value.IsActive)
+            {
+                kvp.Value.SelectedValues = new HashSet<string>(kvp.Value.AllValues);
+                kvp.Value.IsActive = false;
+                UpdateFilterIndicator(kvp.Key);
+            }
         }
+        GlobalSearchBox.Text = string.Empty;
+        ApplyAllFilters();
+    }
+
+    private void UpdateFilterBadge()
+    {
+        var activeCount = _columnFilters.Count(kvp => kvp.Value.IsActive);
+        var hasGlobal = !string.IsNullOrWhiteSpace(GlobalSearchBox.Text);
+        var totalFilters = activeCount + (hasGlobal ? 1 : 0);
+
+        if (totalFilters > 0)
+        {
+            FilterBadge.Visibility = Visibility.Visible;
+            FilterBadgeText.Text = $"🔽 {totalFilters} filter{(totalFilters > 1 ? "s" : "")} active";
+        }
+        else
+        {
+            FilterBadge.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void UpdateRowCount()
+    {
+        if (_dataView == null || _originalData == null)
+        {
+            RowCountText.Text = string.Empty;
+            return;
+        }
+
+        var filtered = _dataView.Count;
+        var total = _originalData.Rows.Count;
+        RowCountText.Text = filtered < total
+            ? $"{filtered:N0} of {total:N0} rows"
+            : $"{total:N0} rows";
     }
     
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
@@ -1666,4 +2334,17 @@ public partial class MainWindow : Window
             }
         });
     }
+}
+
+/// <summary>
+/// Tracks per-column filter state for Fabric Lakehouse-style dropdown filters.
+/// </summary>
+internal class ColumnFilterState
+{
+    public List<string> AllValues { get; set; } = new();
+    public HashSet<string> SelectedValues { get; set; } = new();
+    public bool IsActive { get; set; }
+    public bool IsLoaded { get; set; }
+    public bool IsTruncated { get; set; }
+    public int TotalDistinctCount { get; set; }
 }

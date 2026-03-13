@@ -39,9 +39,17 @@ namespace HipHipParquet.Views
                 return sb.ToString();
             }
 
-            // group by row index and build lines
+            // Build item-to-index lookup once: O(N) instead of O(N*M) from IndexOf per cell
+            var indexMap = new Dictionary<object, int>();
+            for (int i = 0; i < grid.Items.Count; i++)
+            {
+                var item = grid.Items[i];
+                if (!indexMap.ContainsKey(item))
+                    indexMap[item] = i;
+            }
+
             var rowGroups = cells
-                .GroupBy(cell => grid.Items.IndexOf(cell.Item))
+                .GroupBy(cell => indexMap.TryGetValue(cell.Item, out var idx) ? idx : -1)
                 .OrderBy(g => g.Key);
 
             var output = new StringBuilder();

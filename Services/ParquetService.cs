@@ -1,6 +1,7 @@
 using DuckDB.NET.Data;
 using System.Data;
 using System.IO;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using HipHipParquet.Models;
 
@@ -226,8 +227,34 @@ public class ParquetService : IDisposable
                 _connection = null;
             }
             
-            throw new InvalidOperationException($"Failed to load file '{Path.GetFileName(filePath)}': {ex.Message}", ex);
+            // Extract line number from DuckDB error and build a clearer message
+            var errorMessage = FormatImportError(Path.GetFileName(filePath), ex);
+            throw new InvalidOperationException(errorMessage, ex);
         }
+    }
+
+    /// <summary>
+    /// Extracts line/row number references from DuckDB exceptions and formats
+    /// a clear error message highlighting the problematic location in the file.
+    /// </summary>
+    private static string FormatImportError(string fileName, Exception ex)
+    {
+        var msg = ex.Message;
+
+        // DuckDB CSV errors typically: "CSV Error on Line 42: expected 5 values ..."
+        // DuckDB JSON errors: "JSON ... error at line 10 ..."
+        var lineMatch = System.Text.RegularExpressions.Regex.Match(
+            msg,
+            @"(?:line|row)\s+(\d+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (lineMatch.Success)
+        {
+            var lineNum = lineMatch.Groups[1].Value;
+            return $"Error at line {lineNum} in '{fileName}': {msg}";
+        }
+
+        return $"Failed to load file '{fileName}': {msg}";
     }
     
     public async Task<DataFileInfo> GetFileInfoAsync(string filePath, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
@@ -357,40 +384,41 @@ public class ParquetService : IDisposable
                 await createCommand.ExecuteNonQueryAsync();
             }
             
-            // Insert data into temporary table
-            foreach (DataRow row in dataTable.Rows)
+            // Insert data using parameterized queries (SQL injection-safe, batched in a transaction)
+            var dataCols = dataTable.Columns.Cast<DataColumn>()
+                .Where(c => c.ColumnName != "__RowNumber").ToList();
+            var placeholders = string.Join(", ", Enumerable.Range(1, dataCols.Count).Select(i => $"${i}"));
+            var insertSql = $"INSERT INTO {tempTableName} VALUES ({placeholders})";
+
+            using (var beginTx = new DuckDBCommand("BEGIN TRANSACTION", _connection))
+                await beginTx.ExecuteNonQueryAsync();
+
+            try
             {
-                var values = new List<string>();
-                foreach (DataColumn col in dataTable.Columns)
+                using (var insertCommand = new DuckDBCommand(insertSql, _connection))
                 {
-                    if (col.ColumnName == "__RowNumber") continue;
-                    
-                    var value = row[col];
-                    if (value == DBNull.Value || value == null)
+                    for (int i = 0; i < dataCols.Count; i++)
+                        insertCommand.Parameters.Add(new DuckDBParameter());
+
+                    foreach (DataRow row in dataTable.Rows)
                     {
-                        values.Add("NULL");
-                    }
-                    else if (col.DataType == typeof(string))
-                    {
-                        values.Add($"'{value.ToString()?.Replace("'", "''")}'");
-                    }
-                    else if (col.DataType == typeof(DateTime))
-                    {
-                        values.Add($"'{((DateTime)value):yyyy-MM-dd HH:mm:ss}'");
-                    }
-                    else if (col.DataType == typeof(bool))
-                    {
-                        values.Add(((bool)value) ? "TRUE" : "FALSE");
-                    }
-                    else
-                    {
-                        values.Add(value.ToString() ?? "NULL");
+                        for (int i = 0; i < dataCols.Count; i++)
+                        {
+                            var value = row[dataCols[i]];
+                            insertCommand.Parameters[i].Value = (value == DBNull.Value) ? (object)DBNull.Value : value;
+                        }
+                        await insertCommand.ExecuteNonQueryAsync();
                     }
                 }
-                
-                var insertSql = $"INSERT INTO {tempTableName} VALUES ({string.Join(", ", values)})";
-                using var insertCommand = new DuckDBCommand(insertSql, _connection);
-                await insertCommand.ExecuteNonQueryAsync();
+
+                using (var commitTx = new DuckDBCommand("COMMIT", _connection))
+                    await commitTx.ExecuteNonQueryAsync();
+            }
+            catch
+            {
+                using (var rollbackTx = new DuckDBCommand("ROLLBACK", _connection))
+                    try { await rollbackTx.ExecuteNonQueryAsync(); } catch { /* best-effort rollback */ }
+                throw;
             }
             
             // Export to target format
