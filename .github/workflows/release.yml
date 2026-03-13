@@ -94,6 +94,15 @@ jobs:
           body: |
             ## Hip Hip Parquet v${{ steps.version.outputs.VER }}
 
+            ### What's Changed
+
+            - **Per-column dropdown filters** — each column header now has a dropdown listing all distinct values (up to 500), replacing the old text-filter row. Active filters show a status-bar badge with a count and a one-click Clear All.
+            - **Navigation shortcuts** — Ctrl+G opens a Go to Row popup (works correctly when the grid is sorted or filtered); Ctrl+F focuses the global search box.
+            - **Schema copy** — new Copy button in the schema pane puts the full column list on the clipboard.
+            - **Security** — DuckDB `SaveFileAsync` now uses parameterized `$1..$N` inserts wrapped in a BEGIN/COMMIT transaction, eliminating the SQL-injection risk from string-interpolated row values.
+            - **Performance** — clipboard copy grouping is now O(N+M) instead of O(N×M); `QualityScoreService` and `NarrativeService` replaced multiple LINQ passes with single-pass loops.
+            - **Import error messages** — `FileImportDialog` now highlights specific line numbers in DuckDB parse errors so you can find the problem row quickly.
+
             ### Download
 
             | File | Description |
