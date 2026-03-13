@@ -289,9 +289,25 @@ public partial class FileImportDialog : Window
     private void ShowError(Exception ex)
     {
         ErrorPanel.Visibility = Visibility.Visible;
-        ErrorText.Text = ex.Message;
 
-        var msg = ex.Message.ToLowerInvariant();
+        // Extract and highlight line number from the error if present
+        var rawMsg = ex.Message;
+        var lineMatch = System.Text.RegularExpressions.Regex.Match(
+            rawMsg,
+            @"(?:line|row)\s+(\d+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (lineMatch.Success)
+        {
+            var lineNum = lineMatch.Groups[1].Value;
+            ErrorText.Text = $"\u26a0\ufe0f Error at line {lineNum}\n{rawMsg}";
+        }
+        else
+        {
+            ErrorText.Text = rawMsg;
+        }
+
+        var msg = rawMsg.ToLowerInvariant();
 
         // Analyze the error and show contextual suggestions
         bool showSkipErrors = false;

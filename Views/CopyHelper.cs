@@ -39,9 +39,17 @@ namespace HipHipParquet.Views
                 return sb.ToString();
             }
 
-            // group by row index and build lines
+            // Build item-to-index lookup once: O(N) instead of O(N*M) from IndexOf per cell
+            var indexMap = new Dictionary<object, int>();
+            for (int i = 0; i < grid.Items.Count; i++)
+            {
+                var item = grid.Items[i];
+                if (!indexMap.ContainsKey(item))
+                    indexMap[item] = i;
+            }
+
             var rowGroups = cells
-                .GroupBy(cell => grid.Items.IndexOf(cell.Item))
+                .GroupBy(cell => indexMap.TryGetValue(cell.Item, out var idx) ? idx : -1)
                 .OrderBy(g => g.Key);
 
             var output = new StringBuilder();
@@ -101,13 +109,37 @@ namespace HipHipParquet.Views
                 return string.Empty;
             if (column.Header is System.Windows.FrameworkElement element)
             {
-                if (element is System.Windows.Controls.StackPanel panel)
-                {
-                    var textBlock = panel.Children.OfType<System.Windows.Controls.TextBlock>().LastOrDefault();
-                    return textBlock?.Text ?? column.Header.ToString() ?? string.Empty;
-                }
+                var text = GetHeaderTextFromElement(element);
+                if (!string.IsNullOrEmpty(text))
+                    return text;
             }
             return column.Header?.ToString() ?? string.Empty;
+        }
+
+        private static string GetHeaderTextFromElement(System.Windows.FrameworkElement element)
+        {
+            if (element is System.Windows.Controls.TextBlock tb && !string.IsNullOrEmpty(tb.Text))
+                return tb.Text;
+
+            if (element is System.Windows.Controls.Panel panel)
+            {
+                // Look for a non-empty TextBlock among direct children (last one wins for icon+name layouts)
+                var directBlock = panel.Children
+                    .OfType<System.Windows.Controls.TextBlock>()
+                    .LastOrDefault(t => !string.IsNullOrEmpty(t.Text));
+                if (directBlock != null)
+                    return directBlock.Text;
+
+                // Recurse into child FrameworkElements (e.g., Grid > DockPanel > TextBlock)
+                foreach (var child in panel.Children.OfType<System.Windows.FrameworkElement>())
+                {
+                    var text = GetHeaderTextFromElement(child);
+                    if (!string.IsNullOrEmpty(text))
+                        return text;
+                }
+            }
+
+            return string.Empty;
         }
     }
 }

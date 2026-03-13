@@ -11,10 +11,14 @@
     <Window.InputBindings>
         <KeyBinding Key="S" Modifiers="Ctrl" Command="Save"/>
         <KeyBinding Key="F1" Command="Help"/>
+        <KeyBinding Key="G" Modifiers="Ctrl" Command="{x:Static views:MainWindow.GoToRowCommand}"/>
+        <KeyBinding Key="F" Modifiers="Ctrl" Command="{x:Static views:MainWindow.FocusSearchCommand}"/>
     </Window.InputBindings>
     <Window.CommandBindings>
         <CommandBinding Command="Save" Executed="OnSaveClick"/>
         <CommandBinding Command="Help" Executed="OnHelpClick"/>
+        <CommandBinding Command="{x:Static views:MainWindow.GoToRowCommand}" Executed="OnGoToRowShortcut"/>
+        <CommandBinding Command="{x:Static views:MainWindow.FocusSearchCommand}" Executed="OnFocusSearchShortcut"/>
     </Window.CommandBindings>
     <Grid>
         <Grid.RowDefinitions>
@@ -67,7 +71,6 @@
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="Toggle _Schema Pane" Click="OnToggleSchemaPaneClick" IsCheckable="True" IsChecked="True"/>
-                <MenuItem Header="Toggle _Filter Row" Click="OnToggleFilterRowClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem x:Name="ToggleQualityPanelMenuItem" Header="Toggle _Quality Review Panel" Click="OnToggleQualityPanelClick" IsCheckable="True" IsChecked="True"/>
             </MenuItem>
             <MenuItem Header="_Edit" SubmenuOpened="OnEditMenuOpened" SubmenuClosed="OnEditMenuClosed">
@@ -78,6 +81,12 @@
                 </MenuItem>
                 <MenuItem Header="Copy as _CSV" Click="OnCopyAsCsvClick" InputGestureText="Ctrl+Alt+C"/>
                 <MenuItem Header="Copy as _TSV" Click="OnCopyAsTsvClick" InputGestureText="Ctrl+Shift+C"/>
+                <Separator/>
+                <MenuItem Header="Clear All _Filters" Click="OnClearAllFiltersClick">
+                    <MenuItem.Icon>
+                        <TextBlock Text="🔽" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_Keyboard Shortcuts" Click="OnKeyboardShortcutsClick" InputGestureText="F1">
@@ -111,14 +120,26 @@
 
             <!-- Schema Pane -->
             <Border x:Name="SchemaPane" Grid.Column="0" Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="0,0,1,0">
-                <ScrollViewer>
-                    <StackPanel x:Name="SchemaPanel" Margin="12">
-                        <TextBlock Text="Schema" FontWeight="Bold" FontSize="16" Margin="0,0,0,8"/>
-                        <TextBlock x:Name="SchemaStatusText" 
-                                  Text="No file loaded" 
-                                  Foreground="Gray"/>
-                    </StackPanel>
-                </ScrollViewer>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <ScrollViewer Grid.Row="0">
+                        <StackPanel x:Name="SchemaPanel" Margin="12">
+                            <TextBlock Text="Schema" FontWeight="Bold" FontSize="16" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="SchemaStatusText" 
+                                      Text="No file loaded" 
+                                      Foreground="Gray"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <Border Grid.Row="1" BorderBrush="#E0E0E0" BorderThickness="0,1,0,0" Padding="8,6">
+                        <Button x:Name="CopySchemaButton" Content="📋 Copy Schema" 
+                                Click="OnCopySchemaClick" HorizontalAlignment="Stretch"
+                                Padding="6,4" Background="White" BorderBrush="#CCC" Cursor="Hand"
+                                IsEnabled="False"/>
+                    </Border>
+                </Grid>
             </Border>
 
             <!-- Splitter -->
@@ -150,25 +171,11 @@
                 <Grid x:Name="DataGridContainer" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     
-                    <!-- Search Panel -->
-                    <ScrollViewer x:Name="SearchPanelContainer"
-                                 Grid.Row="0" 
-                                 HorizontalScrollBarVisibility="Hidden" 
-                                 VerticalScrollBarVisibility="Disabled"
-                                 Margin="12,12,12,0">
-                        <Border Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1">
-                            <StackPanel x:Name="SearchPanel" 
-                                       Orientation="Horizontal" 
-                                       Margin="0"/>
-                        </Border>
-                    </ScrollViewer>
-                    
                     <!-- Load More Banner -->
-                    <Border x:Name="LoadMoreBanner" Grid.Row="1" 
+                    <Border x:Name="LoadMoreBanner" Grid.Row="0" 
                             Background="#FFF3E0" BorderBrush="#FFB74D" BorderThickness="0,0,0,1"
                             Padding="8,6" Visibility="Collapsed">
                         <DockPanel>
@@ -187,7 +194,7 @@
 
                     <!-- Data Grid -->
                     <DataGrid x:Name="DataGrid" 
-                             Grid.Row="2"
+                             Grid.Row="1"
                              AutoGenerateColumns="False"
                              HeadersVisibility="All"
                              GridLinesVisibility="All"
@@ -198,7 +205,6 @@
                              SelectionMode="Extended"
                              SelectionUnit="CellOrRowHeader"
                              Margin="12,5,12,12"
-                             ScrollViewer.ScrollChanged="OnDataGridScrollChanged"
                              CellEditEnding="OnCellEditEnding"
                              EnableRowVirtualization="True"
                              EnableColumnVirtualization="True"
@@ -288,10 +294,23 @@
                                    FontWeight="SemiBold" Foreground="#1565C0"/>
                     </Border>
                     <TextBlock x:Name="StatusText" Text="Ready"/>
+                    <TextBlock x:Name="RowCountText" Text="" Margin="12,0,0,0" Foreground="#666"/>
                 </StackPanel>
             </StatusBarItem>
             <StatusBarItem HorizontalAlignment="Right">
                 <StackPanel Orientation="Horizontal">
+                    <Border x:Name="FilterBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
+                            Visibility="Collapsed" Background="#FFF3E0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="FilterBadgeText" Text="" FontSize="11"
+                                       FontWeight="SemiBold" Foreground="#E65100" VerticalAlignment="Center"/>
+                            <Button x:Name="ClearAllFiltersButton" Content="✕" FontSize="10"
+                                    Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
+                                    Background="Transparent" Foreground="#E65100" Cursor="Hand"
+                                    ToolTip="Clear all filters" Click="OnClearAllFiltersClick"
+                                    VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
                     <TextBlock Text="🔍 Global Search:" Margin="0,0,5,0" VerticalAlignment="Center"/>
                     <TextBox x:Name="GlobalSearchBox" 
                             Width="200" 

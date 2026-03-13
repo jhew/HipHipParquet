@@ -18,15 +18,24 @@ public class QualityScoreService
             col.Score = ScoreColumn(col);
         }
 
-        // Overall score = weighted average of all column scores
+        // Overall score = weighted average of all column scores (single-pass)
         if (profile.Columns.Count > 0)
         {
+            double sumC = 0, sumU = 0, sumV = 0, sumD = 0;
+            foreach (var col in profile.Columns)
+            {
+                sumC += col.Score.Completeness;
+                sumU += col.Score.Uniqueness;
+                sumV += col.Score.Validity;
+                sumD += col.Score.Distribution;
+            }
+            var count = profile.Columns.Count;
             profile.OverallScore = new QualityScore
             {
-                Completeness = Math.Round(profile.Columns.Average(c => c.Score.Completeness), 1),
-                Uniqueness = Math.Round(profile.Columns.Average(c => c.Score.Uniqueness), 1),
-                Validity = Math.Round(profile.Columns.Average(c => c.Score.Validity), 1),
-                Distribution = Math.Round(profile.Columns.Average(c => c.Score.Distribution), 1)
+                Completeness = Math.Round(sumC / count, 1),
+                Uniqueness = Math.Round(sumU / count, 1),
+                Validity = Math.Round(sumV / count, 1),
+                Distribution = Math.Round(sumD / count, 1)
             };
         }
     }

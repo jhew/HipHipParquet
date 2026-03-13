@@ -132,6 +132,35 @@
                             </Border>
                         </Grid>
 
+                        <!-- Navigation shortcuts -->
+                        <TextBlock Text="NAVIGATION" Style="{StaticResource SectionHeader}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="32"/>
+                                <RowDefinition Height="32"/>
+                            </Grid.RowDefinitions>
+                            <Border Grid.Row="0" Grid.Column="0" Background="#F9F9F9" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + G"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="0" Grid.Column="1" Background="#F9F9F9" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Go to a specific row number"/>
+                            </Border>
+                            <Border Grid.Row="1" Grid.Column="0" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + F"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="1" Grid.Column="1" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Focus the Global Search box"/>
+                            </Border>
+                        </Grid>
+
                         <!-- Other shortcuts -->
                         <TextBlock Text="OTHER" Style="{StaticResource SectionHeader}"/>
                         <Grid>
@@ -193,11 +222,15 @@
                         <StackPanel Margin="0,0,0,6">
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                 <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
-                                <TextBlock Style="{StaticResource TipText}" Text="Column filter boxes update as you type — results appear after a short pause, no Enter key needed."/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Click the ▼ arrow in any column header to open a Fabric Lakehouse-style filter dropdown with checkboxes, search, and select all."/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                 <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
-                                <TextBlock Style="{StaticResource TipText}" Text="Use View → Toggle Filter Row to hide the filter strip when working with wide tables."/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Use Ctrl+F to jump to the Global Search box. Active filters are shown in the status bar with a one-click Clear All button."/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Ellipse Width="6" Height="6" Fill="#512BD4" VerticalAlignment="Top" Margin="0,4,8,0"/>
+                                <TextBlock Style="{StaticResource TipText}" Text="Press Ctrl+G or click the ▼ arrow on the # column header to jump directly to a specific row number."/>
                             </StackPanel>
                         </StackPanel>
 

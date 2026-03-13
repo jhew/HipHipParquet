@@ -203,8 +203,15 @@ public class NarrativeService
             });
         }
 
-        // Uniqueness dimension summary
-        var lowUniqueCols = profile.Columns.Where(c => c.Score.Uniqueness < LowColumnUniqueness).ToList();
+        // Classify columns in a single pass instead of multiple Where/ToList iterations
+        var lowUniqueCols = new List<ColumnProfile>();
+        var lowDistCols = new List<ColumnProfile>();
+        foreach (var c in profile.Columns)
+        {
+            if (c.Score.Uniqueness < LowColumnUniqueness) lowUniqueCols.Add(c);
+            if (c.Score.Distribution < 20) lowDistCols.Add(c);
+        }
+
         if (lowUniqueCols.Count > 0)
         {
             var overallUniqueness = profile.OverallScore.Uniqueness;
@@ -219,8 +226,7 @@ public class NarrativeService
             });
         }
 
-        // Distribution dimension summary
-        var lowDistCols = profile.Columns.Where(c => c.Score.Distribution < 20).ToList();
+        // Distribution dimension summary (lowDistCols already populated above)
         if (lowDistCols.Count > 0)
         {
             findings.Add(new NarrativeItem
