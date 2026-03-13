@@ -521,6 +521,10 @@ public partial class MainWindow : Window
                     var nameBlock = namePanel.Children.OfType<TextBlock>().LastOrDefault();
                     return nameBlock?.Text ?? "";
                 }
+                // Fallback for Grid headers without a DockPanel (e.g., row-number header: TextBlock + Button)
+                var gridTextBlock = grid.Children.OfType<TextBlock>().FirstOrDefault();
+                if (gridTextBlock != null)
+                    return gridTextBlock.Text ?? "";
             }
             // Handle legacy StackPanel header (icon + text)
             if (element is StackPanel panel)
@@ -1702,7 +1706,7 @@ public partial class MainWindow : Window
         var visibleBoxes = checkBoxes.Where(cb => cb.Visibility == Visibility.Visible).ToList();
         var checkedCount = visibleBoxes.Count(cb => cb.IsChecked == true);
 
-        // Temporarily remove handler to avoid recursive trigger
+        // Update the "Select All" checkbox state based on the visible item checkboxes
         selectAll.IsThreeState = true;
         if (checkedCount == 0)
             selectAll.IsChecked = false;
@@ -1828,16 +1832,17 @@ public partial class MainWindow : Window
             var conditions = new List<string>();
             bool includeBlank = selected.Contains(BlankDisplayValue);
 
-            foreach (var val in selected)
+            var nonBlankSelected = selected.Where(v => v != BlankDisplayValue).ToList();
+            if (nonBlankSelected.Count > 0)
             {
-                if (val == BlankDisplayValue) continue;
-                var escaped = val.Replace("'", "''");
-                conditions.Add($"Convert([{columnName}], 'System.String') = '{escaped}'");
+                // Use IN (...) to produce a single condition instead of one OR per value
+                var inList = string.Join(", ", nonBlankSelected.Select(v => $"'{v.Replace("'", "''")}'")); 
+                conditions.Add($"Convert([{columnName}], 'System.String') IN ({inList})");
             }
 
             if (includeBlank)
             {
-                conditions.Add($"LTRIM(RTRIM(Convert([{columnName}], 'System.String'))) = ''");
+                conditions.Add($"Convert([{columnName}], 'System.String') = ''");
                 conditions.Add($"[{columnName}] IS NULL");
             }
 
