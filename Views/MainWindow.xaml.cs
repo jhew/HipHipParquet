@@ -512,7 +512,17 @@ public partial class MainWindow : Window
     {
         if (column.Header is FrameworkElement element)
         {
-            // Handle custom header with StackPanel (icon + text)
+            // Handle new Grid-based column header (DockPanel with icon + name TextBlocks)
+            if (element is Grid grid)
+            {
+                var namePanel = grid.Children.OfType<DockPanel>().FirstOrDefault();
+                if (namePanel != null)
+                {
+                    var nameBlock = namePanel.Children.OfType<TextBlock>().LastOrDefault();
+                    return nameBlock?.Text ?? "";
+                }
+            }
+            // Handle legacy StackPanel header (icon + text)
             if (element is StackPanel panel)
             {
                 var textBlock = panel.Children.OfType<TextBlock>().LastOrDefault();
@@ -934,8 +944,16 @@ public partial class MainWindow : Window
         foreach (var col in _lastSchemaInfo.Columns)
             sb.AppendLine($"  {col.Name} ({col.Type})");
 
-        Clipboard.SetText(sb.ToString());
-        StatusText.Text = "Schema copied to clipboard";
+        try
+        {
+            Clipboard.SetText(sb.ToString());
+            StatusText.Text = "Schema copied to clipboard";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Failed to copy schema to clipboard";
+            MessageBox.Show($"Error copying schema to clipboard: {ex.Message}", "Clipboard Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
     
     private void SetupDataGrid(DataTable dataTable, List<ColumnInfo>? columns)
@@ -1040,7 +1058,8 @@ public partial class MainWindow : Window
             Cursor = System.Windows.Input.Cursors.Hand,
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
-            ToolTip = "Go to row..."
+            ToolTip = "Go to row...",
+            Tag = "GoToRowButton"
         };
         goToButton.Click += OnGoToRowButtonClick;
         Grid.SetColumn(goToButton, 1);
@@ -1094,7 +1113,7 @@ public partial class MainWindow : Window
         };
         mainPanel.Children.Add(header);
 
-        var totalRows = _dataView.Count;
+        var totalRows = _originalData.Rows.Count;
         var hint = new TextBlock
         {
             Text = $"Enter row number (1–{totalRows:N0})",
@@ -1146,14 +1165,30 @@ public partial class MainWindow : Window
                 return;
             }
 
+            // Locate the row in the current (filtered/sorted) view by __RowNumber
+            int matchedIndex = -1;
+            for (int i = 0; i < _dataView.Count; i++)
+            {
+                if (_dataView[i]["__RowNumber"] is int rowNum && rowNum == targetRow)
+                {
+                    matchedIndex = i;
+                    break;
+                }
+            }
+
+            if (matchedIndex == -1)
+            {
+                errorText.Text = $"Row {targetRow:N0} is not visible in the current view.";
+                errorText.Visibility = Visibility.Visible;
+                return;
+            }
+
             popup.IsOpen = false;
 
-            // Find the row in the current view and scroll to it
-            var rowIndex = targetRow - 1;
-            if (rowIndex < _dataView.Count)
+            if (matchedIndex < DataGrid.Items.Count)
             {
-                DataGrid.ScrollIntoView(DataGrid.Items[rowIndex]);
-                DataGrid.SelectedIndex = rowIndex;
+                DataGrid.ScrollIntoView(DataGrid.Items[matchedIndex]);
+                DataGrid.SelectedIndex = matchedIndex;
                 DataGrid.Focus();
                 StatusText.Text = $"Jumped to row {targetRow:N0}";
             }
@@ -1188,7 +1223,7 @@ public partial class MainWindow : Window
             {
                 foreach (var child in headerGrid.Children)
                 {
-                    if (child is Button btn && btn.ToolTip?.ToString() == "Go to row...")
+                    if (child is Button btn && btn.Tag?.ToString() == "GoToRowButton")
                     {
                         OnGoToRowButtonClick(btn, new RoutedEventArgs());
                         return;
@@ -1397,34 +1432,42 @@ public partial class MainWindow : Window
         var distinctValues = new HashSet<string>();
         bool hasBlank = false;
         bool truncated = false;
+        int totalDistinct = 0;
 
         foreach (DataRow row in _originalData.Rows)
         {
             var val = row[columnName];
-            if (val == null || val == DBNull.Value || string.IsNullOrWhiteSpace(val.ToString()))
+            var strVal = val?.ToString();
+            if (val == null || val == DBNull.Value || string.IsNullOrWhiteSpace(strVal))
             {
                 hasBlank = true;
             }
             else
             {
-                distinctValues.Add(val.ToString()!);
+                var nonBlank = strVal!;
+                if (!distinctValues.Contains(nonBlank))
+                {
+                    if (distinctValues.Count < MaxDistinctValues)
+                    {
+                        distinctValues.Add(nonBlank);
+                    }
+                    else
+                    {
+                        truncated = true;
+                    }
+                    totalDistinct++;
+                }
             }
-
-            if (!truncated && distinctValues.Count >= MaxDistinctValues)
-                truncated = true;
         }
 
-        var totalDistinct = distinctValues.Count;
-        var limited = truncated
-            ? distinctValues.Take(MaxDistinctValues).OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList()
-            : distinctValues.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList();
+        var limited = distinctValues.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList();
 
         if (hasBlank)
             limited.Insert(0, BlankDisplayValue);
 
         state.AllValues = limited;
-        state.IsTruncated = truncated && totalDistinct > MaxDistinctValues;
-        state.TotalDistinctCount = totalDistinct;
+        state.IsTruncated = truncated;
+        state.TotalDistinctCount = totalDistinct == 0 ? distinctValues.Count : totalDistinct;
         // Default: all values selected (no filter)
         if (state.SelectedValues.Count == 0)
             state.SelectedValues = new HashSet<string>(limited);
@@ -1504,7 +1547,7 @@ public partial class MainWindow : Window
         {
             var truncNotice = new TextBlock
             {
-                Text = $"Showing first {MaxDistinctValues:N0} of {filterState.TotalDistinctCount:N0} values",
+                Text = $"Showing up to {MaxDistinctValues:N0} of {filterState.TotalDistinctCount:N0} values",
                 Foreground = new SolidColorBrush(Color.FromRgb(180, 130, 0)),
                 FontSize = 11,
                 FontStyle = FontStyles.Italic,
@@ -1794,7 +1837,7 @@ public partial class MainWindow : Window
 
             if (includeBlank)
             {
-                conditions.Add($"Convert([{columnName}], 'System.String') = ''");
+                conditions.Add($"LTRIM(RTRIM(Convert([{columnName}], 'System.String'))) = ''");
                 conditions.Add($"[{columnName}] IS NULL");
             }
 
@@ -1848,11 +1891,6 @@ public partial class MainWindow : Window
         }
     }
     
-    private void OnDataGridScrollChanged(object sender, ScrollChangedEventArgs e)
-    {
-        // Scroll sync removed — search panel no longer exists
-    }
-
     private void OnClearAllFiltersClick(object sender, RoutedEventArgs e)
     {
         foreach (var kvp in _columnFilters)
@@ -1864,7 +1902,12 @@ public partial class MainWindow : Window
                 UpdateFilterIndicator(kvp.Key);
             }
         }
+        // Temporarily detach the TextChanged handler to prevent triggering the debounce
+        // timer (and a redundant ApplyAllFilters call) when clearing the global search box.
+        GlobalSearchBox.TextChanged -= OnGlobalSearchTextChanged;
         GlobalSearchBox.Text = string.Empty;
+        GlobalSearchBox.TextChanged += OnGlobalSearchTextChanged;
+
         ApplyAllFilters();
     }
 

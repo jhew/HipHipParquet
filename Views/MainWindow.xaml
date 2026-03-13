@@ -205,7 +205,6 @@
                              SelectionMode="Extended"
                              SelectionUnit="CellOrRowHeader"
                              Margin="12,5,12,12"
-                             ScrollViewer.ScrollChanged="OnDataGridScrollChanged"
                              CellEditEnding="OnCellEditEnding"
                              EnableRowVirtualization="True"
                              EnableColumnVirtualization="True"
