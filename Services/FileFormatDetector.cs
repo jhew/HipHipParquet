@@ -155,19 +155,19 @@ public static class FileFormatDetector
 
     private static IEnumerable<string> GetNumberedSiblingFiles(string directory, string fileName)
     {
-        var match = System.Text.RegularExpressions.Regex.Match(
+        var match = Regex.Match(
             fileName,
             @"^(?<prefix>.+?)(?<sep>[-_]?)(?<index>\d+)\.parquet$",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            RegexOptions.IgnoreCase);
 
         if (!match.Success)
             return [Path.Combine(directory, fileName)];
 
-        var prefix = System.Text.RegularExpressions.Regex.Escape(match.Groups["prefix"].Value);
-        var sep = System.Text.RegularExpressions.Regex.Escape(match.Groups["sep"].Value);
-        var pattern = new System.Text.RegularExpressions.Regex(
+        var prefix = Regex.Escape(match.Groups["prefix"].Value);
+        var sep = Regex.Escape(match.Groups["sep"].Value);
+        var pattern = new Regex(
             $"^{prefix}{sep}\\d+\\.parquet$",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            RegexOptions.IgnoreCase);
 
         return Directory.EnumerateFiles(directory, "*.parquet")
             .Where(path => pattern.IsMatch(Path.GetFileName(path)));
