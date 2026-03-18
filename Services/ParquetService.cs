@@ -246,8 +246,8 @@ public class ParquetService : IDisposable
 
         try
         {
-            _connection = new DuckDBConnection("DataSource=:memory:");
-            await _connection.OpenAsync();
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
 
             var normalizedPaths = filePaths.Select(path => path.Replace("\\", "/")).ToArray();
             var readerExpr = BuildParquetReaderExpression(normalizedPaths);
@@ -255,7 +255,7 @@ public class ParquetService : IDisposable
             var sql = $"SELECT * FROM {readerExpr}{limitClause}";
             _logger.LogDebug("Executing multi-file SQL: {SQL}", sql);
 
-            using var command = new DuckDBCommand(sql, _connection);
+            using var command = new DuckDBCommand(sql, connection);
             using var reader = await command.ExecuteReaderAsync();
 
             var dataTable = new DataTable();
@@ -277,12 +277,6 @@ public class ParquetService : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load parquet file set. Error: {Error}", ex.Message);
-            if (_connection != null)
-            {
-                _connection.Dispose();
-                _connection = null;
-            }
-
             throw new InvalidOperationException($"Failed to load parquet file set: {ex.Message}", ex);
         }
     }
@@ -419,10 +413,12 @@ public class ParquetService : IDisposable
 
             return new DataFileInfo
             {
-                FilePath = string.Join(";", filePaths),
+                // Use a single representative path for consumers that expect a real filesystem path.
+                FilePath = filePaths[0],
                 Format = SupportedFileFormat.Parquet,
                 Columns = columns,
-                RowCount = Convert.ToInt64(countResult)
+                RowCount = Convert.ToInt64(countResult),
+                SourceFiles = filePaths.ToList()
             };
         }
         catch (Exception ex)
@@ -1067,6 +1063,12 @@ public class DataFileInfo
     public SupportedFileFormat Format { get; set; }
     public List<ColumnInfo> Columns { get; set; } = [];
     public long RowCount { get; set; }
+
+    /// <summary>
+    /// Optional list of source file paths when the data comes from multiple files.
+    /// For single-file scenarios this may be empty or contain a single entry equal to <see cref="FilePath" />.
+    /// </summary>
+    public List<string> SourceFiles { get; set; } = [];
 }
 
 public class ColumnInfo

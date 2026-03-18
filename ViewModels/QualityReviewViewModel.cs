@@ -642,6 +642,38 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         ExportHtmlReportCommand.NotifyCanExecuteChanged();
     }
 
+    /// <summary>
+    /// Clears any reference to an opened file, e.g., when loading multiple files as a single logical table.
+    /// </summary>
+    public void ClearFile()
+    {
+        CurrentFilePath = string.Empty;
+        HasFile = false;
+        HasProfile = false;
+        HasComparison = false;
+        Comparison = null;
+        FormatDisplay = "";
+        AnalyzedAtDisplay = "";
+        Findings.Clear();
+        _allFindings.Clear();
+        GroupedFindings.Clear();
+        FindingsCriticalCount = 0;
+        FindingsWarningCount = 0;
+        FindingsInfoCount = 0;
+        SelectedFindingFilter = "All";
+        DisplayedColumns.Clear();
+        _allColumns.Clear();
+        ColumnSortBy = "Name ↑";
+        GroupedResults.Clear();
+        HasGroupedResults = false;
+        IsGroupByExpanded = false;
+        IsColumnProfilesExpanded = true;
+        GroupByStatusMessage = "";
+        StatusMessage = "Open a file and click Analyze to begin.";
+        AnalyzeCommand.NotifyCanExecuteChanged();
+        ExportHtmlReportCommand.NotifyCanExecuteChanged();
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private void RebuildGroupedFindings()
