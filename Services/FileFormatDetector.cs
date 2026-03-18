@@ -99,9 +99,16 @@ public static class FileFormatDetector
                 if (string.IsNullOrEmpty(shardPrefix))
                     return [normalizedSelectedPath];
 
+                var shardPattern = "^" + Regex.Escape(shardPrefix) + @"\d+" + Regex.Escape(SnappyParquetSuffix) + "$";
+                var shardRegex = new Regex(shardPattern, RegexOptions.IgnoreCase);
+
                 candidates = Directory
                     .GetFiles(directory, $"*{SnappyParquetSuffix}")
-                    .Where(path => Path.GetFileName(path).StartsWith(shardPrefix, StringComparison.OrdinalIgnoreCase));
+                    .Where(path =>
+                    {
+                        var file = Path.GetFileName(path);
+                        return shardRegex.IsMatch(file);
+                    });
             }
             else if (IsPartParquetFileName(fileName))
             {
