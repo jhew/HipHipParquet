@@ -221,6 +221,16 @@ public partial class MainWindow : Window
             _activeCsvOptions = null;
             _activeJsonOptions = null;
 
+            // When loading a set of files, clear any existing single-file watcher and quality state
+            if (_fileWatcher != null)
+            {
+                _fileWatcher.EnableRaisingEvents = false;
+                _fileWatcher.Dispose();
+                _fileWatcher = null;
+            }
+
+            _qualityViewModel?.ClearFile();
+
             var effectiveLimit = RowLimitBatch;
             _currentRowLimit = effectiveLimit;
 
@@ -261,7 +271,9 @@ public partial class MainWindow : Window
             foreach (var filePath in filePaths)
                 AddToRecentFiles(filePath);
 
-            _currentFilePath = filePaths[0];
+            // Multi-file parquet loads are treated as a logical table, not a single source file.
+            // Do not set _currentFilePath so that Save/auto-save cannot overwrite a source file.
+            _currentFilePath = filePaths.Count == 1 ? filePaths[0] : null;
             _hasUnsavedChanges = false;
             UpdateWindowTitle();
             EnableSaveMenuItems();
