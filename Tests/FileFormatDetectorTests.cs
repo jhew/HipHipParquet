@@ -11,6 +11,7 @@ public class FileFormatDetectorTests
 
     [Theory]
     [InlineData("data.parquet", SupportedFileFormat.Parquet)]
+    [InlineData("data.snappy.parquet", SupportedFileFormat.Parquet)]
     [InlineData("data.pqt", SupportedFileFormat.Parquet)]
     [InlineData("data.csv", SupportedFileFormat.Csv)]
     [InlineData("data.tsv", SupportedFileFormat.Tsv)]
@@ -269,6 +270,7 @@ public class FileFormatDetectorTests
     [Theory]
     [InlineData("data.csv", false)]
     [InlineData("data.parquet", false)]
+    [InlineData("data.snappy.parquet", false)]
     [InlineData("data.json", false)]
     [InlineData("data.xlsx", false)]
     [InlineData("data.tsv", false)]
@@ -288,10 +290,13 @@ public class FileFormatDetectorTests
     {
         var filter = FileFormatDetector.GetOpenFileDialogFilter();
         Assert.Contains("*.parquet", filter);
+        Assert.Contains("*.snappy.parquet", filter);
         Assert.Contains("*.csv", filter);
         Assert.Contains("*.tsv", filter);
         Assert.Contains("*.json", filter);
         Assert.Contains("*.xlsx", filter);
+        Assert.Contains("All supported files (*.parquet;*.snappy.parquet;", filter);
+        Assert.Contains("Parquet files (*.parquet;*.snappy.parquet)", filter);
     }
 
     [Fact]

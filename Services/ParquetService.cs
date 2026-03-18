@@ -234,6 +234,54 @@ public class ParquetService : IDisposable
     }
 
     /// <summary>
+    /// Loads multiple parquet files as one logical table.
+    /// </summary>
+    public async Task<DataTable> LoadFilesAsync(IReadOnlyList<string> filePaths, int? rowLimit = null)
+    {
+        if (filePaths == null || filePaths.Count == 0)
+            throw new ArgumentException("At least one file path is required.", nameof(filePaths));
+
+        if (filePaths.Any(path => FileFormatDetector.DetectFormat(path) != SupportedFileFormat.Parquet))
+            throw new InvalidOperationException("Multi-file loading is only supported for parquet files.");
+
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            var normalizedPaths = filePaths.Select(path => path.Replace("\\", "/")).ToArray();
+            var readerExpr = BuildParquetReaderExpression(normalizedPaths);
+            var limitClause = rowLimit.HasValue ? $" LIMIT {rowLimit.Value}" : "";
+            var sql = $"SELECT * FROM {readerExpr}{limitClause}";
+            _logger.LogDebug("Executing multi-file SQL: {SQL}", sql);
+
+            using var command = new DuckDBCommand(sql, connection);
+            using var reader = await command.ExecuteReaderAsync();
+
+            var dataTable = new DataTable();
+            for (int i = 0; i < reader.FieldCount; i++)
+                dataTable.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+
+            while (await reader.ReadAsync())
+            {
+                var row = dataTable.NewRow();
+                for (int i = 0; i < reader.FieldCount; i++)
+                    row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+
+                dataTable.Rows.Add(row);
+            }
+
+            _logger.LogInformation("Loaded {RowCount} rows from {FileCount} parquet files", dataTable.Rows.Count, filePaths.Count);
+            return dataTable;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load parquet file set. Error: {Error}", ex.Message);
+            throw new InvalidOperationException($"Failed to load parquet file set: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
     /// Extracts line/row number references from DuckDB exceptions and formats
     /// a clear error message highlighting the problematic location in the file.
     /// </summary>
@@ -316,6 +364,76 @@ public class ParquetService : IDisposable
             _logger.LogError(ex, "Failed to get file info: {FilePath}", filePath);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Gets schema and row count for multiple parquet files treated as one logical table.
+    /// </summary>
+    public async Task<DataFileInfo> GetFileInfoAsync(IReadOnlyList<string> filePaths)
+    {
+        if (filePaths == null || filePaths.Count == 0)
+            throw new ArgumentException("At least one file path is required.", nameof(filePaths));
+
+        if (filePaths.Any(path => FileFormatDetector.DetectFormat(path) != SupportedFileFormat.Parquet))
+            throw new InvalidOperationException("Multi-file metadata is only supported for parquet files.");
+
+        try
+        {
+            if (_connection == null)
+            {
+                _connection = new DuckDBConnection("DataSource=:memory:");
+                await _connection.OpenAsync();
+            }
+            else if (_connection.State != ConnectionState.Open)
+            {
+                await _connection.OpenAsync();
+            }
+
+            var normalizedPaths = filePaths.Select(path => path.Replace("\\", "/")).ToArray();
+            var readerExpr = BuildParquetReaderExpression(normalizedPaths);
+
+            var describeSql = $"DESCRIBE SELECT * FROM {readerExpr}";
+            using var describeCmd = new DuckDBCommand(describeSql, _connection);
+            using var schemaReader = await describeCmd.ExecuteReaderAsync();
+
+            var columns = new List<ColumnInfo>();
+            while (await schemaReader.ReadAsync())
+            {
+                columns.Add(new ColumnInfo
+                {
+                    Name = schemaReader.GetString("column_name"),
+                    Type = schemaReader.GetString("column_type"),
+                    Nullable = schemaReader.GetString("null") == "YES"
+                });
+            }
+
+            var countSql = $"SELECT COUNT(*) FROM {readerExpr}";
+            using var countCmd = new DuckDBCommand(countSql, _connection);
+            var countResult = await countCmd.ExecuteScalarAsync();
+
+            return new DataFileInfo
+            {
+                // Use a single representative path for consumers that expect a real filesystem path.
+                FilePath = filePaths[0],
+                Format = SupportedFileFormat.Parquet,
+                Columns = columns,
+                RowCount = Convert.ToInt64(countResult),
+                SourceFiles = filePaths.ToList()
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get multi-file info for parquet file set");
+            throw;
+        }
+    }
+
+    private static string BuildParquetReaderExpression(IEnumerable<string> normalizedPaths)
+    {
+        static string EscapePath(string path) => path.Replace("'", "''");
+
+        var pathList = string.Join(", ", normalizedPaths.Select(path => $"'{EscapePath(path)}'"));
+        return $"read_parquet([{pathList}])";
     }
     
     private async Task<long> GetRowCountAsync(string filePath, SupportedFileFormat format, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
@@ -945,6 +1063,12 @@ public class DataFileInfo
     public SupportedFileFormat Format { get; set; }
     public List<ColumnInfo> Columns { get; set; } = [];
     public long RowCount { get; set; }
+
+    /// <summary>
+    /// Optional list of source file paths when the data comes from multiple files.
+    /// For single-file scenarios this may be empty or contain a single entry equal to <see cref="FilePath" />.
+    /// </summary>
+    public List<string> SourceFiles { get; set; } = [];
 }
 
 public class ColumnInfo

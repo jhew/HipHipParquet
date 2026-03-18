@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     private const string RecentFilesKey = "RecentFiles";
     private string? _pendingFileToLoad;
     private string? _currentFilePath;
+    private IReadOnlyList<string>? _currentFilePaths;
     private bool _hasUnsavedChanges = false;
     private QualityReviewViewModel? _qualityViewModel;
     private List<DataGridCellInfo>? _savedSelectedCells;
@@ -173,11 +174,28 @@ public partial class MainWindow : Window
         var openFileDialog = new OpenFileDialog
         {
             Filter = Services.FileFormatDetector.GetOpenFileDialogFilter(),
-            Title = "Select Data File"
+            Title = "Select Data File",
+            Multiselect = true
         };
 
         if (openFileDialog.ShowDialog() == true)
         {
+            if (openFileDialog.FileNames.Length > 1)
+            {
+                if (openFileDialog.FileNames.Any(path => Services.FileFormatDetector.DetectFormat(path) != SupportedFileFormat.Parquet))
+                {
+                    MessageBox.Show(
+                        "Multi-select loading is currently supported only for parquet files.",
+                        "Unsupported Selection",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                await LoadParquetFilesAsSingleTableAsync(openFileDialog.FileNames);
+                return;
+            }
+
             var filePath = openFileDialog.FileName;
             var format = Services.FileFormatDetector.DetectFormat(filePath);
 
@@ -193,6 +211,90 @@ public partial class MainWindow : Window
             {
                 await LoadFileAsync(filePath);
             }
+        }
+    }
+
+    private async Task LoadParquetFilesAsSingleTableAsync(IReadOnlyList<string> filePaths)
+    {
+        try
+        {
+            ShowLoading("Loading parquet file set...");
+            _currentFormat = SupportedFileFormat.Parquet;
+            _activeCsvOptions = null;
+            _activeJsonOptions = null;
+
+            // When loading a set of files, clear any existing single-file watcher and quality state
+            if (_fileWatcher != null)
+            {
+                _fileWatcher.EnableRaisingEvents = false;
+                _fileWatcher.Dispose();
+                _fileWatcher = null;
+            }
+
+            _qualityViewModel?.ClearFile();
+
+            var effectiveLimit = RowLimitBatch;
+            _currentRowLimit = effectiveLimit;
+
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+            _parquetService?.Dispose();
+            _parquetService = new ParquetService(logger);
+
+            var fileInfo = await _parquetService.GetFileInfoAsync(filePaths);
+            _totalRowCount = fileInfo.RowCount;
+
+            ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
+            var dataTable = await _parquetService.LoadFilesAsync(
+                filePaths,
+                _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null);
+
+            ShowLoading("Indexing rows...");
+            await Task.Run(() =>
+            {
+                if (!dataTable.Columns.Contains("__RowNumber"))
+                {
+                    var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
+                    rowNumColumn.SetOrdinal(0);
+                    for (int i = 0; i < dataTable.Rows.Count; i++)
+                        dataTable.Rows[i]["__RowNumber"] = i + 1;
+                }
+            });
+
+            UpdateSchemaPanel($"{filePaths.Count} parquet files", fileInfo);
+
+            ShowLoading("Building grid...");
+            SetupDataGrid(dataTable, fileInfo.Columns);
+
+            EmptyStatePanel.Visibility = Visibility.Collapsed;
+            DataGridContainer.Visibility = Visibility.Visible;
+            UpdateLoadMoreBanner(dataTable.Rows.Count);
+
+            foreach (var filePath in filePaths)
+                AddToRecentFiles(filePath);
+
+            // Multi-file parquet loads are treated as a logical table, not a single source file.
+            // Keep the list of current paths so paging can work, but avoid overwriting source files.
+            _currentFilePaths = filePaths;
+            _currentFilePath = filePaths.Count == 1 ? filePaths[0] : null;
+            _hasUnsavedChanges = false;
+            UpdateWindowTitle();
+            EnableSaveMenuItems();
+            UpdateFormatBadge(SupportedFileFormat.Parquet);
+
+            StatusText.Text =
+                $"Loaded {filePaths.Count} parquet files — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error loading parquet file set: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            StatusText.Text = "Error loading parquet file set";
+            EmptyStatePanel.Visibility = Visibility.Visible;
+            DataGridContainer.Visibility = Visibility.Collapsed;
+        }
+        finally
+        {
+            HideLoading();
         }
     }
 
@@ -701,11 +803,11 @@ public partial class MainWindow : Window
         
         // Track current file and reset unsaved changes
         _currentFilePath = filePath;
+        _currentFilePaths = new[] { filePath };
         _hasUnsavedChanges = false;
         UpdateWindowTitle();
         EnableSaveMenuItems();
 
-        // Update format badge
         UpdateFormatBadge(format);
 
         // Setup file watcher
@@ -729,13 +831,15 @@ public partial class MainWindow : Window
     
     private void EnableSaveMenuItems()
     {
-        bool hasFile = !string.IsNullOrEmpty(_currentFilePath) && _originalData != null;
-        SaveMenuItem.IsEnabled = hasFile;
-        SaveAsMenuItem.IsEnabled = hasFile;
-        ExportAsMenuItem.IsEnabled = hasFile;
-        ImportOptionsMenuItem.IsEnabled = hasFile && 
+        bool hasData = _originalData != null;
+        bool hasSingleSourcePath = !string.IsNullOrEmpty(_currentFilePath) && _originalData != null;
+
+        SaveMenuItem.IsEnabled = hasSingleSourcePath;
+        SaveAsMenuItem.IsEnabled = hasData;
+        ExportAsMenuItem.IsEnabled = hasData;
+        ImportOptionsMenuItem.IsEnabled = hasSingleSourcePath &&
             (_currentFormat == SupportedFileFormat.Csv || _currentFormat == SupportedFileFormat.Tsv || _currentFormat == SupportedFileFormat.Json);
-        FlattenJsonMenuItem.IsEnabled = hasFile && _currentFormat == SupportedFileFormat.Json;
+        FlattenJsonMenuItem.IsEnabled = hasSingleSourcePath && _currentFormat == SupportedFileFormat.Json;
     }
     
     private async void OnSaveClick(object sender, RoutedEventArgs e)
@@ -2183,7 +2287,7 @@ public partial class MainWindow : Window
 
     private async void OnLoadMoreClick(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrEmpty(_currentFilePath)) return;
+        if (_currentFilePaths == null || _currentFilePaths.Count == 0) return;
         _currentRowLimit += RowLimitBatch;
         await LoadMoreRowsAsync();
     }
@@ -2195,7 +2299,8 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task LoadMoreRowsAsync()
     {
-        if (string.IsNullOrEmpty(_currentFilePath) || _parquetService == null) return;
+        if (_currentFilePaths == null || _currentFilePaths.Count == 0 || _parquetService == null)
+            return;
 
         try
         {
@@ -2206,11 +2311,21 @@ public partial class MainWindow : Window
                 parquetPartsSuffix = await Task.Run(() => GetParquetPartsStatusSuffix(_currentFilePath, _currentFormat));
             }
 
-            var dataTable = await _parquetService.LoadFileAsync(
-                _currentFilePath,
-                _activeCsvOptions,
-                _totalRowCount > _currentRowLimit ? _currentRowLimit : (int?)null,
-                _activeJsonOptions);
+            DataTable dataTable;
+            if (_currentFilePaths.Count == 1)
+            {
+                dataTable = await _parquetService.LoadFileAsync(
+                    _currentFilePaths[0],
+                    _activeCsvOptions,
+                    _totalRowCount > _currentRowLimit ? _currentRowLimit : (int?)null,
+                    _activeJsonOptions);
+            }
+            else
+            {
+                dataTable = await _parquetService.LoadFilesAsync(
+                    _currentFilePaths,
+                    _totalRowCount > _currentRowLimit ? _currentRowLimit : (int?)null);
+            }
 
             SetupDataGrid(dataTable, null);
             UpdateLoadMoreBanner(dataTable.Rows.Count);
@@ -2238,7 +2353,7 @@ public partial class MainWindow : Window
 
     private async void OnLoadAllClick(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrEmpty(_currentFilePath)) return;
+        if (_currentFilePaths == null || _currentFilePaths.Count == 0) return;
 
         if (_totalRowCount > 500_000)
         {
@@ -2249,7 +2364,14 @@ public partial class MainWindow : Window
         }
 
         _currentRowLimit = _totalRowCount > int.MaxValue ? int.MaxValue : (int)_totalRowCount;
-        await LoadFileAsync(_currentFilePath, _activeCsvOptions, _currentRowLimit, _activeJsonOptions);
+        if (_currentFilePaths.Count == 1)
+        {
+            await LoadFileAsync(_currentFilePaths[0], _activeCsvOptions, _currentRowLimit, _activeJsonOptions);
+        }
+        else
+        {
+            await LoadParquetFilesAsSingleTableAsync(_currentFilePaths);
+        }
     }
 
     // ── JSON Flattening ───────────────────────────────────────────────

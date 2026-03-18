@@ -344,8 +344,8 @@ public static class FileFormatDetector
     /// </summary>
     public static string GetOpenFileDialogFilter()
     {
-        return "All supported files (*.parquet;*.csv;*.tsv;*.json;*.jsonl;*.xlsx)|*.parquet;*.csv;*.tsv;*.json;*.jsonl;*.xlsx|" +
-               "Parquet files (*.parquet)|*.parquet|" +
+        return "All supported files (*.parquet;*.snappy.parquet;*.csv;*.tsv;*.json;*.jsonl;*.xlsx)|*.parquet;*.snappy.parquet;*.csv;*.tsv;*.json;*.jsonl;*.xlsx|" +
+               "Parquet files (*.parquet;*.snappy.parquet)|*.parquet;*.snappy.parquet|" +
                "CSV files (*.csv)|*.csv|" +
                "TSV files (*.tsv;*.tab)|*.tsv;*.tab|" +
                "JSON files (*.json;*.jsonl)|*.json;*.jsonl|" +
