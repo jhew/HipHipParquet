@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using HipHipParquet.Models;
 using HipHipParquet.Services;
 
@@ -47,8 +49,104 @@ public class FileFormatDetectorTests
     public void GetDuckDbReaderExpression_Parquet_ReturnsReadParquet()
     {
         var result = FileFormatDetector.GetDuckDbReaderExpression("data.parquet", SupportedFileFormat.Parquet);
-        Assert.Contains("read_parquet", result);
-        Assert.Contains("data.parquet", result);
+        Assert.Equal("read_parquet('data.parquet')", result);
+    }
+
+    [Fact]
+    public void GetDuckDbReaderExpression_ParquetSplitSnappy_ReturnsListReader()
+    {
+        using var tempDir = new TempDirectory();
+        File.WriteAllText(Path.Combine(tempDir.Path, "dataset-2.snappy.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "dataset-1.snappy.parquet"), "");
+
+        var selected = Path.Combine(tempDir.Path, "dataset-2.snappy.parquet");
+        var result = FileFormatDetector.GetDuckDbReaderExpression(selected, SupportedFileFormat.Parquet);
+
+        Assert.Contains("read_parquet([", result);
+        Assert.Contains("dataset-1.snappy.parquet", result);
+        Assert.Contains("dataset-2.snappy.parquet", result);
+        Assert.True(result.IndexOf("dataset-1.snappy.parquet", StringComparison.Ordinal)
+            < result.IndexOf("dataset-2.snappy.parquet", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ResolveParquetInputs_SnappyShard_OnlyIncludesSamePrefix()
+    {
+        using var tempDir = new TempDirectory();
+        File.WriteAllText(Path.Combine(tempDir.Path, "dataset-1.snappy.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "dataset-2.snappy.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "other-1.snappy.parquet"), "");
+
+        var selected = Path.Combine(tempDir.Path, "dataset-2.snappy.parquet");
+        var resolved = FileFormatDetector.ResolveParquetInputs(selected);
+
+        Assert.Equal(2, resolved.Count);
+        Assert.Contains(resolved, p => p.EndsWith("dataset-1.snappy.parquet", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(resolved, p => p.EndsWith("dataset-2.snappy.parquet", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(resolved, p => p.EndsWith("other-1.snappy.parquet", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ResolveParquetInputs_UnrelatedSuffixes_DoNotMix()
+    {
+        using var tempDir = new TempDirectory();
+        File.WriteAllText(Path.Combine(tempDir.Path, "data-1.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "data2-1.parquet"), "");
+
+        var selected = Path.Combine(tempDir.Path, "data-1.parquet");
+        var resolved = FileFormatDetector.ResolveParquetInputs(selected);
+
+        Assert.Single(resolved);
+        Assert.EndsWith("data-1.parquet", resolved[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ResolveParquetInputs_NumberedSiblings_OrdersNumerically()
+    {
+        using var tempDir = new TempDirectory();
+        File.WriteAllText(Path.Combine(tempDir.Path, "events_10.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "events_2.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "events_1.parquet"), "");
+
+        var selected = Path.Combine(tempDir.Path, "events_10.parquet");
+        var resolved = FileFormatDetector.ResolveParquetInputs(selected);
+
+        Assert.Equal(3, resolved.Count);
+        Assert.EndsWith("events_1.parquet", resolved[0], StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("events_2.parquet", resolved[1], StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("events_10.parquet", resolved[2], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ResolveParquetInputs_PartShard_OnlyIncludesSamePrefix()
+    {
+        using var tempDir = new TempDirectory();
+        File.WriteAllText(Path.Combine(tempDir.Path, "part-00000-aaa.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "part-00000-bbb.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "part-00001-aaa.parquet"), "");
+
+        var selected = Path.Combine(tempDir.Path, "part-00000-bbb.parquet");
+        var resolved = FileFormatDetector.ResolveParquetInputs(selected);
+
+        Assert.Equal(2, resolved.Count);
+        Assert.Contains(resolved, p => p.EndsWith("part-00000-aaa.parquet", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(resolved, p => p.EndsWith("part-00000-bbb.parquet", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(resolved, p => p.EndsWith("part-00001-aaa.parquet", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void GetDuckDbReaderExpression_ParquetList_EscapesQuotesInPaths()
+    {
+        using var tempDir = new TempDirectory();
+        File.WriteAllText(Path.Combine(tempDir.Path, "pa'rt-1.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "pa'rt-2.parquet"), "");
+
+        var selected = Path.Combine(tempDir.Path, "pa'rt-1.parquet");
+        var result = FileFormatDetector.GetDuckDbReaderExpression(selected, SupportedFileFormat.Parquet);
+
+        Assert.Contains("read_parquet([", result);
+        Assert.Contains("pa''rt-1.parquet", result);
+        Assert.Contains("pa''rt-2.parquet", result);
     }
 
     [Fact]
@@ -206,5 +304,32 @@ public class FileFormatDetectorTests
         Assert.Contains("*.json", filter);
         // Excel is not supported for save (no write support)
         Assert.DoesNotContain("*.xlsx", filter);
+    }
+
+    private sealed class TempDirectory : IDisposable
+    {
+        public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "hiphipparquet-tests", Guid.NewGuid().ToString("N"));
+
+        public TempDirectory()
+        {
+            Directory.CreateDirectory(Path);
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                if (Directory.Exists(Path))
+                    Directory.Delete(Path, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Best-effort cleanup: ignore transient I/O errors (e.g., file locks).
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Best-effort cleanup: ignore permission errors.
+            }
+        }
     }
 }

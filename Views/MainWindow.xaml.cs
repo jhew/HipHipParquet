@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using System.Windows.Media;
 using System.Windows.Controls.Primitives;
 using System.IO;
+using System.Threading.Tasks;
 
 using System.Windows.Input;
 
@@ -638,6 +639,11 @@ public partial class MainWindow : Window
     private async Task LoadFileInternalAsync(string filePath, CsvImportOptions? csvOptions, int? rowLimit, JsonImportOptions? jsonOptions)
     {
         var format = _currentFormat;
+        var parquetPartsSuffix = string.Empty;
+        if (format == SupportedFileFormat.Parquet)
+        {
+            parquetPartsSuffix = await Task.Run(() => GetParquetPartsStatusSuffix(filePath, format));
+        }
         _activeCsvOptions = csvOptions;
         _activeJsonOptions = jsonOptions;
 
@@ -708,7 +714,7 @@ public partial class MainWindow : Window
         // Notify Quality panel of new file
         _qualityViewModel?.SetFilePath(filePath, csvOptions, jsonOptions);
         
-        StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
+        StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)}{parquetPartsSuffix} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
 
         // Append unknown-extension notice after the main status message
         if (unknownExt != null)
@@ -2194,6 +2200,11 @@ public partial class MainWindow : Window
         try
         {
             ShowLoading($"Loading rows (limit: {_currentRowLimit:N0})...");
+            var parquetPartsSuffix = string.Empty;
+            if (_currentFormat == SupportedFileFormat.Parquet)
+            {
+                parquetPartsSuffix = await Task.Run(() => GetParquetPartsStatusSuffix(_currentFilePath, _currentFormat));
+            }
 
             var dataTable = await _parquetService.LoadFileAsync(
                 _currentFilePath,
@@ -2204,7 +2215,7 @@ public partial class MainWindow : Window
             SetupDataGrid(dataTable, null);
             UpdateLoadMoreBanner(dataTable.Rows.Count);
 
-            StatusText.Text = $"Loaded {System.IO.Path.GetFileName(_currentFilePath)} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows";
+            StatusText.Text = $"Loaded {System.IO.Path.GetFileName(_currentFilePath)}{parquetPartsSuffix} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows";
         }
         catch (Exception ex)
         {
@@ -2214,6 +2225,15 @@ public partial class MainWindow : Window
         {
             HideLoading();
         }
+    }
+
+    private static string GetParquetPartsStatusSuffix(string filePath, SupportedFileFormat format)
+    {
+        if (format != SupportedFileFormat.Parquet)
+            return string.Empty;
+
+        var partCount = Services.FileFormatDetector.ResolveParquetInputs(filePath).Count;
+        return partCount > 1 ? $" ({partCount:N0} parquet parts)" : string.Empty;
     }
 
     private async void OnLoadAllClick(object sender, RoutedEventArgs e)
