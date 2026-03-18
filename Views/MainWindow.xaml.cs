@@ -172,11 +172,28 @@ public partial class MainWindow : Window
         var openFileDialog = new OpenFileDialog
         {
             Filter = Services.FileFormatDetector.GetOpenFileDialogFilter(),
-            Title = "Select Data File"
+            Title = "Select Data File",
+            Multiselect = true
         };
 
         if (openFileDialog.ShowDialog() == true)
         {
+            if (openFileDialog.FileNames.Length > 1)
+            {
+                if (openFileDialog.FileNames.Any(path => Services.FileFormatDetector.DetectFormat(path) != SupportedFileFormat.Parquet))
+                {
+                    MessageBox.Show(
+                        "Multi-select loading is currently supported only for parquet files.",
+                        "Unsupported Selection",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                await LoadParquetFilesAsSingleTableAsync(openFileDialog.FileNames);
+                return;
+            }
+
             var filePath = openFileDialog.FileName;
             var format = Services.FileFormatDetector.DetectFormat(filePath);
 
@@ -192,6 +209,77 @@ public partial class MainWindow : Window
             {
                 await LoadFileAsync(filePath);
             }
+        }
+    }
+
+    private async Task LoadParquetFilesAsSingleTableAsync(IReadOnlyList<string> filePaths)
+    {
+        try
+        {
+            ShowLoading("Loading parquet file set...");
+            _currentFormat = SupportedFileFormat.Parquet;
+            _activeCsvOptions = null;
+            _activeJsonOptions = null;
+
+            var effectiveLimit = RowLimitBatch;
+            _currentRowLimit = effectiveLimit;
+
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+            _parquetService?.Dispose();
+            _parquetService = new ParquetService(logger);
+
+            var fileInfo = await _parquetService.GetFileInfoAsync(filePaths);
+            _totalRowCount = fileInfo.RowCount;
+
+            ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
+            var dataTable = await _parquetService.LoadFilesAsync(
+                filePaths,
+                _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null);
+
+            ShowLoading("Indexing rows...");
+            await Task.Run(() =>
+            {
+                if (!dataTable.Columns.Contains("__RowNumber"))
+                {
+                    var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
+                    rowNumColumn.SetOrdinal(0);
+                    for (int i = 0; i < dataTable.Rows.Count; i++)
+                        dataTable.Rows[i]["__RowNumber"] = i + 1;
+                }
+            });
+
+            UpdateSchemaPanel($"{filePaths.Count} parquet files", fileInfo);
+
+            ShowLoading("Building grid...");
+            SetupDataGrid(dataTable, fileInfo.Columns);
+
+            EmptyStatePanel.Visibility = Visibility.Collapsed;
+            DataGridContainer.Visibility = Visibility.Visible;
+            UpdateLoadMoreBanner(dataTable.Rows.Count);
+
+            foreach (var filePath in filePaths)
+                AddToRecentFiles(filePath);
+
+            _currentFilePath = filePaths[0];
+            _hasUnsavedChanges = false;
+            UpdateWindowTitle();
+            EnableSaveMenuItems();
+            UpdateFormatBadge(SupportedFileFormat.Parquet);
+
+            StatusText.Text =
+                $"Loaded {filePaths.Count} parquet files — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error loading parquet file set: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            StatusText.Text = "Error loading parquet file set";
+            EmptyStatePanel.Visibility = Visibility.Visible;
+            DataGridContainer.Visibility = Visibility.Collapsed;
+        }
+        finally
+        {
+            HideLoading();
         }
     }
 
