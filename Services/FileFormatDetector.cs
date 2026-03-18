@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using HipHipParquet.Models;
 
 namespace HipHipParquet.Services;
@@ -8,12 +9,27 @@ namespace HipHipParquet.Services;
 /// </summary>
 public static class FileFormatDetector
 {
+    private const string ParquetExtension = ".parquet";
+    private const string SnappyParquetSuffix = ".snappy.parquet";
+
     /// <summary>
     /// Escapes a file path for safe embedding inside DuckDB single-quoted SQL strings.
     /// Single quotes are doubled: O'Reilly.csv → O''Reilly.csv
     /// </summary>
     private static string EscapePath(string filePath)
         => filePath.Replace("'", "''");
+
+    /// <summary>
+    /// Quotes a file path for DuckDB SQL, applying single-quote escaping.
+    /// </summary>
+    private static string QuotePath(string filePath)
+        => $"'{EscapePath(filePath)}'";
+
+    /// <summary>
+    /// Normalizes file paths for DuckDB reader functions.
+    /// </summary>
+    private static string NormalizePath(string filePath)
+        => filePath.Replace("\\", "/");
 
     /// <summary>
     /// Detects the file format from the file extension.
@@ -37,16 +53,78 @@ public static class FileFormatDetector
     /// </summary>
     public static string GetDuckDbReaderExpression(string filePath, SupportedFileFormat format)
     {
-        var p = EscapePath(filePath);
         return format switch
         {
-            SupportedFileFormat.Parquet => $"read_parquet('{p}')",
-            SupportedFileFormat.Csv => $"read_csv_auto('{p}')",
-            SupportedFileFormat.Tsv => $"read_csv_auto('{p}', delim='\\t')",
-            SupportedFileFormat.Json => $"read_json_auto('{p}')",
-            SupportedFileFormat.Excel => $"st_read('{p}')",
-            _ => $"read_csv_auto('{p}')"
+            SupportedFileFormat.Parquet => GetParquetReaderExpression(filePath),
+            SupportedFileFormat.Csv => $"read_csv_auto({QuotePath(filePath)})",
+            SupportedFileFormat.Tsv => $"read_csv_auto({QuotePath(filePath)}, delim='\\t')",
+            SupportedFileFormat.Json => $"read_json_auto({QuotePath(filePath)})",
+            SupportedFileFormat.Excel => $"st_read({QuotePath(filePath)})",
+            _ => $"read_csv_auto({QuotePath(filePath)})"
         };
+    }
+
+    private static string GetParquetReaderExpression(string selectedPath)
+    {
+        var inputs = ResolveParquetInputs(selectedPath);
+        if (inputs.Count <= 1)
+            return $"read_parquet({QuotePath(inputs[0])})";
+
+        var quotedPaths = string.Join(", ", inputs.Select(QuotePath));
+        return $"read_parquet([{quotedPaths}])";
+    }
+
+    /// <summary>
+    /// Resolves parquet inputs, expanding split/snappy parquet parts in the same folder when the selected file looks like a shard.
+    /// </summary>
+    public static IReadOnlyList<string> ResolveParquetInputs(string selectedPath)
+    {
+        var normalizedSelectedPath = NormalizePath(selectedPath);
+        var directory = Path.GetDirectoryName(selectedPath);
+        var fileName = Path.GetFileName(selectedPath);
+
+        if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(fileName) || !Directory.Exists(directory))
+            return [normalizedSelectedPath];
+
+        var candidates = fileName.EndsWith(SnappyParquetSuffix, StringComparison.OrdinalIgnoreCase)
+            ? Directory.GetFiles(directory, $"*{SnappyParquetSuffix}")
+            : IsPartParquetFileName(fileName)
+                ? Directory.GetFiles(directory, "part-*.parquet")
+                : GetNumberedSiblingFiles(directory, fileName);
+
+        var resolved = candidates
+            .Where(path => path.EndsWith(ParquetExtension, StringComparison.OrdinalIgnoreCase))
+            .Select(NormalizePath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(path => path, StringComparer.Ordinal)
+            .ToList();
+
+        return resolved.Count > 0 ? resolved : [normalizedSelectedPath];
+    }
+
+    private static bool IsPartParquetFileName(string fileName)
+        => fileName.StartsWith("part-", StringComparison.OrdinalIgnoreCase)
+           && fileName.EndsWith(ParquetExtension, StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> GetNumberedSiblingFiles(string directory, string fileName)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            fileName,
+            @"^(?<prefix>.+?)(?<sep>[-_]?)(?<index>\d+)\.parquet$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (!match.Success)
+            return [Path.Combine(directory, fileName)];
+
+        var prefix = System.Text.RegularExpressions.Regex.Escape(match.Groups["prefix"].Value);
+        var sep = System.Text.RegularExpressions.Regex.Escape(match.Groups["sep"].Value);
+        var pattern = new System.Text.RegularExpressions.Regex(
+            $"^{prefix}{sep}\\d+\\.parquet$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        return Directory.EnumerateFiles(directory, "*.parquet")
+            .Where(path => pattern.IsMatch(Path.GetFileName(path)));
     }
 
     /// <summary>
