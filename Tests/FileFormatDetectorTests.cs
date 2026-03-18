@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using HipHipParquet.Models;
 using HipHipParquet.Services;
 
@@ -68,7 +70,38 @@ public class FileFormatDetectorTests
     }
 
     [Fact]
-    public void ResolveParquetInputs_NumberedSiblings_ReturnsStableOrder()
+    public void ResolveParquetInputs_SnappyShard_OnlyIncludesSamePrefix()
+    {
+        using var tempDir = new TempDirectory();
+        File.WriteAllText(Path.Combine(tempDir.Path, "dataset-1.snappy.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "dataset-2.snappy.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "other-1.snappy.parquet"), "");
+
+        var selected = Path.Combine(tempDir.Path, "dataset-2.snappy.parquet");
+        var resolved = FileFormatDetector.ResolveParquetInputs(selected);
+
+        Assert.Equal(2, resolved.Count);
+        Assert.Contains(resolved, p => p.EndsWith("dataset-1.snappy.parquet", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(resolved, p => p.EndsWith("dataset-2.snappy.parquet", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(resolved, p => p.EndsWith("other-1.snappy.parquet", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ResolveParquetInputs_UnrelatedSuffixes_DoNotMix()
+    {
+        using var tempDir = new TempDirectory();
+        File.WriteAllText(Path.Combine(tempDir.Path, "data-1.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "data2-1.parquet"), "");
+
+        var selected = Path.Combine(tempDir.Path, "data-1.parquet");
+        var resolved = FileFormatDetector.ResolveParquetInputs(selected);
+
+        Assert.Single(resolved);
+        Assert.EndsWith("data-1.parquet", resolved[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ResolveParquetInputs_NumberedSiblings_OrdersNumerically()
     {
         using var tempDir = new TempDirectory();
         File.WriteAllText(Path.Combine(tempDir.Path, "events_10.parquet"), "");
@@ -80,8 +113,25 @@ public class FileFormatDetectorTests
 
         Assert.Equal(3, resolved.Count);
         Assert.EndsWith("events_1.parquet", resolved[0], StringComparison.OrdinalIgnoreCase);
-        Assert.EndsWith("events_10.parquet", resolved[1], StringComparison.OrdinalIgnoreCase);
-        Assert.EndsWith("events_2.parquet", resolved[2], StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("events_2.parquet", resolved[1], StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("events_10.parquet", resolved[2], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ResolveParquetInputs_PartShard_OnlyIncludesSamePrefix()
+    {
+        using var tempDir = new TempDirectory();
+        File.WriteAllText(Path.Combine(tempDir.Path, "part-00000-aaa.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "part-00000-bbb.parquet"), "");
+        File.WriteAllText(Path.Combine(tempDir.Path, "part-00001-aaa.parquet"), "");
+
+        var selected = Path.Combine(tempDir.Path, "part-00000-bbb.parquet");
+        var resolved = FileFormatDetector.ResolveParquetInputs(selected);
+
+        Assert.Equal(2, resolved.Count);
+        Assert.Contains(resolved, p => p.EndsWith("part-00000-aaa.parquet", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(resolved, p => p.EndsWith("part-00000-bbb.parquet", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(resolved, p => p.EndsWith("part-00001-aaa.parquet", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -267,8 +317,19 @@ public class FileFormatDetectorTests
 
         public void Dispose()
         {
-            if (Directory.Exists(Path))
-                Directory.Delete(Path, recursive: true);
+            try
+            {
+                if (Directory.Exists(Path))
+                    Directory.Delete(Path, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Best-effort cleanup: ignore transient I/O errors (e.g., file locks).
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Best-effort cleanup: ignore permission errors.
+            }
         }
     }
 }

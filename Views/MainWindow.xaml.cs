@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using System.Windows.Media;
 using System.Windows.Controls.Primitives;
 using System.IO;
+using System.Threading.Tasks;
 
 using System.Windows.Input;
 
@@ -638,7 +639,11 @@ public partial class MainWindow : Window
     private async Task LoadFileInternalAsync(string filePath, CsvImportOptions? csvOptions, int? rowLimit, JsonImportOptions? jsonOptions)
     {
         var format = _currentFormat;
-        var parquetPartsSuffix = GetParquetPartsStatusSuffix(filePath, format);
+        var parquetPartsSuffix = string.Empty;
+        if (format == SupportedFileFormat.Parquet)
+        {
+            parquetPartsSuffix = await Task.Run(() => GetParquetPartsStatusSuffix(filePath, format));
+        }
         _activeCsvOptions = csvOptions;
         _activeJsonOptions = jsonOptions;
 
@@ -2195,7 +2200,11 @@ public partial class MainWindow : Window
         try
         {
             ShowLoading($"Loading rows (limit: {_currentRowLimit:N0})...");
-            var parquetPartsSuffix = GetParquetPartsStatusSuffix(_currentFilePath, _currentFormat);
+            var parquetPartsSuffix = string.Empty;
+            if (_currentFormat == SupportedFileFormat.Parquet)
+            {
+                parquetPartsSuffix = await Task.Run(() => GetParquetPartsStatusSuffix(_currentFilePath, _currentFormat));
+            }
 
             var dataTable = await _parquetService.LoadFileAsync(
                 _currentFilePath,
