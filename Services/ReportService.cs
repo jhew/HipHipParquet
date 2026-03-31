@@ -366,10 +366,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .finding-group.critical { background: #FFF3F3; border-left: 3px solid #F44336; }
 .finding-group.warning { background: #FFF8E1; border-left: 3px solid #FF9800; }
 .finding-group.info { background: #F1F8E9; border-left: 3px solid #4CAF50; }
-.columns-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
-.columns-table th { text-align: left; padding: 8px 10px; background: #f8f8f8; border-bottom: 2px solid #e0e0e0; font-size: 11px; color: #666; text-transform: uppercase; overflow: hidden; }
-.columns-table th:first-child { width: 170px; }
-.columns-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; overflow: hidden; }
+.columns-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.columns-table th { text-align: left; padding: 8px 10px; background: #f8f8f8; border-bottom: 2px solid #e0e0e0; font-size: 11px; color: #666; text-transform: uppercase; white-space: nowrap; }
+.columns-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
 .columns-table tr:hover { background: #fafafa; }
 .col-name { display: block; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
 .dim-score { position: relative; min-width: 36px; text-align: center; font-size: 11px; color: #555; }
