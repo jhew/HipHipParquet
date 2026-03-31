@@ -145,6 +145,9 @@ public partial class MainWindow : Window
 
     private async void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
+        // Background startup update check — shows a hint in the status bar if a new version is found.
+        _ = CheckForUpdatesOnStartupAsync();
+
         // If there's a pending file to load from command line, load it now
         if (!string.IsNullOrEmpty(_pendingFileToLoad))
         {
@@ -287,6 +290,9 @@ public partial class MainWindow : Window
             UpdateWindowTitle();
             EnableSaveMenuItems();
             UpdateFormatBadge(SupportedFileFormat.Parquet);
+
+            // Enable quality analysis on the first file of the set (best-effort for multi-file loads).
+            _qualityViewModel?.SetFilePath(filePaths[0]);
 
             StatusText.Text =
                 $"Loaded {filePaths.Count} parquet files — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
@@ -2370,6 +2376,21 @@ public partial class MainWindow : Window
                     _totalRowCount > _currentRowLimit ? _currentRowLimit : (int?)null);
             }
 
+            // Re-index __RowNumber so the # column stays correct after pagination.
+            ShowLoading("Indexing rows...");
+            await Task.Run(() =>
+            {
+                if (!dataTable.Columns.Contains("__RowNumber"))
+                {
+                    var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
+                    rowNumColumn.SetOrdinal(0);
+                }
+                var col = dataTable.Columns["__RowNumber"]!;
+                if (col.Ordinal != 0) col.SetOrdinal(0);
+                for (int i = 0; i < dataTable.Rows.Count; i++)
+                    dataTable.Rows[i]["__RowNumber"] = i + 1;
+            });
+
             SetupDataGrid(dataTable, null);
             UpdateLoadMoreBanner(dataTable.Rows.Count);
 
@@ -2537,6 +2558,132 @@ public partial class MainWindow : Window
 
     private void OnAboutClick(object sender, RoutedEventArgs e)
         => new HelpDialog(initialTab: 2) { Owner = this }.ShowDialog();
+
+    // ── Update Check ────────────────────────────────────────────────────
+
+    private async void OnCheckForUpdatesClick(object sender, RoutedEventArgs e)
+    {
+        StatusText.Text = "Checking for updates...";
+        try
+        {
+            var update = await Services.UpdateService.CheckForUpdateAsync();
+
+            if (update == null)
+            {
+                var current = Services.UpdateService.GetCurrentVersion();
+                StatusText.Text = $"HipHipParquet v{current.ToString(3)} is up to date.";
+                MessageBox.Show(
+                    $"You are running the latest version of HipHipParquet.\n\nCurrent version: {current.ToString(3)}",
+                    "No Updates Available", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                $"A new version of HipHipParquet is available!\n\n" +
+                $"Current version:  {Services.UpdateService.GetCurrentVersion().ToString(3)}\n" +
+                $"Latest version:   {update.LatestVersion.ToString(3)}\n\n" +
+                (update.InstallerUrl != null
+                    ? "Would you like to download and install the update now?"
+                    : "Would you like to open the releases page to download it?"),
+                "Update Available",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                StatusText.Text = "Update available — see Help > Check for Updates.";
+                return;
+            }
+
+            if (update.InstallerUrl != null)
+                await DownloadAndInstallUpdateAsync(update);
+            else
+                OpenUrl(update.ReleasePageUrl);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Update check failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Silently checks for updates on startup and shows a hint in the status bar if one is found.
+    /// </summary>
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        try
+        {
+            await Task.Delay(5000); // Give the app time to finish loading first.
+            var update = await Services.UpdateService.CheckForUpdateAsync();
+            if (update != null)
+            {
+                Dispatcher.Invoke(() =>
+                    StatusText.Text = $"📦 Update available: v{update.LatestVersion.ToString(3)} — Help > Check for Updates");
+            }
+        }
+        catch { /* silently ignore */ }
+    }
+
+    private async Task DownloadAndInstallUpdateAsync(Services.UpdateInfo update)
+    {
+        try
+        {
+            ShowLoading("Downloading update…");
+
+            var progress = new Progress<int>(pct =>
+                Dispatcher.Invoke(() => LoadingText.Text = $"Downloading update ({pct}%)…"));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+            var installerPath = await Services.UpdateService.DownloadInstallerAsync(
+                update.InstallerUrl!, progress, cts.Token);
+
+            HideLoading();
+
+            if (installerPath == null || !File.Exists(installerPath))
+            {
+                MessageBox.Show(
+                    "Download failed. Opening the releases page so you can install manually.",
+                    "Download Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                OpenUrl(update.ReleasePageUrl);
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                $"Version {update.LatestVersion.ToString(3)} is ready to install.\n\n" +
+                "The application will close and the installer will run. Continue?",
+                "Install Update", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (confirm == MessageBoxResult.Yes)
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = installerPath,
+                    UseShellExecute = true
+                });
+                Application.Current.Shutdown();
+            }
+            else
+            {
+                StatusText.Text = "Update downloaded — run the installer when ready.";
+            }
+        }
+        catch (Exception ex)
+        {
+            HideLoading();
+            StatusText.Text = $"Download failed: {ex.Message}";
+            OpenUrl(update.ReleasePageUrl);
+        }
+    }
+
+    private static void OpenUrl(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch { /* no default browser */ }
+    }
 
     // ── File Watcher ────────────────────────────────────────────────────
 

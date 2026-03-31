@@ -139,7 +139,7 @@ public class ReportService
         {
             var scoreClass = col.Score.Total >= 80 ? "score-good" : col.Score.Total >= 60 ? "score-warn" : "score-bad";
             sb.AppendLine("<tr>");
-            sb.AppendLine($"<td><strong>{Escape(col.Name)}</strong></td>");
+            sb.AppendLine($"<td><span class=\"col-name\" title=\"{Escape(col.Name)}\">{Escape(col.Name)}</span></td>");
             sb.AppendLine($"<td class=\"type\">{Escape(col.DuckDbType)}</td>");
             sb.AppendLine($"<td><span class=\"score-badge {scoreClass}\">{col.Score.Total:F0}</span></td>");
             sb.AppendLine($"<td class=\"dim-score\"><div class=\"dim-bar\" style=\"width:{col.Score.Completeness / 25 * 100:F0}%;background:#4CAF50\"></div>{col.Score.Completeness:F0}</td>");
@@ -366,10 +366,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .finding-group.critical { background: #FFF3F3; border-left: 3px solid #F44336; }
 .finding-group.warning { background: #FFF8E1; border-left: 3px solid #FF9800; }
 .finding-group.info { background: #F1F8E9; border-left: 3px solid #4CAF50; }
-.columns-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.columns-table th { text-align: left; padding: 8px 10px; background: #f8f8f8; border-bottom: 2px solid #e0e0e0; font-size: 11px; color: #666; text-transform: uppercase; }
-.columns-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+.columns-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.columns-table th { text-align: left; padding: 8px 10px; background: #f8f8f8; border-bottom: 2px solid #e0e0e0; font-size: 11px; color: #666; text-transform: uppercase; overflow: hidden; }
+.columns-table th:first-child { width: 170px; }
+.columns-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; overflow: hidden; }
 .columns-table tr:hover { background: #fafafa; }
+.col-name { display: block; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
 .dim-score { position: relative; min-width: 36px; text-align: center; font-size: 11px; color: #555; }
 .dim-bar { position: absolute; bottom: 0; left: 0; height: 3px; border-radius: 2px; opacity: 0.7; }
 .freq-bars { display: flex; flex-direction: column; gap: 2px; min-width: 100px; }

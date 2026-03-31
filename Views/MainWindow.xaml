@@ -100,6 +100,12 @@
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
+                <MenuItem Header="Check for _Updates..." Click="OnCheckForUpdatesClick">
+                    <MenuItem.Icon>
+                        <TextBlock Text="🔄" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
                 <MenuItem Header="_About HipHipParquet..." Click="OnAboutClick">
                     <MenuItem.Icon>
                         <TextBlock Text="ℹ" FontSize="14"/>
@@ -207,7 +213,7 @@
                              Margin="12,5,12,12"
                              CellEditEnding="OnCellEditEnding"
                              EnableRowVirtualization="True"
-                             EnableColumnVirtualization="True"
+                             EnableColumnVirtualization="False"
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling">
                         <DataGrid.ContextMenu>
