@@ -136,8 +136,11 @@ public partial class MainWindow : Window
         }
 
         // "No" or save complete — now close for real.
+        // Use BeginInvoke to defer Close() until after this Closing event handler returns.
+        // Calling Close() directly here while _closing == true (WPF internal state) throws
+        // InvalidOperationException: "Cannot call Show, ShowDialog, Close... while a Window is closing."
         _closingConfirmed = true;
-        Close();
+        _ = Dispatcher.BeginInvoke(new Action(Close));
     }
 
     private async void OnWindowLoaded(object sender, RoutedEventArgs e)
@@ -197,6 +200,9 @@ public partial class MainWindow : Window
             }
 
             var filePath = openFileDialog.FileName;
+
+            if (!ConfirmUnknownExtension(filePath)) return;
+
             var format = Services.FileFormatDetector.DetectFormat(filePath);
 
             // Show the import settings dialog for CSV/TSV/JSON files
@@ -309,7 +315,19 @@ public partial class MainWindow : Window
         dialog.SetFile(filePath, format);
 
         if (existingCsvOptions != null)
+        {
             dialog.PrePopulateCsvOptions(existingCsvOptions);
+        }
+        else if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv)
+        {
+            // Sniff the file encoding before showing the dialog so that Windows-1252
+            // files (e.g. Excel CSVs with em dashes, curly quotes, etc.) are pre-selected
+            // correctly rather than failing to load with the default "auto" encoding.
+            var sniffed = Services.FileFormatDetector.SniffEncoding(filePath);
+            if (sniffed != "auto")
+                dialog.PrePopulateCsvOptions(new Models.CsvImportOptions { Encoding = sniffed });
+        }
+
         if (existingJsonOptions != null)
             dialog.PrePopulateJsonOptions(existingJsonOptions);
 
@@ -318,7 +336,29 @@ public partial class MainWindow : Window
 
         return (false, null, null);
     }
-    
+
+    /// <summary>
+    /// Shows a confirmation prompt when the file has an unrecognised extension.
+    /// Returns true if the file should be opened, false if the user declined.
+    /// </summary>
+    private static bool ConfirmUnknownExtension(string filePath)
+    {
+        if (!Services.FileFormatDetector.IsUnknownExtension(filePath))
+            return true;
+
+        var ext = System.IO.Path.GetExtension(filePath);
+        var extDisplay = string.IsNullOrEmpty(ext) ? "(no extension)" : ext;
+        var confirm = MessageBox.Show(
+            $"'{System.IO.Path.GetFileName(filePath)}' has an unrecognised file extension ({extDisplay}).\n\n" +
+            "Hip Hip Parquet will attempt to read it as a CSV file, which may fail or produce unexpected results.\n\n" +
+            "Continue?",
+            "Unrecognised File Type",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        return confirm == MessageBoxResult.Yes;
+    }
+
     private void OnToggleSchemaPaneClick(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem menuItem)
@@ -2229,16 +2269,19 @@ public partial class MainWindow : Window
             StatusText.Text = $"{files.Length} files dropped — opening the first one only";
 
         var filePath = files[0];
+
+        // Defer past the drag-drop event so the DnD machinery fully releases before
+        // opening any modal dialog. Without this, WPF's drag handling can minimize the
+        // owner window when the modal steals activation mid-drag.
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Input);
+        Activate();
+
+        if (!ConfirmUnknownExtension(filePath)) return;
+
         var format = Services.FileFormatDetector.DetectFormat(filePath);
 
         if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
         {
-            // Defer past the drag-drop event so the DnD machinery fully releases before
-            // opening a modal dialog. Without this, WPF's drag handling can minimize the
-            // owner window when the modal steals activation mid-drag.
-            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Input);
-            Activate();
-
             var result = ShowFileImportDialog(filePath, format);
             if (!result.Imported) return;
             await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);

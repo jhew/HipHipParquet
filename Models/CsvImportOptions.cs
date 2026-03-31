@@ -14,7 +14,7 @@ public class CsvImportOptions
     /// <summary>Quote character: "\"", "'", or "" for none.</summary>
     public string QuoteChar { get; set; } = "\"";
 
-    /// <summary>Encoding: "auto", "utf-8", "latin1", "windows-1252".</summary>
+    /// <summary>Encoding: "auto", "utf-8", "utf-8-bom", "latin1", "windows-1252", "utf-16".</summary>
     public string Encoding { get; set; } = "auto";
 
     /// <summary>Number of rows to skip from the top before reading.</summary>
@@ -63,8 +63,9 @@ public class CsvImportOptions
         if (SkipRows > 0)
             parts.Add($"skip={SkipRows}");
 
-        if (Encoding != "auto")
-            parts.Add($"encoding='{Encoding.Replace("'", "''")}'" );
+        // NOTE: DuckDB's read_csv_auto does not accept an 'encoding' parameter.
+        // Non-UTF-8 files are handled by FileFormatDetector.PrepareFilePath, which
+        // transcodes the file to a UTF-8 temp copy before passing it to DuckDB.
 
         if (IgnoreErrors)
             parts.Add("ignore_errors=true");

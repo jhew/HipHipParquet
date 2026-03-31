@@ -183,21 +183,6 @@ public partial class FileImportDialog : Window
         };
     }
 
-    /// <summary>
-    /// Builds the DuckDB reader expression for the preview query by delegating to
-    /// <see cref="FileFormatDetector"/>. This ensures path escaping and option serialisation
-    /// are handled by the same code path as the main load.
-    /// </summary>
-    private string BuildReaderExpression()
-    {
-        // Forward-slash normalisation only — single-quote escaping is handled inside FileFormatDetector.
-        var normalizedPath = _filePath.Replace("\\", "/");
-
-        return (_format == SupportedFileFormat.Csv || _format == SupportedFileFormat.Tsv)
-            ? FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, _format, BuildCsvOptions())
-            : FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, _format, BuildJsonOptions());
-    }
-
     // ── Preview ──────────────────────────────────────────────────────────
 
     private async void RefreshPreview()
@@ -228,7 +213,13 @@ public partial class FileImportDialog : Window
             // Debounce 400ms
             await Task.Delay(400, ct);
 
-            var readerExpr = BuildReaderExpression();
+            var csvOpts = (_format == SupportedFileFormat.Csv || _format == SupportedFileFormat.Tsv)
+                ? BuildCsvOptions() : null;
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(_filePath, csvOpts);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
+            var readerExpr = csvOpts != null
+                ? FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, _format, csvOpts)
+                : FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, _format, BuildJsonOptions());
             var sql = $"SELECT * FROM {readerExpr} LIMIT 100";
 
             using var connection = new DuckDBConnection("DataSource=:memory:");
@@ -322,10 +313,20 @@ public partial class FileImportDialog : Window
             suggestions.Add("• Try enabling 'Skip malformed rows' to ignore problematic lines");
         }
 
-        if (msg.Contains("invalid") && (msg.Contains("utf") || msg.Contains("encoding") || msg.Contains("byte")))
+        // Detect encoding-related errors broadly: DuckDB may report them as invalid UTF-8
+        // byte sequences, conversion failures, or general "invalid" byte errors.
+        // Windows CSV exports often contain bytes like 0x96 (en dash) or 0x97 (em dash)
+        // that are valid Windows-1252 but not valid UTF-8 or Latin-1.
+        bool looksLikeEncodingError =
+            (msg.Contains("utf") || msg.Contains("encoding") || msg.Contains("encode")) ||
+            (msg.Contains("invalid") && (msg.Contains("byte") || msg.Contains("sequence") || msg.Contains("character"))) ||
+            msg.Contains("could not convert") ||
+            msg.Contains("byte value");
+
+        if (looksLikeEncodingError)
         {
             showEncoding = true;
-            suggestions.Add("• The file may use a different encoding — try Latin-1 or Windows-1252");
+            suggestions.Add("• The file may use Windows-1252 encoding (common for Excel CSV exports) — try switching encoding to Windows-1252");
         }
 
         if (msg.Contains("delimiter") || msg.Contains("too many columns") || msg.Contains("column count"))
@@ -478,10 +479,13 @@ public partial class FileImportDialog : Window
 
     private void OnSuggestEncoding(object sender, RoutedEventArgs e)
     {
-        // Search by tag value rather than a fragile hard-coded index.
-        SelectComboByTag(EncodingCombo, "latin1");
+        // Windows CSV exports (Excel, Notepad, etc.) typically use Windows-1252, which
+        // covers characters like en dash (0x96), em dash (0x97), and curly quotes that
+        // are invalid in UTF-8 and unmapped in Latin-1.  Try Windows-1252 first; if the
+        // preview still fails the user can manually switch to Latin-1.
+        SelectComboByTag(EncodingCombo, "windows-1252");
         // OnOptionChanged fires from SelectionChanged and will trigger a refresh,
-        // but call explicitly in case the encoding was already set to latin1.
+        // but call explicitly in case the encoding was already set to windows-1252.
         RefreshPreview();
     }
 

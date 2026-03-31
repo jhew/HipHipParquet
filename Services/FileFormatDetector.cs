@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using HipHipParquet.Models;
 
@@ -322,6 +323,78 @@ public static class FileFormatDetector
     };
 
     /// <summary>
+    /// Sniffs the encoding of a text file by inspecting its leading bytes.
+    /// Returns an encoding tag consumed by <see cref="PrepareFilePath"/>:
+    /// "utf-8-bom", "utf-16", "windows-1252", "latin1", or "auto".
+    /// Windows CSV exports from Excel frequently use Windows-1252, which contains
+    /// characters like en dash (0x96) and em dash (0x97) that are invalid in UTF-8.
+    /// </summary>
+    public static string SniffEncoding(string filePath)
+    {
+        try
+        {
+            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+
+            // Check for a byte-order mark first
+            var bom = new byte[4];
+            int bomRead = stream.Read(bom, 0, 4);
+            if (bomRead >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
+                return "utf-8-bom";
+            if (bomRead >= 2 && ((bom[0] == 0xFF && bom[1] == 0xFE) || (bom[0] == 0xFE && bom[1] == 0xFF)))
+                return "utf-16";
+
+            // Read a sample (up to 8 KB) to detect encoding heuristically
+            stream.Seek(0, SeekOrigin.Begin);
+            var sample = new byte[8192];
+            int sampleLen = stream.Read(sample, 0, sample.Length);
+
+            if (IsValidUtf8(sample, sampleLen))
+                return "auto"; // Looks like valid UTF-8; let DuckDB auto-detect
+
+            // Non-UTF-8 content: check for bytes in the Windows-1252–only range (0x80–0x9F).
+            // These code points are control characters in ISO-8859-1/Latin-1 but are printable
+            // characters in Windows-1252 (e.g. 0x96 = en dash, 0x97 = em dash, 0x93/0x94 = curly quotes).
+            for (int i = 0; i < sampleLen; i++)
+            {
+                if (sample[i] >= 0x80 && sample[i] <= 0x9F)
+                    return "windows-1252";
+            }
+
+            // Non-UTF-8 but no Windows-1252–specific bytes → plain Latin-1
+            return "latin1";
+        }
+        catch
+        {
+            return "auto";
+        }
+    }
+
+    /// <summary>Validates that <paramref name="length"/> bytes of <paramref name="data"/> form valid UTF-8.</summary>
+    private static bool IsValidUtf8(byte[] data, int length)
+    {
+        int i = 0;
+        while (i < length)
+        {
+            byte b = data[i];
+            int extra;
+            if      (b < 0x80) { i++; continue; }     // ASCII
+            else if (b < 0xC2) return false;           // Overlong/invalid lead byte
+            else if (b < 0xE0) extra = 1;
+            else if (b < 0xF0) extra = 2;
+            else if (b < 0xF5) extra = 3;
+            else                return false;
+
+            i++;
+            for (int j = 0; j < extra; j++, i++)
+            {
+                if (i >= length || (data[i] & 0xC0) != 0x80)
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Returns true when the file extension is not a well-known data format,
     /// meaning it was auto-mapped to CSV by default.
     /// </summary>
@@ -363,5 +436,72 @@ public static class FileFormatDetector
                "TSV files (*.tsv)|*.tsv|" +
                "JSON files (*.json)|*.json|" +
                "All files (*.*)|*.*";
+    }
+
+    /// <summary>
+    /// If <paramref name="csvOptions"/> specifies a non-UTF-8 encoding, transcodes the source
+    /// file to a UTF-8 temp file and returns a <see cref="TranscodeScope"/> whose
+    /// <c>FilePath</c> points to that temp file. Otherwise wraps the original path.
+    /// Always dispose the returned scope to clean up any temp file.
+    /// </summary>
+    public static TranscodeScope PrepareFilePath(string filePath, CsvImportOptions? csvOptions)
+    {
+        var enc = csvOptions?.Encoding;
+
+        // These encodings are either UTF-8 compatible or handled natively by DuckDB.
+        if (string.IsNullOrEmpty(enc) || enc == "auto" || enc == "utf-8" || enc == "utf-8-bom")
+            return new TranscodeScope(filePath);
+
+        try
+        {
+            var sourceEncoding = enc switch
+            {
+                "latin1"       => Encoding.GetEncoding("ISO-8859-1"),
+                "windows-1252" => Encoding.GetEncoding(1252),
+                "utf-16"       => Encoding.Unicode,
+                _              => Encoding.GetEncoding(enc)
+            };
+
+            var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".csv");
+
+            using var src = new StreamReader(filePath, sourceEncoding);
+            // Write UTF-8 without BOM so DuckDB auto-detects it as plain UTF-8.
+            using var dst = new StreamWriter(tempPath, false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            var buf = new char[65536];
+            int charsRead;
+            while ((charsRead = src.Read(buf, 0, buf.Length)) > 0)
+                dst.Write(buf, 0, charsRead);
+
+            return new TranscodeScope(filePath, tempPath);
+        }
+        catch
+        {
+            // If transcoding fails for any reason, fall back to the original file.
+            return new TranscodeScope(filePath);
+        }
+    }
+}
+
+/// <summary>
+/// Manages the lifetime of a UTF-8 temp file produced by <see cref="FileFormatDetector.PrepareFilePath"/>.
+/// Use in a <c>using</c> statement; the temp file (if any) is deleted on <see cref="Dispose"/>.
+/// </summary>
+public sealed class TranscodeScope : IDisposable
+{
+    /// <summary>Path to pass to DuckDB — the original path or a UTF-8 transcoded copy.</summary>
+    public string FilePath { get; }
+
+    private readonly string? _tempPath;
+
+    internal TranscodeScope(string originalPath, string? tempPath = null)
+    {
+        FilePath = tempPath ?? originalPath;
+        _tempPath = tempPath;
+    }
+
+    public void Dispose()
+    {
+        if (_tempPath != null)
+            try { File.Delete(_tempPath); } catch { /* best-effort */ }
     }
 }

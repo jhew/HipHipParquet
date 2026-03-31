@@ -34,17 +34,11 @@ public class CsvImportOptionsTests
     [InlineData("utf-8")]
     [InlineData("latin1")]
     [InlineData("windows-1252")]
-    public void ToDuckDbOptions_NonAutoEncoding_EmitsEncodingOption(string encoding)
+    [InlineData("auto")]
+    public void ToDuckDbOptions_Encoding_NeverEmitted(string encoding)
     {
+        // Encoding is handled by .NET transcoding, not passed to DuckDB.
         var opts = new CsvImportOptions { Encoding = encoding };
-        var result = opts.ToDuckDbOptions();
-        Assert.Contains($"encoding='{encoding}'", result);
-    }
-
-    [Fact]
-    public void ToDuckDbOptions_AutoEncoding_DoesNotEmitOption()
-    {
-        var opts = new CsvImportOptions { Encoding = "auto" };
         var result = opts.ToDuckDbOptions();
         Assert.DoesNotContain("encoding=", result);
     }
@@ -283,11 +277,12 @@ public class FileFormatDetectorJsonTests
     }
 
     [Fact]
-    public void GetDuckDbReaderExpression_CsvWithEncoding_IncludesEncoding()
+    public void GetDuckDbReaderExpression_CsvWithEncoding_DoesNotIncludeEncoding()
     {
+        // Encoding is handled by .NET transcoding, not passed to DuckDB.
         var opts = new CsvImportOptions { Encoding = "latin1" };
         var result = FileFormatDetector.GetDuckDbReaderExpression("data.csv", SupportedFileFormat.Csv, opts);
-        Assert.Contains("encoding='latin1'", result);
+        Assert.DoesNotContain("encoding=", result);
     }
 
     [Fact]
