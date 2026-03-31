@@ -63,14 +63,66 @@ public class ReportService
         {
             sb.AppendLine("<div class=\"card\">");
             sb.AppendLine($"<h2>Findings ({findings.Count})</h2>");
-            foreach (var finding in findings)
+
+            // Group findings by severity category
+            var groups = new[]
             {
-                var severityClass = finding.Severity.ToString().ToLower();
-                sb.AppendLine($"<div class=\"finding {severityClass}\">");
-                sb.AppendLine($"<span class=\"finding-icon\">{finding.Icon}</span>");
-                sb.AppendLine($"<div><strong>{Escape(finding.Title)}</strong><br/><span class=\"finding-desc\">{Escape(finding.Description)}</span></div>");
+                (Label: "Needs Review", Severity: NarrativeSeverity.Critical, Icon: "🔴", Css: "critical"),
+                (Label: "Fair",         Severity: NarrativeSeverity.Warning,  Icon: "🟡", Css: "warning"),
+                (Label: "Good",         Severity: NarrativeSeverity.Info,     Icon: "🟢", Css: "info"),
+            };
+
+            foreach (var g in groups)
+            {
+                var items = findings.Where(f => f.Severity == g.Severity).ToList();
+                if (items.Count == 0) continue;
+
+                sb.AppendLine($"<div class=\"finding-group {g.Css}\">");
+                sb.AppendLine($"<div class=\"finding-group-header\"><span class=\"finding-icon\">{g.Icon}</span> {g.Label} ({items.Count})</div>");
+                sb.AppendLine("<ol class=\"finding-list\">");
+
+                // Partition items into those with a shared title prefix ("Prefix: Column")
+                // and standalone items. Shared-prefix groups are consolidated.
+                var rendered = new HashSet<int>();
+                for (int i = 0; i < items.Count; i++)
+                {
+                    if (rendered.Contains(i)) continue;
+
+                    var colonIdx = items[i].Title.IndexOf(':');
+                    if (colonIdx > 0 && items[i].ColumnName != null)
+                    {
+                        var prefix = items[i].Title[..colonIdx];
+                        var siblings = items
+                            .Select((f, idx) => (f, idx))
+                            .Where(t => !rendered.Contains(t.idx)
+                                     && t.f.ColumnName != null
+                                     && t.f.Title.StartsWith(prefix + ":", StringComparison.Ordinal))
+                            .ToList();
+
+                        if (siblings.Count >= 2)
+                        {
+                            sb.AppendLine($"<li><strong>{Escape(prefix)}</strong> ({siblings.Count} columns)");
+                            sb.AppendLine("<ul class=\"finding-sublist\">");
+                            foreach (var (f, idx) in siblings)
+                            {
+                                sb.AppendLine($"<li><strong>{Escape(f.ColumnName!)}</strong> &mdash; <span class=\"finding-desc\">{Escape(f.Description)}</span></li>");
+                                rendered.Add(idx);
+                            }
+                            sb.AppendLine("</ul>");
+                            sb.AppendLine("</li>");
+                            continue;
+                        }
+                    }
+
+                    // Standalone finding
+                    rendered.Add(i);
+                    sb.AppendLine($"<li><strong>{Escape(items[i].Title)}</strong><br/><span class=\"finding-desc\">{Escape(items[i].Description)}</span></li>");
+                }
+
+                sb.AppendLine("</ol>");
                 sb.AppendLine("</div>");
             }
+
             sb.AppendLine("</div>");
         }
 
@@ -302,12 +354,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .score-bar-track { flex: 1; height: 8px; background: #e8e8e8; border-radius: 4px; overflow: hidden; }
 .score-bar-fill { height: 100%; background: #512BD4; border-radius: 4px; transition: width 0.5s; }
 .score-bar-value { width: 55px; text-align: right; font-size: 11px; color: #888; margin-left: 8px; }
-.finding { display: flex; gap: 10px; padding: 10px; border-radius: 6px; margin-bottom: 6px; background: #f8f8f8; align-items: flex-start; }
+.finding-group { border-radius: 8px; margin-bottom: 12px; padding: 14px 16px; }
+.finding-group-header { font-weight: 600; font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
 .finding-icon { font-size: 16px; }
+.finding-list { margin: 0; padding-left: 24px; }
+.finding-list li { margin-bottom: 6px; font-size: 13px; }
+.finding-list li:last-child { margin-bottom: 0; }
+.finding-sublist { list-style: disc; margin: 4px 0 2px 20px; padding: 0; }
+.finding-sublist li { font-size: 12px; margin-bottom: 3px; }
 .finding-desc { font-size: 12px; color: #666; }
-.finding.critical { background: #FFF3F3; border-left: 3px solid #F44336; }
-.finding.warning { background: #FFF8E1; border-left: 3px solid #FF9800; }
-.finding.info { background: #F1F8E9; border-left: 3px solid #4CAF50; }
+.finding-group.critical { background: #FFF3F3; border-left: 3px solid #F44336; }
+.finding-group.warning { background: #FFF8E1; border-left: 3px solid #FF9800; }
+.finding-group.info { background: #F1F8E9; border-left: 3px solid #4CAF50; }
 .columns-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .columns-table th { text-align: left; padding: 8px 10px; background: #f8f8f8; border-bottom: 2px solid #e0e0e0; font-size: 11px; color: #666; text-transform: uppercase; }
 .columns-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
