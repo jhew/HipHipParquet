@@ -45,7 +45,8 @@ public class ParquetService : IDisposable
             using var connection = new DuckDBConnection("DataSource=:memory:");
             await connection.OpenAsync();
 
-            var normalizedPath = filePath.Replace("\\", "/");
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(filePath, csvOptions);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
             var format = FileFormatDetector.DetectFormat(filePath);
             var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
 
@@ -177,10 +178,11 @@ public class ParquetService : IDisposable
             await _connection.OpenAsync();
             
             // Use DuckDB to read file (format auto-detected from extension)
-            var normalizedPath = filePath.Replace("\\", "/");
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(filePath, csvOptions);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
             var format = FileFormatDetector.DetectFormat(filePath);
             var formatName = FileFormatDetector.GetFormatDisplayName(format);
-            _logger.LogInformation("Reading {Format} file: {FilePath}", formatName, normalizedPath);
+            _logger.LogInformation("Reading {Format} file: {FilePath}", formatName, filePath);
 
             // Load spatial extension for Excel files
             if (format == SupportedFileFormat.Excel)
@@ -319,7 +321,8 @@ public class ParquetService : IDisposable
                 await _connection.OpenAsync();
             }
                 
-            var normalizedPath = filePath.Replace("\\", "/");
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(filePath, csvOptions);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
             var format = FileFormatDetector.DetectFormat(filePath);
 
             // Load spatial extension for Excel files
@@ -329,7 +332,7 @@ public class ParquetService : IDisposable
             var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
             
             // Get schema information using DuckDB reader
-            _logger.LogInformation("Getting schema for file: {FilePath}", normalizedPath);
+            _logger.LogInformation("Getting schema for file: {FilePath}", filePath);
             
             var sql = $"DESCRIBE SELECT * FROM {readerExpr}";
             _logger.LogDebug("Executing schema SQL: {SQL}", sql);
@@ -453,7 +456,8 @@ public class ParquetService : IDisposable
         using var connection = new DuckDBConnection("DataSource=:memory:");
         await connection.OpenAsync();
 
-        var normalizedPath = filePath.Replace("\\", "/");
+        using var transcodeScope = FileFormatDetector.PrepareFilePath(filePath, csvOptions);
+        var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
         var format = FileFormatDetector.DetectFormat(filePath);
 
         if (format == SupportedFileFormat.Excel)
@@ -598,10 +602,11 @@ public class ParquetService : IDisposable
             using var connection = new DuckDBConnection("DataSource=:memory:");
             await connection.OpenAsync();
 
-            var normalizedPath = filePath.Replace("\\", "/");
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(filePath, csvOptions);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
             var format = FileFormatDetector.DetectFormat(filePath);
             var formatName = FileFormatDetector.GetFormatDisplayName(format);
-            _logger.LogInformation("Profiling {Format} file: {FilePath}", formatName, normalizedPath);
+            _logger.LogInformation("Profiling {Format} file: {FilePath}", formatName, filePath);
 
             // Load spatial extension for Excel files
             if (format == SupportedFileFormat.Excel)

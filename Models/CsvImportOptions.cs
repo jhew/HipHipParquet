@@ -14,7 +14,7 @@ public class CsvImportOptions
     /// <summary>Quote character: "\"", "'", or "" for none.</summary>
     public string QuoteChar { get; set; } = "\"";
 
-    /// <summary>Encoding: "auto", "utf-8", "latin1", "windows-1252".</summary>
+    /// <summary>Encoding: "auto", "utf-8", "utf-8-bom", "latin1", "windows-1252", "utf-16".</summary>
     public string Encoding { get; set; } = "auto";
 
     /// <summary>Number of rows to skip from the top before reading.</summary>
@@ -26,10 +26,10 @@ public class CsvImportOptions
     /// <summary>When true, rows with fewer columns than the header are padded with NULLs.</summary>
     public bool NullPadding { get; set; } = false;
 
-    /// <summary>True if all settings are auto-detect (default).</summary>
+    /// <summary>True if all DuckDB-relevant settings are auto-detect (default).
+    /// Encoding is excluded because it is handled by .NET transcoding, not DuckDB.</summary>
     public bool IsAutoDetect => Delimiter == "auto" && HasHeader && QuoteChar == "\"" &&
-                                 Encoding == "auto" && SkipRows == 0 &&
-                                 !IgnoreErrors && !NullPadding;
+                                 SkipRows == 0 && !IgnoreErrors && !NullPadding;
 
     /// <summary>Returns the default auto-detect options.</summary>
     public static CsvImportOptions AutoDetect => new();
@@ -63,8 +63,9 @@ public class CsvImportOptions
         if (SkipRows > 0)
             parts.Add($"skip={SkipRows}");
 
-        if (Encoding != "auto")
-            parts.Add($"encoding='{Encoding.Replace("'", "''")}'" );
+        // NOTE: DuckDB's read_csv_auto does not accept an 'encoding' parameter.
+        // Non-UTF-8 files are handled by FileFormatDetector.PrepareFilePath, which
+        // transcodes the file to a UTF-8 temp copy before passing it to DuckDB.
 
         if (IgnoreErrors)
             parts.Add("ignore_errors=true");

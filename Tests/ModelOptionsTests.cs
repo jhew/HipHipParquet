@@ -34,19 +34,25 @@ public class CsvImportOptionsTests
     [InlineData("utf-8")]
     [InlineData("latin1")]
     [InlineData("windows-1252")]
-    public void ToDuckDbOptions_NonAutoEncoding_EmitsEncodingOption(string encoding)
+    [InlineData("auto")]
+    public void ToDuckDbOptions_Encoding_NeverEmitted(string encoding)
     {
+        // Encoding is handled by .NET transcoding, not passed to DuckDB.
         var opts = new CsvImportOptions { Encoding = encoding };
         var result = opts.ToDuckDbOptions();
-        Assert.Contains($"encoding='{encoding}'", result);
+        Assert.DoesNotContain("encoding=", result);
     }
 
-    [Fact]
-    public void ToDuckDbOptions_AutoEncoding_DoesNotEmitOption()
+    [Theory]
+    [InlineData("utf-8")]
+    [InlineData("latin1")]
+    [InlineData("windows-1252")]
+    public void ToDuckDbOptions_EncodingOnly_DoesNotEmitOtherDefaults(string encoding)
     {
-        var opts = new CsvImportOptions { Encoding = "auto" };
+        // Changing only Encoding should not cause header/quote/etc. to be emitted.
+        var opts = new CsvImportOptions { Encoding = encoding };
         var result = opts.ToDuckDbOptions();
-        Assert.DoesNotContain("encoding=", result);
+        Assert.Equal(string.Empty, result);
     }
 
     [Fact]
@@ -88,10 +94,11 @@ public class CsvImportOptionsTests
     }
 
     [Fact]
-    public void IsAutoDetect_NonAutoEncoding_IsNotAutoDetect()
+    public void IsAutoDetect_NonAutoEncoding_StillAutoDetect()
     {
+        // Encoding is excluded from IsAutoDetect since it is handled by .NET transcoding.
         var opts = new CsvImportOptions { Encoding = "latin1" };
-        Assert.False(opts.IsAutoDetect);
+        Assert.True(opts.IsAutoDetect);
     }
 }
 
@@ -283,11 +290,12 @@ public class FileFormatDetectorJsonTests
     }
 
     [Fact]
-    public void GetDuckDbReaderExpression_CsvWithEncoding_IncludesEncoding()
+    public void GetDuckDbReaderExpression_CsvWithEncoding_DoesNotIncludeEncoding()
     {
+        // Encoding is handled by .NET transcoding, not passed to DuckDB.
         var opts = new CsvImportOptions { Encoding = "latin1" };
         var result = FileFormatDetector.GetDuckDbReaderExpression("data.csv", SupportedFileFormat.Csv, opts);
-        Assert.Contains("encoding='latin1'", result);
+        Assert.DoesNotContain("encoding=", result);
     }
 
     [Fact]
