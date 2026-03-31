@@ -131,7 +131,7 @@ public class ReportService
         sb.AppendLine($"<h2>Column Profiles ({profile.Columns.Count})</h2>");
         sb.AppendLine("<table class=\"columns-table\">");
         sb.AppendLine("<thead><tr>");
-        sb.AppendLine("<th>Column</th><th>Type</th><th>Score</th><th style=\"color:#4CAF50\" title=\"Completeness\">C</th><th style=\"color:#2196F3\" title=\"Uniqueness\">U</th><th style=\"color:#FF9800\" title=\"Validity\">V</th><th style=\"color:#9C27B0\" title=\"Distribution\">D</th><th>Nulls</th><th>Distinct</th><th>Min</th><th>Max</th><th>Mean</th><th>Distribution</th>");
+        sb.AppendLine("<th>Column</th><th>Type</th><th>Score</th><th class=\"dim-header\" style=\"color:#4CAF50\" title=\"Completeness\">C</th><th class=\"dim-header\" style=\"color:#2196F3\" title=\"Uniqueness\">U</th><th class=\"dim-header\" style=\"color:#FF9800\" title=\"Validity\">V</th><th class=\"dim-header\" style=\"color:#9C27B0\" title=\"Distribution\">D</th><th>Nulls</th><th>Distinct</th><th>Min</th><th>Max</th><th>Mean</th><th>Distribution</th>");
         sb.AppendLine("</tr></thead>");
         sb.AppendLine("<tbody>");
 
@@ -371,7 +371,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .columns-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
 .columns-table tr:hover { background: #fafafa; }
 .col-name { display: block; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
-.dim-score { min-width: 28px; text-align: center; font-size: 11px; font-weight: bold; }
+.dim-score { min-width: 22px; text-align: center; font-size: 9px; font-weight: bold; padding: 8px 2px; }
+.columns-table th.dim-header { text-align: center; padding: 6px 2px; min-width: 22px; font-size: 9px; }
 .freq-bars { display: flex; flex-direction: column; gap: 2px; min-width: 100px; }
 .freq-row { display: flex; align-items: center; gap: 4px; }
 .freq-label { font-size: 9px; color: #666; width: 55px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
