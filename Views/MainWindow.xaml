@@ -198,7 +198,7 @@
                         </DockPanel>
                     </Border>
 
-                    <!-- Data Grid -->
+                    <!-- Data Grid (EnableColumnVirtualization=False: known WPF bug causes blank column headers when virtualized) -->
                     <DataGrid x:Name="DataGrid" 
                              Grid.Row="1"
                              AutoGenerateColumns="False"

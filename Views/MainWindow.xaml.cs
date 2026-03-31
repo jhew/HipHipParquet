@@ -2564,46 +2564,54 @@ public partial class MainWindow : Window
     private async void OnCheckForUpdatesClick(object sender, RoutedEventArgs e)
     {
         StatusText.Text = "Checking for updates...";
+
+        Services.UpdateInfo? update;
         try
         {
-            var update = await Services.UpdateService.CheckForUpdateAsync();
-
-            if (update == null)
-            {
-                var current = Services.UpdateService.GetCurrentVersion();
-                StatusText.Text = $"HipHipParquet v{current.ToString(3)} is up to date.";
-                MessageBox.Show(
-                    $"You are running the latest version of HipHipParquet.\n\nCurrent version: {current.ToString(3)}",
-                    "No Updates Available", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            var result = MessageBox.Show(
-                $"A new version of HipHipParquet is available!\n\n" +
-                $"Current version:  {Services.UpdateService.GetCurrentVersion().ToString(3)}\n" +
-                $"Latest version:   {update.LatestVersion.ToString(3)}\n\n" +
-                (update.InstallerUrl != null
-                    ? "Would you like to download and install the update now?"
-                    : "Would you like to open the releases page to download it?"),
-                "Update Available",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Information);
-
-            if (result != MessageBoxResult.Yes)
-            {
-                StatusText.Text = "Update available — see Help > Check for Updates.";
-                return;
-            }
-
-            if (update.InstallerUrl != null)
-                await DownloadAndInstallUpdateAsync(update);
-            else
-                OpenUrl(update.ReleasePageUrl);
+            update = await Services.UpdateService.CheckForUpdateAsync();
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Update check failed: {ex.Message}";
+            StatusText.Text = "Could not check for updates.";
+            MessageBox.Show(
+                "HipHipParquet could not check whether a newer version is available.\n\n" +
+                "This may be due to being offline, network issues, or a problem contacting the update service.\n\n" +
+                $"Details: {ex.Message}",
+                "Update Check Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
         }
+
+        if (update == null)
+        {
+            var current = Services.UpdateService.GetCurrentVersion();
+            StatusText.Text = $"HipHipParquet v{current.ToString(3)} is up to date.";
+            MessageBox.Show(
+                $"You are running the latest version of HipHipParquet.\n\nCurrent version: {current.ToString(3)}",
+                "No Updates Available", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var result = MessageBox.Show(
+            $"A new version of HipHipParquet is available!\n\n" +
+            $"Current version:  {Services.UpdateService.GetCurrentVersion().ToString(3)}\n" +
+            $"Latest version:   {update.LatestVersion.ToString(3)}\n\n" +
+            (update.InstallerUrl != null
+                ? "Would you like to download and install the update now?"
+                : "Would you like to open the releases page to download it?"),
+            "Update Available",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Information);
+
+        if (result != MessageBoxResult.Yes)
+        {
+            StatusText.Text = "Update available — see Help > Check for Updates.";
+            return;
+        }
+
+        if (update.InstallerUrl != null)
+            await DownloadAndInstallUpdateAsync(update);
+        else
+            OpenUrl(update.ReleasePageUrl);
     }
 
     /// <summary>
@@ -2618,10 +2626,14 @@ public partial class MainWindow : Window
             if (update != null)
             {
                 Dispatcher.Invoke(() =>
-                    StatusText.Text = $"📦 Update available: v{update.LatestVersion.ToString(3)} — Help > Check for Updates");
+                {
+                    // Only show the update hint if the status bar is still idle
+                    if (StatusText.Text == "Ready")
+                        StatusText.Text = $"📦 Update available: v{update.LatestVersion.ToString(3)} — Help > Check for Updates";
+                });
             }
         }
-        catch { /* silently ignore */ }
+        catch { /* silently ignore startup check failures */ }
     }
 
     private async Task DownloadAndInstallUpdateAsync(Services.UpdateInfo update)
@@ -2655,12 +2667,28 @@ public partial class MainWindow : Window
 
             if (confirm == MessageBoxResult.Yes)
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                var app = Application.Current;
+                if (app != null)
                 {
-                    FileName = installerPath,
-                    UseShellExecute = true
-                });
-                Application.Current.Shutdown();
+                    // Launch installer only after the app has fully exited, so the
+                    // installer never runs against a still-open instance.
+                    ExitEventHandler? handler = null;
+                    handler = (_, _) =>
+                    {
+                        app.Exit -= handler!;
+                        try
+                        {
+                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = installerPath,
+                                UseShellExecute = true
+                            });
+                        }
+                        catch { /* app is exiting — nothing to report */ }
+                    };
+                    app.Exit += handler;
+                    app.Shutdown();
+                }
             }
             else
             {

@@ -17,63 +17,67 @@ public static class UpdateService
     public static readonly string ReleasesPageUrl =
         $"https://github.com/{GitHubOwner}/{GitHubRepo}/releases/latest";
 
+    private static readonly HttpClient SharedClient = CreateSharedClient();
+
+    private static HttpClient CreateSharedClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        var version = GetCurrentVersion().ToString(3);
+        client.DefaultRequestHeaders.UserAgent.Add(
+            new ProductInfoHeaderValue("HipHipParquet", version));
+        client.DefaultRequestHeaders.Accept.Add(
+            new MediaTypeWithQualityHeaderValue("application/json"));
+        return client;
+    }
+
     /// <summary>
     /// Queries the GitHub releases API and returns update info if a newer version is available.
-    /// Returns null if up-to-date, offline, or on any error.
+    /// Returns null when the current version is already up-to-date.
+    /// Throws on network/parse errors so callers can distinguish failures from "no update".
     /// </summary>
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken cancellationToken = default)
     {
-        try
+        var current = GetCurrentVersion();
+
+        var json = JsonNode.Parse(
+            await SharedClient.GetStringAsync(LatestReleaseApiUrl, cancellationToken));
+
+        if (json == null) return null;
+
+        var tagName = json["tag_name"]?.GetValue<string>();
+        if (tagName == null) return null;
+
+        var versionString = tagName.TrimStart('v', 'V');
+        if (!Version.TryParse(versionString, out var latest))
+            return null;
+
+        if (latest <= current)
+            return null; // already up-to-date
+
+        // Find setup .exe asset URL
+        string? downloadUrl = null;
+        var assets = json["assets"]?.AsArray();
+        if (assets != null)
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            var current = GetCurrentVersion();
-            client.DefaultRequestHeaders.UserAgent.Add(
-                new ProductInfoHeaderValue("HipHipParquet", current.ToString(3)));
-            client.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/json"));
-
-            var json = JsonNode.Parse(
-                await client.GetStringAsync(LatestReleaseApiUrl, cancellationToken));
-
-            if (json == null) return null;
-
-            var tagName = json["tag_name"]?.GetValue<string>();
-            if (tagName == null) return null;
-
-            var versionString = tagName.TrimStart('v', 'V');
-            if (!Version.TryParse(versionString, out var latest))
-                return null;
-
-            if (latest <= current)
-                return null; // already up-to-date
-
-            // Find setup .exe asset URL
-            string? downloadUrl = null;
-            var assets = json["assets"]?.AsArray();
-            if (assets != null)
+            foreach (var asset in assets)
             {
-                foreach (var asset in assets)
+                var name = asset?["name"]?.GetValue<string>() ?? "";
+                var url  = asset?["browser_download_url"]?.GetValue<string>();
+                if (url != null && name.EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
                 {
-                    var name = asset?["name"]?.GetValue<string>() ?? "";
-                    var url  = asset?["browser_download_url"]?.GetValue<string>();
-                    if (url != null && name.EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
+                    // Validate domain to prevent untrusted downloads
+                    if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                        (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                         uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
                     {
-                        // Validate domain to prevent untrusted downloads
-                        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
-                            (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
-                             uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            downloadUrl = url;
-                        }
-                        break;
+                        downloadUrl = url;
                     }
+                    break;
                 }
             }
-
-            return new UpdateInfo(latest, downloadUrl, ReleasesPageUrl);
         }
-        catch (OperationCanceledException) { return null; }
-        catch { return null; } // silently absorb network/parse errors
+
+        return new UpdateInfo(latest, downloadUrl, ReleasesPageUrl);
     }
 
     /// <summary>
@@ -96,6 +100,8 @@ public static class UpdateService
             using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
             client.DefaultRequestHeaders.UserAgent.Add(
                 new ProductInfoHeaderValue("HipHipParquet", GetCurrentVersion().ToString(3)));
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/octet-stream"));
 
             using var response = await client.GetAsync(
                 downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
