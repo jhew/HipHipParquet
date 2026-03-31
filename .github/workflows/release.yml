@@ -96,12 +96,11 @@ jobs:
 
             ### What's Changed
 
-            - **Per-column dropdown filters** — each column header now has a dropdown listing all distinct values (up to 500), replacing the old text-filter row. Active filters show a status-bar badge with a count and a one-click Clear All.
-            - **Navigation shortcuts** — Ctrl+G opens a Go to Row popup (works correctly when the grid is sorted or filtered); Ctrl+F focuses the global search box.
-            - **Schema copy** — new Copy button in the schema pane puts the full column list on the clipboard.
-            - **Security** — DuckDB `SaveFileAsync` now uses parameterized `$1..$N` inserts wrapped in a BEGIN/COMMIT transaction, eliminating the SQL-injection risk from string-interpolated row values.
-            - **Performance** — clipboard copy grouping is now O(N+M) instead of O(N×M); `QualityScoreService` and `NarrativeService` replaced multiple LINQ passes with single-pass loops.
-            - **Import error messages** — `FileImportDialog` now highlights specific line numbers in DuckDB parse errors so you can find the problem row quickly.
+            - **Multi-file Parquet** — hold Ctrl or Shift in the file picker to select several `.parquet` files; they are loaded as a single logical table so you can profile and export split-part datasets without manual merging.
+            - **`.snappy.parquet` support** — the file open dialog now recognises the `.snappy.parquet` double extension alongside `.parquet`.
+            - **CSV encoding detection** — encoding is auto-detected via BOM sniffing (UTF-8, UTF-16 LE/BE) and heuristic analysis (Windows-1252, Latin-1). Non-UTF-8 files are transparently transcoded on the .NET side before being handed to DuckDB, so accented characters and Windows-codepage CSVs import correctly without any manual setting.
+            - **Quality report improvements** — the HTML report now groups findings by severity (Needs Review / Fair / Good) with colour-coded headers and ordered lists; repetitive per-column findings (e.g. multiple "High outlier rate" entries) are consolidated under a single heading with a bulleted sub-list.
+            - **Stability fixes** — fixed a crash when closing the window and choosing "No" on the save prompt; added an informative dialog for unsupported file types; fixed a temp-file leak in the CSV transcoding path.
 
             ### Download
 

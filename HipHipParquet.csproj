@@ -24,9 +24,9 @@
         <ApplicationIcon>Assets\app.ico</ApplicationIcon>
 
         <!-- Version — keep in sync with installer\HipHipParquet.iss MyAppVersion -->
-        <Version>1.7.0</Version>
-        <AssemblyVersion>1.7.0.0</AssemblyVersion>
-        <FileVersion>1.7.0.0</FileVersion>
+        <Version>1.8.0</Version>
+        <AssemblyVersion>1.8.0.0</AssemblyVersion>
+        <FileVersion>1.8.0.0</FileVersion>
     </PropertyGroup>
 
 
