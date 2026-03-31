@@ -215,7 +215,7 @@ public partial class FileImportDialog : Window
 
             var csvOpts = (_format == SupportedFileFormat.Csv || _format == SupportedFileFormat.Tsv)
                 ? BuildCsvOptions() : null;
-            using var transcodeScope = FileFormatDetector.PrepareFilePath(_filePath, csvOpts);
+            using var transcodeScope = await Task.Run(() => FileFormatDetector.PrepareFilePath(_filePath, csvOpts), ct);
             var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
             var readerExpr = csvOpts != null
                 ? FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, _format, csvOpts)

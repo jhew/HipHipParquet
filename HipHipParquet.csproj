@@ -51,6 +51,9 @@
     <ItemGroup>
         <!-- DuckDB for Parquet operations -->
         <PackageReference Include="DuckDB.NET.Data.Full" Version="1.1.3" />
+
+        <!-- Encoding support for Windows-1252 and other code pages -->
+        <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
         
         <!-- MVVM and UI helpers -->
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />

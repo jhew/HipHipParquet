@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text;
 using HipHipParquet.Models;
 using HipHipParquet.Services;
 
@@ -336,5 +337,213 @@ public class FileFormatDetectorTests
                 // Best-effort cleanup: ignore permission errors.
             }
         }
+    }
+}
+
+public class SniffEncodingTests : IDisposable
+{
+    private readonly List<string> _tempFiles = new();
+
+    private string WriteTempFile(byte[] content)
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".csv");
+        File.WriteAllBytes(path, content);
+        _tempFiles.Add(path);
+        return path;
+    }
+
+    [Fact]
+    public void SniffEncoding_PlainAscii_ReturnsAuto()
+    {
+        var path = WriteTempFile("hello,world\n1,2"u8.ToArray());
+        Assert.Equal("auto", FileFormatDetector.SniffEncoding(path));
+    }
+
+    [Fact]
+    public void SniffEncoding_Utf8Bom_ReturnsUtf8Bom()
+    {
+        var bom = new byte[] { 0xEF, 0xBB, 0xBF };
+        var content = "hello"u8.ToArray();
+        var path = WriteTempFile(bom.Concat(content).ToArray());
+        Assert.Equal("utf-8-bom", FileFormatDetector.SniffEncoding(path));
+    }
+
+    [Fact]
+    public void SniffEncoding_Utf16LeBom_ReturnsUtf16()
+    {
+        var bom = new byte[] { 0xFF, 0xFE };
+        var content = Encoding.Unicode.GetBytes("hello");
+        var path = WriteTempFile(bom.Concat(content).ToArray());
+        Assert.Equal("utf-16", FileFormatDetector.SniffEncoding(path));
+    }
+
+    [Fact]
+    public void SniffEncoding_Utf16BeBom_ReturnsUtf16()
+    {
+        var bom = new byte[] { 0xFE, 0xFF };
+        var content = Encoding.BigEndianUnicode.GetBytes("hello");
+        var path = WriteTempFile(bom.Concat(content).ToArray());
+        Assert.Equal("utf-16", FileFormatDetector.SniffEncoding(path));
+    }
+
+    [Fact]
+    public void SniffEncoding_Windows1252EmDash_ReturnsWindows1252()
+    {
+        // 0x97 = em dash in Windows-1252, invalid in UTF-8
+        var content = new byte[] { 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x97, 0x77, 0x6F, 0x72, 0x6C, 0x64 };
+        var path = WriteTempFile(content);
+        Assert.Equal("windows-1252", FileFormatDetector.SniffEncoding(path));
+    }
+
+    [Fact]
+    public void SniffEncoding_Latin1HighBytes_ReturnsLatin1()
+    {
+        // 0xE9 = 'é' in Latin-1, outside 0x80-0x9F range, not valid standalone UTF-8
+        var content = new byte[] { 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0xE9 };
+        var path = WriteTempFile(content);
+        Assert.Equal("latin1", FileFormatDetector.SniffEncoding(path));
+    }
+
+    [Fact]
+    public void SniffEncoding_ValidUtf8MultiByteChars_ReturnsAuto()
+    {
+        // UTF-8 encoded 'é' (U+00E9) = 0xC3 0xA9
+        var content = new byte[] { 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0xC3, 0xA9 };
+        var path = WriteTempFile(content);
+        Assert.Equal("auto", FileFormatDetector.SniffEncoding(path));
+    }
+
+    [Fact]
+    public void SniffEncoding_NonExistentFile_ReturnsAuto()
+    {
+        Assert.Equal("auto", FileFormatDetector.SniffEncoding(@"C:\nonexistent_file_12345.csv"));
+    }
+
+    public void Dispose()
+    {
+        foreach (var f in _tempFiles)
+            try { File.Delete(f); } catch { }
+    }
+}
+
+public class PrepareFilePathTests : IDisposable
+{
+    private readonly List<string> _tempFiles = new();
+
+    private string WriteTempFile(byte[] content)
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".csv");
+        File.WriteAllBytes(path, content);
+        _tempFiles.Add(path);
+        return path;
+    }
+
+    [Fact]
+    public void PrepareFilePath_AutoEncoding_ReturnsOriginalPath()
+    {
+        var path = WriteTempFile("hello"u8.ToArray());
+        using var scope = FileFormatDetector.PrepareFilePath(path, new CsvImportOptions { Encoding = "auto" });
+        Assert.Equal(path, scope.FilePath);
+    }
+
+    [Fact]
+    public void PrepareFilePath_NullOptions_ReturnsOriginalPath()
+    {
+        var path = WriteTempFile("hello"u8.ToArray());
+        using var scope = FileFormatDetector.PrepareFilePath(path, null);
+        Assert.Equal(path, scope.FilePath);
+    }
+
+    [Fact]
+    public void PrepareFilePath_Windows1252_TranscodesToValidUtf8()
+    {
+        // Write Windows-1252 content: "hello" + em dash (0x97) + "world"
+        var content = new byte[] { 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x97, 0x77, 0x6F, 0x72, 0x6C, 0x64 };
+        var path = WriteTempFile(content);
+
+        using var scope = FileFormatDetector.PrepareFilePath(path, new CsvImportOptions { Encoding = "windows-1252" });
+
+        // Should have created a different (temp) file
+        Assert.NotEqual(path, scope.FilePath);
+        Assert.True(File.Exists(scope.FilePath));
+
+        // Temp file should be valid UTF-8 containing the em dash (U+2014 = E2 80 94)
+        var transcoded = File.ReadAllText(scope.FilePath, Encoding.UTF8);
+        Assert.Contains("\u2014", transcoded); // em dash
+    }
+
+    [Fact]
+    public void PrepareFilePath_Latin1_TranscodesToValidUtf8()
+    {
+        // 0xE9 = 'é' in Latin-1
+        var content = new byte[] { 0x63, 0x61, 0x66, 0xE9 }; // "café"
+        var path = WriteTempFile(content);
+
+        using var scope = FileFormatDetector.PrepareFilePath(path, new CsvImportOptions { Encoding = "latin1" });
+        Assert.NotEqual(path, scope.FilePath);
+        var transcoded = File.ReadAllText(scope.FilePath, Encoding.UTF8);
+        Assert.Equal("caf\u00E9", transcoded);
+    }
+
+    public void Dispose()
+    {
+        foreach (var f in _tempFiles)
+            try { File.Delete(f); } catch { }
+    }
+}
+
+public class TranscodeScopeTests : IDisposable
+{
+    private readonly List<string> _tempFiles = new();
+
+    private string CreateTempFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".csv");
+        File.WriteAllText(path, "test");
+        _tempFiles.Add(path);
+        return path;
+    }
+
+    [Fact]
+    public void Dispose_DeletesTempFile()
+    {
+        var tempPath = CreateTempFile();
+        Assert.True(File.Exists(tempPath));
+
+        var scope = new TranscodeScope(tempPath, tempPath);
+        scope.Dispose();
+
+        Assert.False(File.Exists(tempPath));
+    }
+
+    [Fact]
+    public void Dispose_NoTempFile_DoesNothing()
+    {
+        var originalPath = @"C:\some\original.csv";
+        var scope = new TranscodeScope(originalPath);
+        scope.Dispose(); // Should not throw
+    }
+
+    [Fact]
+    public void FilePath_WithTempPath_ReturnsTempPath()
+    {
+        var originalPath = @"C:\original.csv";
+        var tempPath = @"C:\temp.csv";
+        var scope = new TranscodeScope(originalPath, tempPath);
+        Assert.Equal(tempPath, scope.FilePath);
+    }
+
+    [Fact]
+    public void FilePath_WithoutTempPath_ReturnsOriginalPath()
+    {
+        var originalPath = @"C:\original.csv";
+        var scope = new TranscodeScope(originalPath);
+        Assert.Equal(originalPath, scope.FilePath);
+    }
+
+    public void Dispose()
+    {
+        foreach (var f in _tempFiles)
+            try { File.Delete(f); } catch { }
     }
 }

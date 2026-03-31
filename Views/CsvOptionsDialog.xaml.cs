@@ -114,7 +114,7 @@ public partial class CsvOptionsDialog : Window
             await Task.Delay(300, ct);
 
             var options = BuildOptions();
-            using var transcodeScope = FileFormatDetector.PrepareFilePath(_previewFilePath, options);
+            using var transcodeScope = await Task.Run(() => FileFormatDetector.PrepareFilePath(_previewFilePath, options), ct);
             var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
             var format = FileFormatDetector.DetectFormat(_previewFilePath);
             var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, options);

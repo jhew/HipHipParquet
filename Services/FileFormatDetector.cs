@@ -13,6 +13,11 @@ namespace HipHipParquet.Services;
 /// </summary>
 public static class FileFormatDetector
 {
+    static FileFormatDetector()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     private const string ParquetExtension = ".parquet";
     private const string SnappyParquetSuffix = ".snappy.parquet";
 
@@ -452,6 +457,7 @@ public static class FileFormatDetector
         if (string.IsNullOrEmpty(enc) || enc == "auto" || enc == "utf-8" || enc == "utf-8-bom")
             return new TranscodeScope(filePath);
 
+        string? tempPath = null;
         try
         {
             var sourceEncoding = enc switch
@@ -462,7 +468,7 @@ public static class FileFormatDetector
                 _              => Encoding.GetEncoding(enc)
             };
 
-            var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".csv");
+            tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".csv");
 
             using var src = new StreamReader(filePath, sourceEncoding);
             // Write UTF-8 without BOM so DuckDB auto-detects it as plain UTF-8.
@@ -476,6 +482,10 @@ public static class FileFormatDetector
         }
         catch
         {
+            // Clean up any partially-written temp file before falling back.
+            if (tempPath != null)
+                try { File.Delete(tempPath); } catch { /* best-effort */ }
+
             // If transcoding fails for any reason, fall back to the original file.
             return new TranscodeScope(filePath);
         }
@@ -493,7 +503,7 @@ public sealed class TranscodeScope : IDisposable
 
     private readonly string? _tempPath;
 
-    internal TranscodeScope(string originalPath, string? tempPath = null)
+    public TranscodeScope(string originalPath, string? tempPath = null)
     {
         FilePath = tempPath ?? originalPath;
         _tempPath = tempPath;

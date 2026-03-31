@@ -332,7 +332,7 @@ public class ParquetService : IDisposable
             var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
             
             // Get schema information using DuckDB reader
-            _logger.LogInformation("Getting schema for file: {FilePath}", normalizedPath);
+            _logger.LogInformation("Getting schema for file: {FilePath}", filePath);
             
             var sql = $"DESCRIBE SELECT * FROM {readerExpr}";
             _logger.LogDebug("Executing schema SQL: {SQL}", sql);

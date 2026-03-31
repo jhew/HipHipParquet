@@ -2349,7 +2349,7 @@ public partial class MainWindow : Window
         {
             ShowLoading($"Loading rows (limit: {_currentRowLimit:N0})...");
             var parquetPartsSuffix = string.Empty;
-            if (_currentFormat == SupportedFileFormat.Parquet)
+            if (_currentFormat == SupportedFileFormat.Parquet && _currentFilePath != null)
             {
                 parquetPartsSuffix = await Task.Run(() => GetParquetPartsStatusSuffix(_currentFilePath, _currentFormat));
             }

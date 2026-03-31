@@ -26,10 +26,10 @@ public class CsvImportOptions
     /// <summary>When true, rows with fewer columns than the header are padded with NULLs.</summary>
     public bool NullPadding { get; set; } = false;
 
-    /// <summary>True if all settings are auto-detect (default).</summary>
+    /// <summary>True if all DuckDB-relevant settings are auto-detect (default).
+    /// Encoding is excluded because it is handled by .NET transcoding, not DuckDB.</summary>
     public bool IsAutoDetect => Delimiter == "auto" && HasHeader && QuoteChar == "\"" &&
-                                 Encoding == "auto" && SkipRows == 0 &&
-                                 !IgnoreErrors && !NullPadding;
+                                 SkipRows == 0 && !IgnoreErrors && !NullPadding;
 
     /// <summary>Returns the default auto-detect options.</summary>
     public static CsvImportOptions AutoDetect => new();

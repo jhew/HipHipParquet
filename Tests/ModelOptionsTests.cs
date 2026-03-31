@@ -43,6 +43,18 @@ public class CsvImportOptionsTests
         Assert.DoesNotContain("encoding=", result);
     }
 
+    [Theory]
+    [InlineData("utf-8")]
+    [InlineData("latin1")]
+    [InlineData("windows-1252")]
+    public void ToDuckDbOptions_EncodingOnly_DoesNotEmitOtherDefaults(string encoding)
+    {
+        // Changing only Encoding should not cause header/quote/etc. to be emitted.
+        var opts = new CsvImportOptions { Encoding = encoding };
+        var result = opts.ToDuckDbOptions();
+        Assert.Equal(string.Empty, result);
+    }
+
     [Fact]
     public void ToDuckDbOptions_CustomDelimiter_EmitDelim()
     {
@@ -82,10 +94,11 @@ public class CsvImportOptionsTests
     }
 
     [Fact]
-    public void IsAutoDetect_NonAutoEncoding_IsNotAutoDetect()
+    public void IsAutoDetect_NonAutoEncoding_StillAutoDetect()
     {
+        // Encoding is excluded from IsAutoDetect since it is handled by .NET transcoding.
         var opts = new CsvImportOptions { Encoding = "latin1" };
-        Assert.False(opts.IsAutoDetect);
+        Assert.True(opts.IsAutoDetect);
     }
 }
 
