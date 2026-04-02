@@ -13,8 +13,9 @@ using System.Windows.Media;
 using System.Windows.Controls.Primitives;
 using System.IO;
 using System.Threading.Tasks;
-
+using System.Text.Json;
 using System.Windows.Input;
+using System.Windows.Shell;
 
 namespace HipHipParquet.Views;
 
@@ -30,13 +31,17 @@ public partial class MainWindow : Window
     private const int MaxRecentFiles = 10;
     private const string RecentFilesKey = "RecentFiles";
     private string? _pendingFileToLoad;
+    private string? _pendingStartupCommand;
     private string? _currentFilePath;
     private IReadOnlyList<string>? _currentFilePaths;
     private bool _hasUnsavedChanges = false;
+    private int _pendingEditCount = 0;
     private QualityReviewViewModel? _qualityViewModel;
     private List<DataGridCellInfo>? _savedSelectedCells;
     private List<object>? _savedSelectedItems;
     private bool _closingConfirmed = false;
+    private DataFileInfo? _lastSchemaInfo;
+    private string? _lastSchemaFilePath;
 
     // ── Column filter state (Fabric Lakehouse-style dropdowns) ────────────
     private readonly Dictionary<string, ColumnFilterState> _columnFilters = new();
@@ -49,6 +54,7 @@ public partial class MainWindow : Window
     private string _savedSort = string.Empty;
     // ── Row limiting ─────────────────────────────────────────────────────
     private const int RowLimitBatch = 50_000;
+    private const long AutoProfileRowThreshold = 250_000;
     private int _currentRowLimit = RowLimitBatch;
     private long _totalRowCount;
     private CsvImportOptions? _activeCsvOptions;
@@ -60,9 +66,14 @@ public partial class MainWindow : Window
 
     // ── Stored service reference for reuse ───────────────────────────────
     private ParquetService? _parquetService;
+    private readonly WorkspaceService _workspaceService = new();
 
     // ── Search debounce ───────────────────────────────────────────────────
     private readonly System.Windows.Threading.DispatcherTimer _filterDebounceTimer;
+    private static readonly string WorkspaceStatePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "HipHipParquet",
+        "workspace-state.json");
     
     public MainWindow()
     {
@@ -70,6 +81,7 @@ public partial class MainWindow : Window
         InitializeQualityPanel();
         LoadRecentFiles();
         UpdateRecentFilesMenu();
+        RefreshSavedViewsMenu();
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
         MainContentGrid.SizeChanged += (_, _) => ClampQualityPaneWidth();
@@ -91,6 +103,7 @@ public partial class MainWindow : Window
         if (_closingConfirmed)
         {
             // Second pass — let the close proceed and clean up.
+            SaveWorkspaceState();
             _parquetService?.Dispose();
             _fileWatcher?.Dispose();
             return;
@@ -98,6 +111,7 @@ public partial class MainWindow : Window
 
         if (!_hasUnsavedChanges)
         {
+            SaveWorkspaceState();
             _parquetService?.Dispose();
             _fileWatcher?.Dispose();
             return;
@@ -148,6 +162,8 @@ public partial class MainWindow : Window
     private async void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
         ClampQualityPaneWidth();
+        UpdateJumpList();
+        RefreshSavedViewsMenu();
 
         // Background startup update check — shows a hint in the status bar if a new version is found.
         _ = CheckForUpdatesOnStartupAsync();
@@ -157,25 +173,37 @@ public partial class MainWindow : Window
         {
             var fileToLoad = _pendingFileToLoad;
             _pendingFileToLoad = null;
-
-            var format = Services.FileFormatDetector.DetectFormat(fileToLoad);
-            if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
-            {
-                var result = ShowFileImportDialog(fileToLoad, format);
-                if (result.Imported)
-                    await LoadFileAsync(fileToLoad, result.CsvOptions, jsonOptions: result.JsonOptions);
-            }
-            else
-            {
-                await LoadFileAsync(fileToLoad);
-            }
+            await OpenWithRecommendedSettingsAsync(fileToLoad);
+            await RunPendingStartupCommandAsync();
+            return;
         }
+
+        await RestoreWorkspaceStateAsync();
+        await RunPendingStartupCommandAsync();
+    }
+
+    private async Task RunPendingStartupCommandAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_pendingStartupCommand))
+            return;
+
+        var command = _pendingStartupCommand;
+        _pendingStartupCommand = null;
+
+        if (string.Equals(command, "compare-with-last", StringComparison.OrdinalIgnoreCase))
+            await CompareWithLastRecentAsync();
     }
 
     public Task LoadFileFromCommandLineAsync(string filePath)
     {
         // Store the file path to load after the window is loaded
         _pendingFileToLoad = filePath;
+        return Task.CompletedTask;
+    }
+
+    public Task QueueStartupCommandAsync(string command)
+    {
+        _pendingStartupCommand = command;
         return Task.CompletedTask;
     }
 
@@ -207,23 +235,9 @@ public partial class MainWindow : Window
             }
 
             var filePath = openFileDialog.FileName;
-
-            if (!ConfirmUnknownExtension(filePath)) return;
-
-            var format = Services.FileFormatDetector.DetectFormat(filePath);
-
-            // Show the import settings dialog for CSV/TSV/JSON files
-            if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
-            {
-                var result = ShowFileImportDialog(filePath, format);
-                if (!result.Imported) return;
-
-                await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
-            }
-            else
-            {
-                await LoadFileAsync(filePath);
-            }
+            // Hold Shift while opening to force the advanced import dialog.
+            var forceImportDialog = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+            await OpenWithRecommendedSettingsAsync(filePath, forceImportDialog);
         }
     }
 
@@ -291,12 +305,16 @@ public partial class MainWindow : Window
             _currentFilePaths = filePaths;
             _currentFilePath = filePaths.Count == 1 ? filePaths[0] : null;
             _hasUnsavedChanges = false;
+            _pendingEditCount = 0;
             UpdateWindowTitle();
+            UpdatePendingChangesTray();
             EnableSaveMenuItems();
             UpdateFormatBadge(SupportedFileFormat.Parquet);
 
             // Enable quality analysis on the first file of the set (best-effort for multi-file loads).
             _qualityViewModel?.SetFilePath(filePaths[0]);
+            if (_totalRowCount <= AutoProfileRowThreshold)
+                _qualityViewModel?.StartAutoAnalyze();
 
             StatusText.Text =
                 $"Loaded {filePaths.Count} parquet files — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
@@ -345,6 +363,90 @@ public partial class MainWindow : Window
             return (true, dialog.CsvResult, dialog.JsonResult);
 
         return (false, null, null);
+    }
+
+    private async Task OpenWithRecommendedSettingsAsync(string filePath, bool forceImportDialog = false)
+    {
+        if (!ConfirmUnknownExtension(filePath))
+            return;
+
+        var format = Services.FileFormatDetector.DetectFormat(filePath);
+        if ((format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json) && forceImportDialog)
+        {
+            var dialogResult = ShowFileImportDialog(filePath, format);
+            if (!dialogResult.Imported)
+                return;
+
+            await LoadFileAsync(filePath, dialogResult.CsvOptions, jsonOptions: dialogResult.JsonOptions);
+            return;
+        }
+
+        CsvImportOptions? recommendedCsv = null;
+        if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv)
+        {
+            var sniffedEncoding = Services.FileFormatDetector.SniffEncoding(filePath);
+            if (!string.Equals(sniffedEncoding, "auto", StringComparison.OrdinalIgnoreCase))
+                recommendedCsv = new CsvImportOptions { Encoding = sniffedEncoding };
+        }
+
+        await LoadFileAsync(filePath, recommendedCsv);
+    }
+
+    private static bool IsParquetPath(string path)
+    {
+        var ext = Path.GetExtension(path);
+        if (string.Equals(ext, ".parquet", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var fileName = Path.GetFileName(path);
+        return fileName.EndsWith(".snappy.parquet", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSupportedDropFile(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return string.Equals(ext, ".parquet", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".csv", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".tsv", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".tab", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".json", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".jsonl", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase)
+            || Path.GetFileName(path).EndsWith(".snappy.parquet", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<string> ResolveDroppedFiles(IEnumerable<string> droppedPaths)
+    {
+        var files = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddFile(string file)
+        {
+            if (!IsSupportedDropFile(file))
+                return;
+            if (seen.Add(file))
+                files.Add(file);
+        }
+
+        foreach (var path in droppedPaths)
+        {
+            if (File.Exists(path))
+            {
+                AddFile(path);
+                continue;
+            }
+
+            if (!Directory.Exists(path))
+                continue;
+
+            foreach (var parquetFile in Directory.EnumerateFiles(path, "*.parquet", SearchOption.AllDirectories))
+                AddFile(parquetFile);
+
+            foreach (var directFile in Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly))
+                AddFile(directFile);
+        }
+
+        return files;
     }
 
     /// <summary>
@@ -459,6 +561,21 @@ public partial class MainWindow : Window
 
             _qualityViewModel = new QualityReviewViewModel(logger, qualityScoreService, narrativeService, reportService);
             QualityReviewPanel.SetViewModel(_qualityViewModel);
+
+            // Wire taskbar progress updates from quality analysis
+            _qualityViewModel.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(QualityReviewViewModel.TaskbarProgressVisible))
+                {
+                    MainTaskbarItemInfo.ProgressState = _qualityViewModel.TaskbarProgressVisible
+                        ? TaskbarItemProgressState.Normal
+                        : TaskbarItemProgressState.None;
+                }
+                else if (e.PropertyName == nameof(QualityReviewViewModel.TaskbarProgressValue))
+                {
+                    MainTaskbarItemInfo.ProgressValue = _qualityViewModel.TaskbarProgressValue;
+                }
+            };
 
             // attach a few helper handlers once the grid exists
             DataGrid.PreviewKeyDown += OnDataGridPreviewKeyDown;
@@ -883,7 +1000,9 @@ public partial class MainWindow : Window
         _currentFilePath = filePath;
         _currentFilePaths = new[] { filePath };
         _hasUnsavedChanges = false;
+        _pendingEditCount = 0;
         UpdateWindowTitle();
+        UpdatePendingChangesTray();
         EnableSaveMenuItems();
 
         UpdateFormatBadge(format);
@@ -893,6 +1012,8 @@ public partial class MainWindow : Window
 
         // Notify Quality panel of new file
         _qualityViewModel?.SetFilePath(filePath, csvOptions, jsonOptions);
+        if (_totalRowCount <= AutoProfileRowThreshold)
+            _qualityViewModel?.StartAutoAnalyze();
         
         StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)}{parquetPartsSuffix} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
 
@@ -978,7 +1099,9 @@ public partial class MainWindow : Window
             await _parquetService.SaveFileAsync(filePath, _originalData);
             
             _hasUnsavedChanges = false;
+            _pendingEditCount = 0;
             UpdateWindowTitle();
+            UpdatePendingChangesTray();
             
             StatusText.Text = $"Saved {System.IO.Path.GetFileName(filePath)} — {_originalData.Rows.Count:N0} rows";
 
@@ -1001,8 +1124,23 @@ public partial class MainWindow : Window
         if (e.EditAction == DataGridEditAction.Commit)
         {
             _hasUnsavedChanges = true;
+            _pendingEditCount++;
             UpdateWindowTitle();
+            UpdatePendingChangesTray();
         }
+    }
+
+    private void UpdatePendingChangesTray()
+    {
+        if (_hasUnsavedChanges && _pendingEditCount > 0)
+        {
+            PendingChangesBadge.Visibility = Visibility.Visible;
+            PendingChangesText.Text = $"{_pendingEditCount} pending change{(_pendingEditCount == 1 ? string.Empty : "s")}";
+            return;
+        }
+
+        PendingChangesBadge.Visibility = Visibility.Collapsed;
+        PendingChangesText.Text = string.Empty;
     }
 
     private async void OnExportAsClick(object sender, RoutedEventArgs e)
@@ -1060,17 +1198,41 @@ public partial class MainWindow : Window
         }
     }
     
-    private DataFileInfo? _lastSchemaInfo;
-    private string? _lastSchemaFilePath;
-
     private void UpdateSchemaPanel(string filePath, DataFileInfo fileInfo)
     {
         _lastSchemaInfo = fileInfo;
         _lastSchemaFilePath = filePath;
         CopySchemaButton.IsEnabled = true;
 
+        RenderSchemaPanel();
+    }
+
+    private void OnSchemaSearchTextChanged(object sender, TextChangedEventArgs e)
+    {
+        RenderSchemaPanel();
+    }
+
+    private void RenderSchemaPanel()
+    {
         SchemaPanel.Children.Clear();
-        
+
+        if (_lastSchemaInfo == null || _lastSchemaFilePath == null)
+        {
+            SchemaPanel.Children.Add(new TextBlock
+            {
+                Text = "Schema",
+                FontWeight = FontWeights.Bold,
+                FontSize = 16,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+            SchemaPanel.Children.Add(new TextBlock
+            {
+                Text = "No file loaded",
+                Foreground = Brushes.Gray
+            });
+            return;
+        }
+
         // Title
         var titleBlock = new TextBlock
         {
@@ -1082,10 +1244,10 @@ public partial class MainWindow : Window
         SchemaPanel.Children.Add(titleBlock);
         
         // File info
-        var formatName = Services.FileFormatDetector.GetFormatDisplayName(fileInfo.Format);
+        var formatName = Services.FileFormatDetector.GetFormatDisplayName(_lastSchemaInfo.Format);
         var fileBlock = new TextBlock
         {
-            Text = $"📁 File: {System.IO.Path.GetFileName(filePath)}",
+            Text = $"📁 File: {System.IO.Path.GetFileName(_lastSchemaFilePath)}",
             Margin = new Thickness(0, 2, 0, 2)
         };
         SchemaPanel.Children.Add(fileBlock);
@@ -1099,29 +1261,75 @@ public partial class MainWindow : Window
         
         var rowBlock = new TextBlock
         {
-            Text = $"📊 Rows: {fileInfo.RowCount:N0}",
+            Text = $"📊 Rows: {_lastSchemaInfo.RowCount:N0}",
             Margin = new Thickness(0, 2, 0, 2)
         };
         SchemaPanel.Children.Add(rowBlock);
+
+        var searchText = SchemaSearchBox?.Text?.Trim() ?? string.Empty;
+        var filteredColumns = _lastSchemaInfo.Columns
+            .Where(c => string.IsNullOrEmpty(searchText)
+                || c.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+                || c.Type.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+            .ToList();
         
         var colHeaderBlock = new TextBlock
         {
-            Text = $"📋 Columns ({fileInfo.Columns.Count}):",
+            Text = string.IsNullOrWhiteSpace(searchText)
+                ? $"📋 Columns ({_lastSchemaInfo.Columns.Count}):"
+                : $"📋 Columns ({filteredColumns.Count} of {_lastSchemaInfo.Columns.Count}):",
             Margin = new Thickness(0, 8, 0, 4)
         };
         SchemaPanel.Children.Add(colHeaderBlock);
-        
-        // Column list
-        foreach (var column in fileInfo.Columns)
+
+        if (filteredColumns.Count == 0)
+        {
+            SchemaPanel.Children.Add(new TextBlock
+            {
+                Text = "No columns match this search.",
+                Margin = new Thickness(8, 2, 0, 2),
+                Foreground = Brushes.Gray
+            });
+            return;
+        }
+
+        foreach (var column in filteredColumns)
         {
             var icon = GetTypeIcon(column.Type);
-            var colBlock = new TextBlock
+            var jumpButton = new Button
             {
-                Text = $"  {icon} {column.Name} ({column.Type})",
-                Margin = new Thickness(8, 2, 0, 2)
+                Content = new TextBlock
+                {
+                    Text = $"{icon} {column.Name} ({column.Type})",
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                },
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(2, 1, 0, 1),
+                Padding = new Thickness(6, 2, 6, 2),
+                Background = Brushes.Transparent,
+                BorderBrush = Brushes.Transparent,
+                Cursor = Cursors.Hand,
+                ToolTip = $"Jump to column '{column.Name}'",
+                Tag = column.Name
             };
-            SchemaPanel.Children.Add(colBlock);
+            jumpButton.Click += OnSchemaColumnJumpClick;
+            SchemaPanel.Children.Add(jumpButton);
         }
+    }
+
+    private void OnSchemaColumnJumpClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string columnName)
+            return;
+
+        var targetColumn = DataGrid.Columns.FirstOrDefault(c => c.SortMemberPath == columnName);
+        if (targetColumn == null)
+            return;
+
+        if (DataGrid.Items.Count > 0)
+            DataGrid.ScrollIntoView(DataGrid.Items[0], targetColumn);
+
+        StatusText.Text = $"Jumped to column {columnName}";
     }
 
     private void OnCopySchemaClick(object sender, RoutedEventArgs e)
@@ -1486,14 +1694,16 @@ public partial class MainWindow : Window
     private void RestoreFilterState()
     {
         // Re-apply saved column filters whose column still exists
+        // Note: Distinct values will be loaded on-demand when user opens filter popup (async).
+        // For now, just restore the selection state and mark filters as needing loading.
         foreach (var kvp in _savedColumnFilterSelections)
         {
             if (_columnFilters.TryGetValue(kvp.Key, out var state))
             {
-                // Collect distinct values first so we can apply the saved selection
-                CollectDistinctValues(kvp.Key, state);
+                // Restore saved selection (will be applied once values are loaded)
                 state.SelectedValues = new HashSet<string>(kvp.Value);
                 state.IsActive = true;
+                state.IsLoaded = false;  // Mark for async loading on first filter popup open
                 UpdateFilterIndicator(kvp.Key);
             }
         }
@@ -1605,65 +1815,60 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnFilterButtonClick(object sender, RoutedEventArgs e)
+    private async void OnFilterButtonClick(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not string columnName) return;
         if (!_columnFilters.TryGetValue(columnName, out var filterState)) return;
 
-        // Lazy-load distinct values on first open
+        // Lazy-load distinct values on first open from full dataset (async)
         if (!filterState.IsLoaded)
-            CollectDistinctValues(columnName, filterState);
+        {
+            button.IsEnabled = false;
+            button.Content = "✓";  // Show loading indicator
+            try
+            {
+                await CollectDistinctValuesAsync(columnName, filterState);
+            }
+            finally
+            {
+                button.IsEnabled = true;
+                button.Content = "🔽";  // Restore filter icon
+            }
+        }
 
         ShowFilterPopup(button, columnName, filterState);
     }
 
-    private void CollectDistinctValues(string columnName, ColumnFilterState state)
+    private async Task CollectDistinctValuesAsync(string columnName, ColumnFilterState state)
     {
-        if (_originalData == null || state.IsLoaded) return;
+        if (state.IsLoaded || string.IsNullOrEmpty(_currentFilePath)) return;
 
-        var distinctValues = new HashSet<string>();
-        bool hasBlank = false;
-        bool truncated = false;
-        int totalDistinct = 0;
-
-        foreach (DataRow row in _originalData.Rows)
+        try
         {
-            var val = row[columnName];
-            var strVal = val?.ToString();
-            if (val == null || val == DBNull.Value || string.IsNullOrWhiteSpace(strVal))
-            {
-                hasBlank = true;
-            }
-            else
-            {
-                var nonBlank = strVal!;
-                if (!distinctValues.Contains(nonBlank))
-                {
-                    if (distinctValues.Count < MaxDistinctValues)
-                    {
-                        distinctValues.Add(nonBlank);
-                    }
-                    else
-                    {
-                        truncated = true;
-                    }
-                    totalDistinct++;
-                }
-            }
+            // Call async service method to get distinct values from full dataset
+            var (values, totalDistinct, truncated) = await _parquetService!.GetDistinctValuesAsync(
+                filePath: _currentFilePath,
+                columnName: columnName,
+                csvOptions: _activeCsvOptions,
+                jsonOptions: _activeJsonOptions,
+                maxValues: MaxDistinctValues,
+                cancellationToken: default);
+
+            // Update state with results
+            state.AllValues = values;
+            state.IsTruncated = truncated;
+            state.TotalDistinctCount = totalDistinct;
+
+            // Default: all values selected (no filter)
+            if (state.SelectedValues.Count == 0)
+                state.SelectedValues = new HashSet<string>(values);
+
+            state.IsLoaded = true;
         }
-
-        var limited = distinctValues.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList();
-
-        if (hasBlank)
-            limited.Insert(0, BlankDisplayValue);
-
-        state.AllValues = limited;
-        state.IsTruncated = truncated;
-        state.TotalDistinctCount = totalDistinct == 0 ? distinctValues.Count : totalDistinct;
-        // Default: all values selected (no filter)
-        if (state.SelectedValues.Count == 0)
-            state.SelectedValues = new HashSet<string>(limited);
-        state.IsLoaded = true;
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to load filter values: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void ShowFilterPopup(Button anchor, string columnName, ColumnFilterState filterState)
@@ -2075,12 +2280,44 @@ public partial class MainWindow : Window
 
             UpdateFilterBadge();
             UpdateRowCount();
+
+            // Fire-and-forget: Query full dataset for filtered count if filters are active
+            if ((columnCount > 0 || hasGlobal) && _totalRowCount > _currentRowLimit)
+            {
+                _ = UpdateFullDatasetFilterCount();
+            }
         }
         catch
         {
             // If filter fails, clear it
             _dataView.RowFilter = string.Empty;
             StatusText.Text = "Filter error - cleared";
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously queries the full dataset to show how many rows match the current filters.
+    /// Updates the status text to show the difference between batch and full dataset.
+    /// </summary>
+    private async Task UpdateFullDatasetFilterCount()
+    {
+        try
+        {
+            var fullDatasetCount = await GetFilteredRowCountAsync();
+            var batchCount = _dataView?.Count ?? 0;
+
+            if (fullDatasetCount > batchCount)
+            {
+                StatusText.Text = $"{batchCount:N0} shown (filtered to {fullDatasetCount:N0} in full dataset of {_totalRowCount:N0})";
+            }
+            else if (fullDatasetCount > 0)
+            {
+                StatusText.Text = $"{fullDatasetCount:N0} matches in full dataset";
+            }
+        }
+        catch
+        {
+            // Silent fail - keep existing status
         }
     }
     
@@ -2134,6 +2371,120 @@ public partial class MainWindow : Window
         RowCountText.Text = filtered < total
             ? $"{filtered:N0} of {total:N0} rows"
             : $"{total:N0} rows";
+    }
+
+    /// <summary>
+    /// Builds a GridQueryState from current filter and sort state.
+    /// Ready for use with ExecuteGridQueryAsync() for SQL-backed queries.
+    /// </summary>
+    private GridQueryState BuildCurrentQueryState()
+    {
+        var columnFilters = new Dictionary<string, HashSet<string>>();
+        
+        foreach (var kvp in _columnFilters)
+        {
+            if (kvp.Value.IsActive && kvp.Value.SelectedValues.Count > 0)
+            {
+                columnFilters[kvp.Key] = new HashSet<string>(kvp.Value.SelectedValues);
+            }
+        }
+
+        var availableColumns = _originalData?.Columns.Cast<DataColumn>()
+            .Where(c => c.ColumnName != "__RowNumber")
+            .Select(c => c.ColumnName)
+            .ToList() ?? new();
+
+        return new GridQueryState
+        {
+            SourceFilePath = _currentFilePath ?? string.Empty,
+            CsvOptions = _activeCsvOptions,
+            JsonOptions = _activeJsonOptions,
+            ColumnFilters = columnFilters,
+            GlobalSearch = GlobalSearchBox?.Text ?? string.Empty,
+            Sort = _dataView?.Sort ?? string.Empty,
+            RowLimit = _currentRowLimit,
+            RowOffset = 0,
+            AvailableColumns = availableColumns,
+            TotalRowCount = _totalRowCount
+        };
+    }
+
+    /// <summary>
+    /// Queries the full dataset to get the filtered row count (without paging).
+    /// Used for display and to determine if additional data is available beyond the current batch.
+    /// </summary>
+    private async Task<long> GetFilteredRowCountAsync()
+    {
+        if (string.IsNullOrEmpty(_currentFilePath))
+            return _totalRowCount;
+
+        try
+        {
+            var queryState = BuildCurrentQueryState();
+            
+            // Execute a COUNT query against the full dataset
+            using var connection = new DuckDB.NET.Data.DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(_currentFilePath, _activeCsvOptions);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
+            var format = FileFormatDetector.DetectFormat(_currentFilePath);
+
+            if (format == SupportedFileFormat.Excel)
+                await _parquetService!.EnsureExcelExtensionAsync(connection);
+
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(
+                normalizedPath, format, _activeCsvOptions, _activeJsonOptions);
+
+            // Build WHERE clause (similar to ExecuteGridQueryAsync)
+            var conditions = new List<string>();
+
+            foreach (var kvp in queryState.ColumnFilters.Where(kv => kv.Value.Count > 0))
+            {
+                var columnName = kvp.Key;
+                var selectedValues = kvp.Value;
+                var nonBlankValues = selectedValues.Where(v => v != "(Blank)").ToList();
+                var includeBlank = selectedValues.Contains("(Blank)");
+
+                var colConditions = new List<string>();
+                if (nonBlankValues.Count > 0)
+                {
+                    var escapedValues = string.Join(",", nonBlankValues.Select(v => $"'{v.Replace("'", "''")}'"));
+                    colConditions.Add($"CAST(\"{columnName}\" AS VARCHAR) IN ({escapedValues})");
+                }
+                if (includeBlank)
+                {
+                    colConditions.Add($"\"{columnName}\" IS NULL");
+                }
+
+                if (colConditions.Count > 0)
+                    conditions.Add($"({string.Join(" OR ", colConditions)})");
+            }
+
+            if (!string.IsNullOrWhiteSpace(queryState.GlobalSearch))
+            {
+                var searchTerm = $"%{queryState.GlobalSearch.Replace("'", "''")}%";
+                var searchConditions = new List<string>();
+                foreach (var col in queryState.AvailableColumns)
+                {
+                    searchConditions.Add($"CAST(\"{col}\" AS VARCHAR) LIKE '{searchTerm}'");
+                }
+                if (searchConditions.Count > 0)
+                    conditions.Add($"({string.Join(" OR ", searchConditions)})");
+            }
+
+            var whereClause = conditions.Count > 0 ? $" WHERE {string.Join(" AND ", conditions)}" : "";
+            var countSql = $"SELECT COUNT(*) FROM {readerExpr}{whereClause}";
+
+            using var countCmd = new DuckDB.NET.Data.DuckDBCommand(countSql, connection);
+            var result = await countCmd.ExecuteScalarAsync();
+            return Convert.ToInt64(result ?? 0);
+        }
+        catch
+        {
+            // If count query fails, return the loaded batch size
+            return _dataView?.Count ?? 0;
+        }
     }
     
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
@@ -2197,6 +2548,305 @@ public partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine($"Error saving recent files: {ex.Message}");
         }
     }
+
+    private void SaveWorkspaceState()
+    {
+        try
+        {
+            var state = new WorkspaceState
+            {
+                FilePaths = _currentFilePaths?.ToList() ?? [],
+                GlobalSearch = GlobalSearchBox.Text ?? string.Empty,
+                Sort = _dataView?.Sort ?? string.Empty,
+                SchemaSearch = SchemaSearchBox.Text ?? string.Empty,
+                IsSchemaPaneVisible = SchemaPane.Visibility == Visibility.Visible,
+                IsQualityPaneVisible = QualityReviewPanel.Visibility == Visibility.Visible,
+                SchemaPaneWidth = SchemaPaneColumn.Width.Value,
+                QualityPaneWidth = QualityPaneColumn.Width.Value,
+                SavedAtUtc = DateTime.UtcNow
+            };
+
+            var dir = Path.GetDirectoryName(WorkspaceStatePath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            File.WriteAllText(WorkspaceStatePath, JsonSerializer.Serialize(state));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error saving workspace state: {ex.Message}");
+        }
+    }
+
+    private async Task RestoreWorkspaceStateAsync()
+    {
+        try
+        {
+            if (!File.Exists(WorkspaceStatePath))
+                return;
+
+            var json = await File.ReadAllTextAsync(WorkspaceStatePath);
+            var state = JsonSerializer.Deserialize<WorkspaceState>(json);
+            if (state == null || state.FilePaths.Count == 0)
+                return;
+
+            var existingPaths = state.FilePaths.Where(File.Exists).ToList();
+            if (existingPaths.Count == 0)
+                return;
+
+            if (existingPaths.Count > 1 && existingPaths.All(IsParquetPath))
+                await LoadParquetFilesAsSingleTableAsync(existingPaths);
+            else
+                await OpenWithRecommendedSettingsAsync(existingPaths[0]);
+
+            if (!string.IsNullOrWhiteSpace(state.SchemaSearch))
+                SchemaSearchBox.Text = state.SchemaSearch;
+
+            if (!string.IsNullOrWhiteSpace(state.GlobalSearch))
+                GlobalSearchBox.Text = state.GlobalSearch;
+
+            if (!string.IsNullOrWhiteSpace(state.Sort) && _dataView != null)
+            {
+                try
+                {
+                    _dataView.Sort = state.Sort;
+                }
+                catch
+                {
+                    // Ignore sort restore failures when schemas differ from prior session.
+                }
+            }
+
+            ApplyPaneLayoutState(state);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error restoring workspace state: {ex.Message}");
+        }
+    }
+
+    private void ApplyPaneLayoutState(WorkspaceState state)
+    {
+        ToggleSchemaPaneMenuItem.IsChecked = state.IsSchemaPaneVisible;
+        ToggleQualityPanelMenuItem.IsChecked = state.IsQualityPaneVisible;
+
+        if (state.IsSchemaPaneVisible)
+        {
+            SchemaPane.Visibility = Visibility.Visible;
+            SchemaSplitter.Visibility = Visibility.Visible;
+            SchemaPaneColumn.MinWidth = 200;
+            SchemaPaneColumn.Width = new GridLength(Math.Max(200, state.SchemaPaneWidth));
+            SchemaSplitterColumn.Width = new GridLength(5);
+        }
+        else
+        {
+            SchemaPane.Visibility = Visibility.Collapsed;
+            SchemaSplitter.Visibility = Visibility.Collapsed;
+            SchemaPaneColumn.MinWidth = 0;
+            SchemaPaneColumn.Width = new GridLength(0);
+            SchemaSplitterColumn.Width = new GridLength(0);
+        }
+
+        if (state.IsQualityPaneVisible)
+        {
+            QualityReviewPanel.Visibility = Visibility.Visible;
+            QualitySplitter.Visibility = Visibility.Visible;
+            QualitySplitterColumn.Width = new GridLength(5);
+            QualityPaneColumn.MinWidth = 300;
+            QualityPaneColumn.Width = new GridLength(Math.Max(300, state.QualityPaneWidth));
+            ClampQualityPaneWidth();
+        }
+        else
+        {
+            QualityReviewPanel.Visibility = Visibility.Collapsed;
+            QualitySplitter.Visibility = Visibility.Collapsed;
+            QualitySplitterColumn.Width = new GridLength(0);
+            QualityPaneColumn.MinWidth = 0;
+            QualityPaneColumn.Width = new GridLength(0);
+        }
+    }
+
+    private void OnSaveWorkspaceSnapshotClick(object sender, RoutedEventArgs e)
+    {
+        SaveWorkspaceState();
+        StatusText.Text = "Workspace snapshot saved";
+    }
+
+    private async void OnRestoreWorkspaceSnapshotClick(object sender, RoutedEventArgs e)
+    {
+        await RestoreWorkspaceStateAsync();
+        StatusText.Text = "Workspace snapshot restored";
+    }
+
+    private async void OnSaveCurrentViewClick(object sender, RoutedEventArgs e)
+    {
+        if (_dataView == null)
+        {
+            StatusText.Text = "Open a dataset before saving a view";
+            return;
+        }
+
+        var view = new SavedView
+        {
+            Name = $"View {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+            Description = string.IsNullOrWhiteSpace(GlobalSearchBox.Text)
+                ? "Saved filter/sort state"
+                : $"Saved with search '{GlobalSearchBox.Text}'",
+            ColumnFilters = _columnFilters
+                .Where(kvp => kvp.Value.IsActive)
+                .ToDictionary(k => k.Key, v => new HashSet<string>(v.Value.SelectedValues)),
+            GlobalSearch = GlobalSearchBox.Text ?? string.Empty,
+            Sort = _dataView.Sort ?? string.Empty,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+
+        await _workspaceService.SaveViewAsync(view);
+        RefreshSavedViewsMenu();
+        StatusText.Text = $"Saved view '{view.Name}'";
+    }
+
+    private async void OnClearSavedViewsClick(object sender, RoutedEventArgs e)
+    {
+        var existing = _workspaceService.GetSavedViews().ToList();
+        foreach (var view in existing)
+            await _workspaceService.DeleteViewAsync(view.Name);
+
+        RefreshSavedViewsMenu();
+        StatusText.Text = "Cleared saved views";
+    }
+
+    private void RefreshSavedViewsMenu()
+    {
+        SavedViewsMenuItem.Items.Clear();
+
+        var views = _workspaceService.GetSavedViews()
+            .OrderByDescending(v => v.CreatedAtUtc)
+            .ToList();
+
+        if (views.Count == 0)
+        {
+            SavedViewsMenuItem.Items.Add(new MenuItem
+            {
+                Header = "(No saved views)",
+                IsEnabled = false
+            });
+            return;
+        }
+
+        foreach (var savedView in views)
+        {
+            var item = new MenuItem
+            {
+                Header = savedView.Name,
+                ToolTip = savedView.Description,
+                Tag = savedView
+            };
+            item.Click += OnApplySavedViewClick;
+            SavedViewsMenuItem.Items.Add(item);
+        }
+    }
+
+    private void OnApplySavedViewClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem || menuItem.Tag is not SavedView savedView)
+            return;
+
+        foreach (var kvp in _columnFilters)
+        {
+            kvp.Value.IsActive = false;
+            kvp.Value.SelectedValues.Clear();
+            UpdateFilterIndicator(kvp.Key);
+        }
+
+        foreach (var filter in savedView.ColumnFilters)
+        {
+            if (!_columnFilters.TryGetValue(filter.Key, out var state))
+                continue;
+
+            state.SelectedValues = new HashSet<string>(filter.Value);
+            state.IsActive = true;
+            UpdateFilterIndicator(filter.Key);
+        }
+
+        _savedSort = savedView.Sort;
+        if (_dataView != null && !string.IsNullOrWhiteSpace(savedView.Sort))
+        {
+            try
+            {
+                _dataView.Sort = savedView.Sort;
+            }
+            catch
+            {
+                // Ignore stale sort columns when schema changed.
+            }
+        }
+
+        GlobalSearchBox.TextChanged -= OnGlobalSearchTextChanged;
+        GlobalSearchBox.Text = savedView.GlobalSearch;
+        GlobalSearchBox.TextChanged += OnGlobalSearchTextChanged;
+
+        ApplyAllFilters();
+        StatusText.Text = $"Applied saved view '{savedView.Name}'";
+    }
+
+    private void UpdateJumpList()
+    {
+        try
+        {
+            var app = Application.Current;
+            if (app == null)
+                return;
+
+            var jumpList = JumpList.GetJumpList(app) ?? new JumpList
+            {
+                ShowRecentCategory = false,
+                ShowFrequentCategory = false
+            };
+
+            jumpList.JumpItems.Clear();
+
+            var exePath = Environment.ProcessPath;
+            if (!string.IsNullOrWhiteSpace(exePath))
+            {
+                jumpList.JumpItems.Add(new JumpTask
+                {
+                    Title = "Restore Last Workspace",
+                    Description = "Restore your last workspace snapshot",
+                    ApplicationPath = exePath,
+                    Arguments = "--restore-workspace",
+                    CustomCategory = "Quick Actions"
+                });
+
+                jumpList.JumpItems.Add(new JumpTask
+                {
+                    Title = "Compare With Last File",
+                    Description = "Open your most recent file and compare with the previous one",
+                    ApplicationPath = exePath,
+                    Arguments = "--compare-with-last",
+                    CustomCategory = "Quick Actions"
+                });
+
+                jumpList.JumpItems.Add(new JumpTask
+                {
+                    Title = "Open Latest Report",
+                    Description = "Open the most recently exported HTML quality report",
+                    ApplicationPath = exePath,
+                    Arguments = "--open-latest-report",
+                    CustomCategory = "Quick Actions"
+                });
+            }
+
+            foreach (var path in _recentFiles.Where(File.Exists).Take(8))
+                jumpList.JumpItems.Add(new JumpPath { Path = path });
+
+            JumpList.SetJumpList(app, jumpList);
+            jumpList.Apply();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error updating jump list: {ex.Message}");
+        }
+    }
     
     private void AddToRecentFiles(string filePath)
     {
@@ -2252,6 +2902,8 @@ public partial class MainWindow : Window
             };
             RecentFilesMenuItem.Items.Add(clearItem);
         }
+
+        UpdateJumpList();
     }
     
     private async void OnRecentFileClick(object sender, RoutedEventArgs e)
@@ -2260,17 +2912,7 @@ public partial class MainWindow : Window
         {
             if (System.IO.File.Exists(filePath))
             {
-                var format = Services.FileFormatDetector.DetectFormat(filePath);
-                if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
-                {
-                    var result = ShowFileImportDialog(filePath, format);
-                    if (!result.Imported) return;
-                    await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
-                }
-                else
-                {
-                    await LoadFileAsync(filePath);
-                }
+                await OpenWithRecommendedSettingsAsync(filePath);
             }
             else
             {
@@ -2280,6 +2922,37 @@ public partial class MainWindow : Window
                 UpdateRecentFilesMenu();
             }
         }
+    }
+
+    private async Task CompareWithLastRecentAsync()
+    {
+        if (_recentFiles.Count < 2)
+        {
+            StatusText.Text = "Need at least two recent files to run comparison";
+            return;
+        }
+
+        var primary = _recentFiles.FirstOrDefault(File.Exists);
+        var comparison = _recentFiles.Skip(1).FirstOrDefault(File.Exists);
+        if (string.IsNullOrWhiteSpace(primary) || string.IsNullOrWhiteSpace(comparison))
+        {
+            StatusText.Text = "No valid recent files found for comparison";
+            return;
+        }
+
+        await OpenWithRecommendedSettingsAsync(primary);
+
+        if (_qualityViewModel == null)
+        {
+            StatusText.Text = "Quality panel unavailable for comparison";
+            return;
+        }
+
+        if (!_qualityViewModel.HasProfile)
+            await _qualityViewModel.AnalyzeCommand.ExecuteAsync(null);
+
+        await _qualityViewModel.CompareWithFilePathAsync(comparison);
+        StatusText.Text = $"Compared {Path.GetFileName(primary)} with {Path.GetFileName(comparison)}";
     }
 
     // ── Drag-and-Drop ───────────────────────────────────────────────────
@@ -2300,13 +2973,15 @@ public partial class MainWindow : Window
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
 
-        var files = (string[])e.Data.GetData(DataFormats.FileDrop);
-        if (files == null || files.Length == 0) return;
+        var droppedPaths = (string[])e.Data.GetData(DataFormats.FileDrop);
+        if (droppedPaths == null || droppedPaths.Length == 0) return;
 
-        if (files.Length > 1)
-            StatusText.Text = $"{files.Length} files dropped — opening the first one only";
-
-        var filePath = files[0];
+        var candidateFiles = ResolveDroppedFiles(droppedPaths);
+        if (candidateFiles.Count == 0)
+        {
+            StatusText.Text = "No supported files found in the dropped selection";
+            return;
+        }
 
         // Defer past the drag-drop event so the DnD machinery fully releases before
         // opening any modal dialog. Without this, WPF's drag handling can minimize the
@@ -2314,20 +2989,16 @@ public partial class MainWindow : Window
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Input);
         Activate();
 
-        if (!ConfirmUnknownExtension(filePath)) return;
-
-        var format = Services.FileFormatDetector.DetectFormat(filePath);
-
-        if (format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv || format == SupportedFileFormat.Json)
+        if (candidateFiles.Count > 1 && candidateFiles.All(IsParquetPath))
         {
-            var result = ShowFileImportDialog(filePath, format);
-            if (!result.Imported) return;
-            await LoadFileAsync(filePath, result.CsvOptions, jsonOptions: result.JsonOptions);
+            await LoadParquetFilesAsSingleTableAsync(candidateFiles);
+            return;
         }
-        else
-        {
-            await LoadFileAsync(filePath);
-        }
+
+        if (candidateFiles.Count > 1)
+            StatusText.Text = $"Dropped {candidateFiles.Count} items - opening the first supported file";
+
+        await OpenWithRecommendedSettingsAsync(candidateFiles[0]);
     }
 
     // ── Import Options (re-import CSV/TSV with custom settings) ─────────
@@ -2546,11 +3217,26 @@ public partial class MainWindow : Window
     {
         LoadingText.Text = message;
         LoadingOverlay.Visibility = Visibility.Visible;
+        MainTaskbarItemInfo.ProgressState = TaskbarItemProgressState.Indeterminate;
     }
 
     private void HideLoading()
     {
         LoadingOverlay.Visibility = Visibility.Collapsed;
+        MainTaskbarItemInfo.ProgressState = TaskbarItemProgressState.None;
+    }
+
+    private sealed class WorkspaceState
+    {
+        public List<string> FilePaths { get; set; } = [];
+        public string GlobalSearch { get; set; } = string.Empty;
+        public string Sort { get; set; } = string.Empty;
+        public string SchemaSearch { get; set; } = string.Empty;
+        public bool IsSchemaPaneVisible { get; set; } = true;
+        public bool IsQualityPaneVisible { get; set; } = true;
+        public double SchemaPaneWidth { get; set; } = 250;
+        public double QualityPaneWidth { get; set; } = 420;
+        public DateTime SavedAtUtc { get; set; }
     }
 
     // ── Format Badge ────────────────────────────────────────────────────

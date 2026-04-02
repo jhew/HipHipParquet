@@ -5,6 +5,7 @@ using HipHipParquet.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 
 namespace HipHipParquet.ViewModels;
@@ -165,6 +166,13 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     // Active JSON import options (set when a JSON file is loaded with custom settings)
     public JsonImportOptions? ActiveJsonOptions { get; private set; }
 
+    // Taskbar progress state for long-running operations
+    [ObservableProperty]
+    private double taskbarProgressValue;
+
+    [ObservableProperty]
+    private bool taskbarProgressVisible;
+
     // Convenience accessor: typed logger for transient ParquetService instances created inside this ViewModel.
     // No real logger factory is registered in this app, so we use the null logger for the service tier.
     private static Microsoft.Extensions.Logging.ILogger<ParquetService> ParquetServiceLogger =>
@@ -216,6 +224,8 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         IsAnalyzing = true;
         CanCancel = true;
         AnalysisProgress = 0;
+        TaskbarProgressValue = 0;
+        TaskbarProgressVisible = true;
         StatusMessage = "Analyzing file...";
 
         try
@@ -223,9 +233,11 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             // Report per-column progress: map 0..N columns to the 10-60 % range.
             var columnProgress = new Progress<(int Current, int Total)>(p =>
             {
-                AnalysisProgress = p.Total > 0
+                var progress = p.Total > 0
                     ? 10.0 + (double)p.Current / p.Total * 50.0
                     : 10.0;
+                AnalysisProgress = progress;
+                TaskbarProgressValue = progress / 100.0;
                 StatusMessage = $"Profiling column {p.Current} of {p.Total}...";
             });
 
@@ -276,22 +288,26 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             HasProfile = true;
             ExportHtmlReportCommand.NotifyCanExecuteChanged();
             AnalysisProgress = 100;
+            TaskbarProgressValue = 1.0;
             StatusMessage = $"Analysis complete — {profile.ColumnCount} columns, {profile.RowCount:N0} rows, score: {profile.OverallScore.Total:F0}/100";
         }
         catch (OperationCanceledException)
         {
             StatusMessage = "Analysis cancelled.";
             AnalysisProgress = 0;
+            TaskbarProgressValue = 0;
         }
         catch (Exception ex)
         {
             StatusMessage = $"Analysis failed: {ex.Message}";
             _logger.LogError(ex, "Quality analysis failed for {FilePath}", CurrentFilePath);
+            TaskbarProgressValue = 0;
         }
         finally
         {
             IsAnalyzing = false;
             CanCancel = false;
+            TaskbarProgressVisible = false;
         }
     }
 
@@ -315,12 +331,20 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         if (openFileDialog.ShowDialog() != true || FileProfile == null)
             return;
 
+        await CompareWithFilePathAsync(openFileDialog.FileName);
+    }
+
+    public async Task CompareWithFilePathAsync(string comparisonFilePath)
+    {
+        if (FileProfile == null || string.IsNullOrWhiteSpace(comparisonFilePath))
+            return;
+
         IsAnalyzing = true;
         StatusMessage = "Comparing files...";
 
         try
         {
-            var compPath = openFileDialog.FileName;
+            var compPath = comparisonFilePath;
             ComparisonFileName = System.IO.Path.GetFileName(compPath);
 
             using var parquetService = new ParquetService(ParquetServiceLogger);
@@ -567,6 +591,15 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             var html = _reportService.GenerateHtmlReport(FileProfile, Findings.ToList(), Comparison);
             await System.IO.File.WriteAllTextAsync(saveDialog.FileName, html);
 
+            var latestReportPointerPath = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "HipHipParquet",
+                "latest-report.txt");
+            var pointerDir = System.IO.Path.GetDirectoryName(latestReportPointerPath);
+            if (!string.IsNullOrEmpty(pointerDir))
+                Directory.CreateDirectory(pointerDir);
+            await System.IO.File.WriteAllTextAsync(latestReportPointerPath, saveDialog.FileName);
+
             StatusMessage = $"Report exported to {System.IO.Path.GetFileName(saveDialog.FileName)}";
 
             // Open in default browser
@@ -637,9 +670,20 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         IsGroupByExpanded = false;
         IsColumnProfilesExpanded = true;
         GroupByStatusMessage = "";
-        StatusMessage = "File loaded. Click Analyze to profile.";
+        StatusMessage = "File loaded. Profiling can start automatically.";
         AnalyzeCommand.NotifyCanExecuteChanged();
         ExportHtmlReportCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Starts analysis in the background when a file is loaded and no analysis is currently running.
+    /// </summary>
+    public void StartAutoAnalyze()
+    {
+        if (!CanAnalyze())
+            return;
+
+        _ = AnalyzeAsync();
     }
 
     /// <summary>

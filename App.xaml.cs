@@ -63,12 +63,20 @@ public partial class App : Application
             // Check if a file path was passed as a command-line argument
             if (e.Args.Length > 0)
             {
-                var filePath = System.IO.Path.GetFullPath(e.Args[0]);
-                
-                if (System.IO.File.Exists(filePath))
+                var arg0 = e.Args[0];
+                if (string.Equals(arg0, "--compare-with-last", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Set the pending file before showing the window
-                    _ = mainWindow.LoadFileFromCommandLineAsync(filePath);
+                    _ = mainWindow.QueueStartupCommandAsync("compare-with-last");
+                }
+                else if (string.Equals(arg0, "--open-latest-report", StringComparison.OrdinalIgnoreCase))
+                {
+                    TryOpenLatestReport();
+                }
+                else if (!string.Equals(arg0, "--restore-workspace", StringComparison.OrdinalIgnoreCase))
+                {
+                    var filePath = System.IO.Path.GetFullPath(arg0);
+                    if (System.IO.File.Exists(filePath))
+                        _ = mainWindow.LoadFileFromCommandLineAsync(filePath);
                 }
             }
             
@@ -78,6 +86,34 @@ public partial class App : Application
         catch (Exception ex)
         {
             MessageBox.Show($"Startup error: {ex.Message}", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private static void TryOpenLatestReport()
+    {
+        try
+        {
+            var pointerPath = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "HipHipParquet",
+                "latest-report.txt");
+
+            if (!System.IO.File.Exists(pointerPath))
+                return;
+
+            var reportPath = System.IO.File.ReadAllText(pointerPath).Trim();
+            if (!string.IsNullOrWhiteSpace(reportPath) && System.IO.File.Exists(reportPath))
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = reportPath,
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch
+        {
+            // Ignore quick-action launch failures.
         }
     }
 }

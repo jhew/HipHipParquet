@@ -122,15 +122,15 @@
                 </LinearGradientBrush>
             </Border.Background>
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Margin="0,0,0,6">
                     <TextBlock Text="🔍 Quality Review" FontSize="16" FontWeight="Bold" Foreground="White"/>
                     <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="#CCCCCC" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Button Content="Analyze" 
                             Command="{Binding AnalyzeCommand}" 
                             Background="White" Foreground="#512BD4" 
