@@ -100,6 +100,12 @@
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
+                <MenuItem Header="Check for _Updates..." Click="OnCheckForUpdatesClick">
+                    <MenuItem.Icon>
+                        <TextBlock Text="🔄" FontSize="14"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
                 <MenuItem Header="_About HipHipParquet..." Click="OnAboutClick">
                     <MenuItem.Icon>
                         <TextBlock Text="ℹ" FontSize="14"/>
@@ -113,7 +119,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="SchemaPaneColumn" Width="250" MinWidth="200"/>
                 <ColumnDefinition x:Name="SchemaSplitterColumn" Width="5"/>
-                <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="MainDataColumn" Width="*" MinWidth="520"/>
                 <ColumnDefinition x:Name="QualitySplitterColumn" Width="5"/>
                 <ColumnDefinition x:Name="QualityPaneColumn" Width="420" MinWidth="300"/>
             </Grid.ColumnDefinitions>
@@ -265,6 +271,9 @@
             <GridSplitter x:Name="QualitySplitter" Grid.Column="3" 
                          HorizontalAlignment="Stretch" 
                          Background="#E0E0E0"
+                         ShowsPreview="True"
+                         ResizeBehavior="PreviousAndNext"
+                         DragCompleted="OnQualitySplitterDragCompleted"
                          Visibility="Visible"/>
 
             <!-- Quality Review Panel -->

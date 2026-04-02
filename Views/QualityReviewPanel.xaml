@@ -693,7 +693,7 @@
 
                             <!-- Horizontal + Vertical scrollable table -->
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                                <StackPanel MinWidth="720">
+                                <StackPanel MinWidth="778">
                                     <!-- Table header (sortable columns) -->
                                     <Border Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4,4,0,0">
                                         <Grid>

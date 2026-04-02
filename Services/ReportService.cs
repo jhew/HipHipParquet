@@ -131,7 +131,7 @@ public class ReportService
         sb.AppendLine($"<h2>Column Profiles ({profile.Columns.Count})</h2>");
         sb.AppendLine("<table class=\"columns-table\">");
         sb.AppendLine("<thead><tr>");
-        sb.AppendLine("<th>Column</th><th>Type</th><th>Score</th><th>C</th><th>U</th><th>V</th><th>D</th><th>Nulls</th><th>Distinct</th><th>Min</th><th>Max</th><th>Mean</th><th>Distribution</th>");
+        sb.AppendLine("<th>Column</th><th>Type</th><th>Score</th><th class=\"dim-header\" style=\"color:#4CAF50\" title=\"Completeness\">C</th><th class=\"dim-header\" style=\"color:#2196F3\" title=\"Uniqueness\">U</th><th class=\"dim-header\" style=\"color:#FF9800\" title=\"Validity\">V</th><th class=\"dim-header\" style=\"color:#9C27B0\" title=\"Distribution\">D</th><th>Nulls</th><th>Distinct</th><th>Min</th><th>Max</th><th>Mean</th><th>Distribution</th>");
         sb.AppendLine("</tr></thead>");
         sb.AppendLine("<tbody>");
 
@@ -139,13 +139,13 @@ public class ReportService
         {
             var scoreClass = col.Score.Total >= 80 ? "score-good" : col.Score.Total >= 60 ? "score-warn" : "score-bad";
             sb.AppendLine("<tr>");
-            sb.AppendLine($"<td><strong>{Escape(col.Name)}</strong></td>");
+            sb.AppendLine($"<td><span class=\"col-name\" title=\"{Escape(col.Name)}\">{Escape(col.Name)}</span></td>");
             sb.AppendLine($"<td class=\"type\">{Escape(col.DuckDbType)}</td>");
             sb.AppendLine($"<td><span class=\"score-badge {scoreClass}\">{col.Score.Total:F0}</span></td>");
-            sb.AppendLine($"<td class=\"dim-score\"><div class=\"dim-bar\" style=\"width:{col.Score.Completeness / 25 * 100:F0}%;background:#4CAF50\"></div>{col.Score.Completeness:F0}</td>");
-            sb.AppendLine($"<td class=\"dim-score\"><div class=\"dim-bar\" style=\"width:{col.Score.Uniqueness / 25 * 100:F0}%;background:#2196F3\"></div>{col.Score.Uniqueness:F0}</td>");
-            sb.AppendLine($"<td class=\"dim-score\"><div class=\"dim-bar\" style=\"width:{col.Score.Validity / 25 * 100:F0}%;background:#FF9800\"></div>{col.Score.Validity:F0}</td>");
-            sb.AppendLine($"<td class=\"dim-score\"><div class=\"dim-bar\" style=\"width:{col.Score.Distribution / 25 * 100:F0}%;background:#9C27B0\"></div>{col.Score.Distribution:F0}</td>");
+            sb.AppendLine($"<td class=\"dim-score\" style=\"color:#4CAF50\">{col.Score.Completeness:F0}</td>");
+            sb.AppendLine($"<td class=\"dim-score\" style=\"color:#2196F3\">{col.Score.Uniqueness:F0}</td>");
+            sb.AppendLine($"<td class=\"dim-score\" style=\"color:#FF9800\">{col.Score.Validity:F0}</td>");
+            sb.AppendLine($"<td class=\"dim-score\" style=\"color:#9C27B0\">{col.Score.Distribution:F0}</td>");
             sb.AppendLine($"<td>{col.NullPercentage:F1}%</td>");
             sb.AppendLine($"<td>{col.DistinctCount:N0}</td>");
             sb.AppendLine($"<td>{FormatStat(col)}</td>");
@@ -367,11 +367,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .finding-group.warning { background: #FFF8E1; border-left: 3px solid #FF9800; }
 .finding-group.info { background: #F1F8E9; border-left: 3px solid #4CAF50; }
 .columns-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.columns-table th { text-align: left; padding: 8px 10px; background: #f8f8f8; border-bottom: 2px solid #e0e0e0; font-size: 11px; color: #666; text-transform: uppercase; }
+.columns-table th { text-align: left; padding: 8px 10px; background: #f8f8f8; border-bottom: 2px solid #e0e0e0; font-size: 11px; color: #666; text-transform: uppercase; white-space: nowrap; }
 .columns-table td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
 .columns-table tr:hover { background: #fafafa; }
-.dim-score { position: relative; min-width: 36px; text-align: center; font-size: 11px; color: #555; }
-.dim-bar { position: absolute; bottom: 0; left: 0; height: 3px; border-radius: 2px; opacity: 0.7; }
+.col-name { display: block; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
+.dim-score { min-width: 22px; text-align: center; font-size: 9px; font-weight: bold; padding: 8px 2px; }
+.columns-table th.dim-header { text-align: center; padding: 6px 2px; min-width: 22px; font-size: 9px; }
 .freq-bars { display: flex; flex-direction: column; gap: 2px; min-width: 100px; }
 .freq-row { display: flex; align-items: center; gap: 4px; }
 .freq-label { font-size: 9px; color: #666; width: 55px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
