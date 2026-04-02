@@ -93,4 +93,46 @@ public class UpdateServiceTests
         Assert.NotNull(result);
         Assert.Equal("https://github.com/jhew/HipHipParquet/releases/download/v3.0.0/HipHipParquet-3.0.0-Setup.exe", result!.InstallerUrl);
     }
+
+    [Fact]
+    public void ParseUpdateInfo_HttpGithubSetupAsset_IsRejected()
+    {
+        var json = """
+        {
+          "tag_name": "v3.1.0",
+          "assets": [
+            {
+              "name": "HipHipParquet-3.1.0-Setup.exe",
+              "browser_download_url": "http://github.com/jhew/HipHipParquet/releases/download/v3.1.0/HipHipParquet-3.1.0-Setup.exe"
+            }
+          ]
+        }
+        """;
+
+        var result = UpdateService.ParseUpdateInfo(json, new Version(3, 0, 0));
+
+        Assert.NotNull(result);
+        Assert.Null(result!.InstallerUrl);
+    }
+
+    [Fact]
+    public void ParseUpdateInfo_HttpsGithubUserContentSetupAsset_IsAccepted()
+    {
+        var json = """
+        {
+          "tag_name": "v3.2.0",
+          "assets": [
+            {
+              "name": "HipHipParquet-3.2.0-Setup.exe",
+              "browser_download_url": "https://release-assets.githubusercontent.com/repos/123/456/HipHipParquet-3.2.0-Setup.exe"
+            }
+          ]
+        }
+        """;
+
+        var result = UpdateService.ParseUpdateInfo(json, new Version(3, 1, 0));
+
+        Assert.NotNull(result);
+        Assert.Equal("https://release-assets.githubusercontent.com/repos/123/456/HipHipParquet-3.2.0-Setup.exe", result!.InstallerUrl);
+    }
 }

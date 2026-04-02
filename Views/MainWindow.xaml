@@ -121,7 +121,7 @@
                 <ColumnDefinition x:Name="SchemaSplitterColumn" Width="5"/>
                 <ColumnDefinition x:Name="MainDataColumn" Width="*" MinWidth="520"/>
                 <ColumnDefinition x:Name="QualitySplitterColumn" Width="5"/>
-                <ColumnDefinition x:Name="QualityPaneColumn" Width="420" MinWidth="300" MaxWidth="1300"/>
+                <ColumnDefinition x:Name="QualityPaneColumn" Width="420" MinWidth="300"/>
             </Grid.ColumnDefinitions>
 
             <!-- Schema Pane -->

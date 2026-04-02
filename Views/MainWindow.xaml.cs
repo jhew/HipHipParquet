@@ -2690,7 +2690,7 @@ public partial class MainWindow : Window
             ShowLoading("Downloading update…");
 
             var progress = new Progress<int>(pct =>
-                Dispatcher.Invoke(() => LoadingText.Text = $"Downloading update ({pct}%)…"));
+                LoadingText.Text = $"Downloading update ({pct}%)…");
 
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
             var installerPath = await Services.UpdateService.DownloadInstallerAsync(

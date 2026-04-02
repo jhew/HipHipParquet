@@ -90,8 +90,30 @@ public static class UpdateService
     private static bool IsTrustedGithubDownloadUrl(string url)
     {
         return Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+               IsTrustedGithubDownloadUri(uri);
+    }
+
+    private static bool IsTrustedGithubDownloadUri(Uri uri)
+    {
+        return uri.IsAbsoluteUri &&
+               uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
                (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
                 uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string CreateUniqueInstallerTempPath(Uri downloadUri)
+    {
+        var sourceFileName = Path.GetFileName(downloadUri.LocalPath);
+        var extension = Path.GetExtension(sourceFileName);
+        if (string.IsNullOrWhiteSpace(extension))
+            extension = ".exe";
+
+        var baseName = Path.GetFileNameWithoutExtension(sourceFileName);
+        if (string.IsNullOrWhiteSpace(baseName))
+            baseName = "HipHipParquet-Setup";
+
+        var uniqueFileName = $"{baseName}-{Guid.NewGuid():N}{extension}";
+        return Path.Combine(Path.GetTempPath(), uniqueFileName);
     }
 
     /// <summary>
@@ -120,8 +142,11 @@ public static class UpdateService
                 downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            var fileName   = Path.GetFileName(uri.LocalPath);
-            var tempPath   = Path.Combine(Path.GetTempPath(), fileName);
+            var finalUri = response.RequestMessage?.RequestUri;
+            if (finalUri == null || !IsTrustedGithubDownloadUri(finalUri))
+                return null;
+
+            var tempPath   = CreateUniqueInstallerTempPath(finalUri);
             var totalBytes = response.Content.Headers.ContentLength ?? -1L;
             var downloaded = 0L;
 
