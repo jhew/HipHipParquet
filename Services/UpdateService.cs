@@ -39,22 +39,32 @@ public static class UpdateService
     {
         var current = GetCurrentVersion();
 
-        var json = JsonNode.Parse(
-            await SharedClient.GetStringAsync(LatestReleaseApiUrl, cancellationToken));
+        var jsonText = await SharedClient.GetStringAsync(LatestReleaseApiUrl, cancellationToken);
+        return ParseUpdateInfo(jsonText, current);
+    }
 
-        if (json == null) return null;
+    /// <summary>
+    /// Parses the JSON payload returned by the GitHub latest-release API.
+    /// Returns null only when the current version is up-to-date.
+    /// Throws <see cref="InvalidDataException"/> when required fields are missing/invalid.
+    /// </summary>
+    public static UpdateInfo? ParseUpdateInfo(string jsonText, Version current)
+    {
+        var json = JsonNode.Parse(jsonText)
+            ?? throw new InvalidDataException("GitHub update response was empty.");
 
         var tagName = json["tag_name"]?.GetValue<string>();
-        if (tagName == null) return null;
+        if (string.IsNullOrWhiteSpace(tagName))
+            throw new InvalidDataException("GitHub update response did not contain tag_name.");
 
         var versionString = tagName.TrimStart('v', 'V');
         if (!Version.TryParse(versionString, out var latest))
-            return null;
+            throw new InvalidDataException($"GitHub release tag '{tagName}' is not a valid version.");
 
         if (latest <= current)
-            return null; // already up-to-date
+            return null;
 
-        // Find setup .exe asset URL
+        // Find setup .exe asset URL from trusted GitHub domains.
         string? downloadUrl = null;
         var assets = json["assets"]?.AsArray();
         if (assets != null)
@@ -62,22 +72,26 @@ public static class UpdateService
             foreach (var asset in assets)
             {
                 var name = asset?["name"]?.GetValue<string>() ?? "";
-                var url  = asset?["browser_download_url"]?.GetValue<string>();
+                var url = asset?["browser_download_url"]?.GetValue<string>();
                 if (url != null && name.EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Validate domain to prevent untrusted downloads
-                    if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
-                        (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
-                         uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
+                    if (IsTrustedGithubDownloadUrl(url))
                     {
                         downloadUrl = url;
+                        break;
                     }
-                    break;
                 }
             }
         }
 
         return new UpdateInfo(latest, downloadUrl, ReleasesPageUrl);
+    }
+
+    private static bool IsTrustedGithubDownloadUrl(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+               (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -93,8 +107,7 @@ public static class UpdateService
         {
             // Safety: only download from trusted GitHub domains
             if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri) ||
-                (!uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) &&
-                 !uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
+                !IsTrustedGithubDownloadUrl(downloadUrl))
                 return null;
 
             using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };

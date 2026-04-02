@@ -119,9 +119,9 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="SchemaPaneColumn" Width="250" MinWidth="200"/>
                 <ColumnDefinition x:Name="SchemaSplitterColumn" Width="5"/>
-                <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="MainDataColumn" Width="*" MinWidth="520"/>
                 <ColumnDefinition x:Name="QualitySplitterColumn" Width="5"/>
-                <ColumnDefinition x:Name="QualityPaneColumn" Width="420" MinWidth="300"/>
+                <ColumnDefinition x:Name="QualityPaneColumn" Width="420" MinWidth="300" MaxWidth="1300"/>
             </Grid.ColumnDefinitions>
 
             <!-- Schema Pane -->
@@ -198,7 +198,7 @@
                         </DockPanel>
                     </Border>
 
-                    <!-- Data Grid (EnableColumnVirtualization=False: known WPF bug causes blank column headers when virtualized) -->
+                    <!-- Data Grid -->
                     <DataGrid x:Name="DataGrid" 
                              Grid.Row="1"
                              AutoGenerateColumns="False"
@@ -213,7 +213,7 @@
                              Margin="12,5,12,12"
                              CellEditEnding="OnCellEditEnding"
                              EnableRowVirtualization="True"
-                             EnableColumnVirtualization="False"
+                             EnableColumnVirtualization="True"
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling">
                         <DataGrid.ContextMenu>
@@ -271,6 +271,9 @@
             <GridSplitter x:Name="QualitySplitter" Grid.Column="3" 
                          HorizontalAlignment="Stretch" 
                          Background="#E0E0E0"
+                         ShowsPreview="True"
+                         ResizeBehavior="PreviousAndNext"
+                         DragCompleted="OnQualitySplitterDragCompleted"
                          Visibility="Visible"/>
 
             <!-- Quality Review Panel -->

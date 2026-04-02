@@ -20,6 +20,7 @@ namespace HipHipParquet.Views;
 
 public partial class MainWindow : Window
 {
+    private const double MaxQualityPaneWidthCap = 1300;
     public static readonly RoutedUICommand GoToRowCommand = new("Go to Row", "GoToRow", typeof(MainWindow));
     public static readonly RoutedUICommand FocusSearchCommand = new("Focus Search", "FocusSearch", typeof(MainWindow));
 
@@ -71,6 +72,7 @@ public partial class MainWindow : Window
         UpdateRecentFilesMenu();
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
+        MainContentGrid.SizeChanged += (_, _) => ClampQualityPaneWidth();
 
         // Search debounce: wait 300 ms after last keystroke before filtering.
         _filterDebounceTimer = new System.Windows.Threading.DispatcherTimer
@@ -145,6 +147,8 @@ public partial class MainWindow : Window
 
     private async void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
+        ClampQualityPaneWidth();
+
         // Background startup update check — shows a hint in the status bar if a new version is found.
         _ = CheckForUpdatesOnStartupAsync();
 
@@ -402,6 +406,7 @@ public partial class MainWindow : Window
                 QualitySplitterColumn.Width = new GridLength(5);
                 QualityPaneColumn.MinWidth = 300;
                 QualityPaneColumn.Width = new GridLength(420);
+                ClampQualityPaneWidth();
             }
             else
             {
@@ -413,6 +418,33 @@ public partial class MainWindow : Window
                 QualityPaneColumn.Width = new GridLength(0);
             }
         }
+    }
+
+    private void OnQualitySplitterDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        ClampQualityPaneWidth();
+    }
+
+    private void ClampQualityPaneWidth()
+    {
+        if (QualityReviewPanel.Visibility != Visibility.Visible)
+            return;
+
+        var available = MainContentGrid.ActualWidth
+            - SchemaPaneColumn.ActualWidth
+            - SchemaSplitterColumn.ActualWidth
+            - QualitySplitterColumn.ActualWidth
+            - MainDataColumn.MinWidth;
+
+        var minAllowed = QualityPaneColumn.MinWidth;
+        var layoutMax = Math.Max(minAllowed, available);
+        var effectiveMax = Math.Min(MaxQualityPaneWidthCap, layoutMax);
+
+        QualityPaneColumn.MaxWidth = effectiveMax;
+
+        var currentWidth = QualityPaneColumn.ActualWidth;
+        if (currentWidth > effectiveMax)
+            QualityPaneColumn.Width = new GridLength(effectiveMax);
     }
 
     private void InitializeQualityPanel()
@@ -2394,7 +2426,8 @@ public partial class MainWindow : Window
             SetupDataGrid(dataTable, null);
             UpdateLoadMoreBanner(dataTable.Rows.Count);
 
-            StatusText.Text = $"Loaded {System.IO.Path.GetFileName(_currentFilePath)}{parquetPartsSuffix} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows";
+            var sourceLabel = GetCurrentSourceStatusLabel();
+            StatusText.Text = $"Loaded {sourceLabel}{parquetPartsSuffix} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows";
         }
         catch (Exception ex)
         {
@@ -2413,6 +2446,20 @@ public partial class MainWindow : Window
 
         var partCount = Services.FileFormatDetector.ResolveParquetInputs(filePath).Count;
         return partCount > 1 ? $" ({partCount:N0} parquet parts)" : string.Empty;
+    }
+
+    private string GetCurrentSourceStatusLabel()
+    {
+        if (_currentFilePaths != null && _currentFilePaths.Count > 1)
+            return $"{_currentFilePaths.Count} parquet files";
+
+        if (!string.IsNullOrWhiteSpace(_currentFilePath))
+            return System.IO.Path.GetFileName(_currentFilePath);
+
+        if (_currentFilePaths != null && _currentFilePaths.Count > 0)
+            return System.IO.Path.GetFileName(_currentFilePaths[0]);
+
+        return "current data";
     }
 
     private async void OnLoadAllClick(object sender, RoutedEventArgs e)
