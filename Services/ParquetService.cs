@@ -496,14 +496,25 @@ public class ParquetService : IDisposable
 
             var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
 
-            // Get total distinct count
-            var countSql = $"SELECT COUNT(DISTINCT CAST(\"{columnName}\" AS VARCHAR)) FROM {readerExpr}";
+            var escapedColId = columnName.Replace("\"", "\"\"");
+
+            // Check for NULL values first so we can reserve a slot in the limit
+            var nullSql = $"SELECT COUNT(*) FROM {readerExpr} WHERE \"{escapedColId}\" IS NULL";
+            using var nullCmd = new DuckDBCommand(nullSql, connection);
+            var nullCount = Convert.ToInt64(await nullCmd.ExecuteScalarAsync(cancellationToken));
+            var hasNulls = nullCount > 0;
+
+            // Get total distinct count (non-null)
+            var countSql = $"SELECT COUNT(DISTINCT CAST(\"{escapedColId}\" AS VARCHAR)) FROM {readerExpr}";
             using var countCmd = new DuckDBCommand(countSql, connection);
             var countResult = await countCmd.ExecuteScalarAsync(cancellationToken);
-            var totalDistinct = Convert.ToInt32(countResult ?? 0);
+            var nonNullDistinct = Convert.ToInt32(countResult ?? 0);
 
-            // Get distinct values (including NULLs)
-            var valuesSql = $"SELECT DISTINCT CAST(\"{columnName}\" AS VARCHAR) FROM {readerExpr} WHERE \"{columnName}\" IS NOT NULL ORDER BY 1 LIMIT {maxValues}";
+            // Reserve one slot for "(Blank)" when NULLs exist so Values.Count never exceeds maxValues
+            var valueLimit = hasNulls ? Math.Max(1, maxValues - 1) : maxValues;
+
+            // Get distinct non-null values
+            var valuesSql = $"SELECT DISTINCT CAST(\"{escapedColId}\" AS VARCHAR) FROM {readerExpr} WHERE \"{escapedColId}\" IS NOT NULL ORDER BY 1 LIMIT {valueLimit}";
             var values = new List<string>();
             using var valuesCmd = new DuckDBCommand(valuesSql, connection);
             using var reader = await valuesCmd.ExecuteReaderAsync(cancellationToken);
@@ -513,13 +524,11 @@ public class ParquetService : IDisposable
                     values.Add(reader.GetString(0));
             }
 
-            // Check for NULL values
-            var nullSql = $"SELECT COUNT(*) FROM {readerExpr} WHERE \"{columnName}\" IS NULL";
-            using var nullCmd = new DuckDBCommand(nullSql, connection);
-            var nullCount = Convert.ToInt64(await nullCmd.ExecuteScalarAsync(cancellationToken));
-            if (nullCount > 0)
+            if (hasNulls)
                 values.Insert(0, "(Blank)");
 
+            // totalDistinct includes the blank bucket so callers get an accurate count
+            var totalDistinct = nonNullDistinct + (hasNulls ? 1 : 0);
             var truncated = values.Count >= maxValues && totalDistinct > maxValues;
 
             _logger.LogDebug("Distinct values for {Column}: {Count}/{Total} (truncated: {Truncated})", columnName, values.Count, totalDistinct, truncated);
@@ -562,6 +571,7 @@ public class ParquetService : IDisposable
             foreach (var kvp in queryState.ColumnFilters.Where(kv => kv.Value.Count > 0))
             {
                 var columnName = kvp.Key;
+                var escapedColId = columnName.Replace("\"", "\"\"");
                 var selectedValues = kvp.Value;
                 var nonBlankValues = selectedValues.Where(v => v != "(Blank)").ToList();
                 var includeBlank = selectedValues.Contains("(Blank)");
@@ -570,11 +580,11 @@ public class ParquetService : IDisposable
                 if (nonBlankValues.Count > 0)
                 {
                     var escapedValues = string.Join(",", nonBlankValues.Select(v => $"'{v.Replace("'", "''")}'"));
-                    colConditions.Add($"CAST(\"{columnName}\" AS VARCHAR) IN ({escapedValues})");
+                    colConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) IN ({escapedValues})");
                 }
                 if (includeBlank)
                 {
-                    colConditions.Add($"\"{columnName}\" IS NULL");
+                    colConditions.Add($"\"{escapedColId}\" IS NULL");
                 }
 
                 if (colConditions.Count > 0)
@@ -588,7 +598,8 @@ public class ParquetService : IDisposable
                 var searchConditions = new List<string>();
                 foreach (var col in queryState.AvailableColumns)
                 {
-                    searchConditions.Add($"CAST(\"{col}\" AS VARCHAR) LIKE '{searchTerm}'");
+                    var escapedColId = col.Replace("\"", "\"\"");
+                    searchConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) LIKE '{searchTerm}'");
                 }
                 if (searchConditions.Count > 0)
                     conditions.Add($"({string.Join(" OR ", searchConditions)})");
@@ -596,11 +607,22 @@ public class ParquetService : IDisposable
 
             var whereClause = conditions.Count > 0 ? $" WHERE {string.Join(" AND ", conditions)}" : "";
 
-            // Build ORDER BY clause
+            // Build ORDER BY clause — parse DataView.Sort format "ColumnName ASC|DESC",
+            // validate the direction and escape the identifier to prevent SQL injection.
             var orderClause = "";
             if (!string.IsNullOrWhiteSpace(queryState.Sort))
             {
-                orderClause = $" ORDER BY {queryState.Sort}";
+                var sortParts = queryState.Sort.Trim().Split(' ', 2);
+                var sortCol = sortParts[0];
+                var sortDir = sortParts.Length >= 2 && sortParts[1].Trim().Equals("DESC", StringComparison.OrdinalIgnoreCase)
+                    ? "DESC" : "ASC";
+                // Only emit the ORDER BY if the column is a known schema column
+                if (queryState.AvailableColumns.Contains(sortCol, StringComparer.Ordinal)
+                    || queryState.AvailableColumns.Any(c => string.Equals(c, sortCol, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var escapedSortCol = sortCol.Replace("\"", "\"\"");
+                    orderClause = $" ORDER BY \"{escapedSortCol}\" {sortDir}";
+                }
             }
 
             // Build the full query with LIMIT/OFFSET for paging

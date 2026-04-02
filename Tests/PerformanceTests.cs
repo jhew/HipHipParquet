@@ -18,20 +18,21 @@ namespace HipHipParquet.Tests;
 /// - Filter execution < 150ms
 /// - First quality summary < 3s
 /// </summary>
-public class PerformanceTests
+public class PerformanceTests : IDisposable
 {
     private readonly ITestOutputHelper _output;
     private readonly ILogger<ParquetService> _logger;
+    private readonly ILoggerFactory _loggerFactory;
 
     public PerformanceTests(ITestOutputHelper output)
     {
         _output = output;
-        
-        // Create a simple logger for tests
-        var loggerFactory = LoggerFactory.Create(builder => 
+        _loggerFactory = LoggerFactory.Create(builder =>
             builder.AddProvider(new TestLoggerProvider(output)));
-        _logger = loggerFactory.CreateLogger<ParquetService>();
+        _logger = _loggerFactory.CreateLogger<ParquetService>();
     }
+
+    public void Dispose() => _loggerFactory.Dispose();
 
     [Fact]
     [Trait("Category", "Performance")]
@@ -54,8 +55,8 @@ public class PerformanceTests
         // With actual 1M-row parquet file in production, verify filter execution < 150ms
         // This test validates the code path works correctly; performance varies by data size and system.
         
-        var service = new ParquetService(_logger);
-        
+        using var service = new ParquetService(_logger);
+
         // Create a simple CSV with sample data
         var csvPath = Path.Combine(Path.GetTempPath(), $"perf-test-{Guid.NewGuid()}.csv");
         try
@@ -107,8 +108,8 @@ public class PerformanceTests
         {
             // Generate test CSV with 100k rows for quality analysis
             GenerateTestCsv(csvPath, rowCount: 100_000);
-            
-            var service = new ParquetService(_logger);
+
+            using var service = new ParquetService(_logger);
             
             var sw = Stopwatch.StartNew();
             var profile = await service.GetFileProfileAsync(csvPath);

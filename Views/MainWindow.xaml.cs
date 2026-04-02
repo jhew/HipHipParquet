@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, ColumnFilterState> _columnFilters = new();
     private const int MaxDistinctValues = 500;
     private const string BlankDisplayValue = "(Blank)";
+    private CancellationTokenSource? _filterCountCts;
 
     // ── Filter / sort state (preserved across reloads) ────────────────────
     private readonly Dictionary<string, HashSet<string>> _savedColumnFilterSelections = new();
@@ -1832,7 +1833,7 @@ public partial class MainWindow : Window
             finally
             {
                 button.IsEnabled = true;
-                button.Content = "🔽";  // Restore filter icon
+                button.Content = "\u25BC";  // Restore ▼ filter icon
             }
         }
 
@@ -2297,13 +2298,20 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Asynchronously queries the full dataset to show how many rows match the current filters.
-    /// Updates the status text to show the difference between batch and full dataset.
+    /// Cancels any previous in-flight count so stale results never overwrite the status bar.
     /// </summary>
     private async Task UpdateFullDatasetFilterCount()
     {
+        // Cancel any previous in-flight count query
+        _filterCountCts?.Cancel();
+        _filterCountCts?.Dispose();
+        var cts = _filterCountCts = new CancellationTokenSource();
+
         try
         {
-            var fullDatasetCount = await GetFilteredRowCountAsync();
+            var fullDatasetCount = await GetFilteredRowCountAsync(cts.Token);
+            if (cts.Token.IsCancellationRequested) return;
+
             var batchCount = _dataView?.Count ?? 0;
 
             if (fullDatasetCount > batchCount)
@@ -2314,6 +2322,10 @@ public partial class MainWindow : Window
             {
                 StatusText.Text = $"{fullDatasetCount:N0} matches in full dataset";
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer request — don't update status
         }
         catch
         {
@@ -2413,7 +2425,7 @@ public partial class MainWindow : Window
     /// Queries the full dataset to get the filtered row count (without paging).
     /// Used for display and to determine if additional data is available beyond the current batch.
     /// </summary>
-    private async Task<long> GetFilteredRowCountAsync()
+    private async Task<long> GetFilteredRowCountAsync(CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_currentFilePath))
             return _totalRowCount;
@@ -2442,6 +2454,7 @@ public partial class MainWindow : Window
             foreach (var kvp in queryState.ColumnFilters.Where(kv => kv.Value.Count > 0))
             {
                 var columnName = kvp.Key;
+                var escapedColId = columnName.Replace("\"", "\"\"");
                 var selectedValues = kvp.Value;
                 var nonBlankValues = selectedValues.Where(v => v != "(Blank)").ToList();
                 var includeBlank = selectedValues.Contains("(Blank)");
@@ -2450,11 +2463,11 @@ public partial class MainWindow : Window
                 if (nonBlankValues.Count > 0)
                 {
                     var escapedValues = string.Join(",", nonBlankValues.Select(v => $"'{v.Replace("'", "''")}'"));
-                    colConditions.Add($"CAST(\"{columnName}\" AS VARCHAR) IN ({escapedValues})");
+                    colConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) IN ({escapedValues})");
                 }
                 if (includeBlank)
                 {
-                    colConditions.Add($"\"{columnName}\" IS NULL");
+                    colConditions.Add($"\"{escapedColId}\" IS NULL");
                 }
 
                 if (colConditions.Count > 0)
@@ -2467,7 +2480,8 @@ public partial class MainWindow : Window
                 var searchConditions = new List<string>();
                 foreach (var col in queryState.AvailableColumns)
                 {
-                    searchConditions.Add($"CAST(\"{col}\" AS VARCHAR) LIKE '{searchTerm}'");
+                    var escapedColId = col.Replace("\"", "\"\"");
+                    searchConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) LIKE '{searchTerm}'");
                 }
                 if (searchConditions.Count > 0)
                     conditions.Add($"({string.Join(" OR ", searchConditions)})");
@@ -2477,7 +2491,7 @@ public partial class MainWindow : Window
             var countSql = $"SELECT COUNT(*) FROM {readerExpr}{whereClause}";
 
             using var countCmd = new DuckDB.NET.Data.DuckDBCommand(countSql, connection);
-            var result = await countCmd.ExecuteScalarAsync();
+            var result = await countCmd.ExecuteScalarAsync(cancellationToken);
             return Convert.ToInt64(result ?? 0);
         }
         catch
@@ -3223,7 +3237,9 @@ public partial class MainWindow : Window
     private void HideLoading()
     {
         LoadingOverlay.Visibility = Visibility.Collapsed;
-        MainTaskbarItemInfo.ProgressState = TaskbarItemProgressState.None;
+        // Only clear the taskbar progress if quality analysis is not currently showing it
+        if (_qualityViewModel?.TaskbarProgressVisible != true)
+            MainTaskbarItemInfo.ProgressState = TaskbarItemProgressState.None;
     }
 
     private sealed class WorkspaceState

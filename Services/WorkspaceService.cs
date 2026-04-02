@@ -21,23 +21,26 @@ public class WorkspaceService
 
     private List<SavedView> _savedViews = [];
     private List<CleaningRecipe> _savedRecipes = [];
+    private bool _viewsLoaded;
+    private bool _recipesLoaded;
 
-    public WorkspaceService()
-    {
-        LoadSavedViews();
-        LoadRecipes();
-    }
+    public WorkspaceService() { }
 
     /// <summary>
     /// Gets all saved views.
     /// </summary>
-    public IReadOnlyList<SavedView> GetSavedViews() => _savedViews.AsReadOnly();
+    public IReadOnlyList<SavedView> GetSavedViews()
+    {
+        if (!_viewsLoaded) LoadSavedViews();
+        return _savedViews.AsReadOnly();
+    }
 
     /// <summary>
     /// Saves a new view.
     /// </summary>
     public async Task SaveViewAsync(SavedView view)
     {
+        if (!_viewsLoaded) LoadSavedViews();
         _savedViews.Add(view);
         await PersistViewsAsync();
     }
@@ -54,13 +57,18 @@ public class WorkspaceService
     /// <summary>
     /// Gets all saved recipes.
     /// </summary>
-    public IReadOnlyList<CleaningRecipe> GetRecipes() => _savedRecipes.AsReadOnly();
+    public IReadOnlyList<CleaningRecipe> GetRecipes()
+    {
+        if (!_recipesLoaded) LoadRecipes();
+        return _savedRecipes.AsReadOnly();
+    }
 
     /// <summary>
     /// Saves a new recipe.
     /// </summary>
     public async Task SaveRecipeAsync(CleaningRecipe recipe)
     {
+        if (!_recipesLoaded) LoadRecipes();
         _savedRecipes.Add(recipe);
         await PersistRecipesAsync();
     }
@@ -76,6 +84,7 @@ public class WorkspaceService
 
     private void LoadSavedViews()
     {
+        _viewsLoaded = true;
         try
         {
             if (!File.Exists(SavedViewsPath))
@@ -93,6 +102,7 @@ public class WorkspaceService
 
     private void LoadRecipes()
     {
+        _recipesLoaded = true;
         try
         {
             if (!File.Exists(RecipesPath))
