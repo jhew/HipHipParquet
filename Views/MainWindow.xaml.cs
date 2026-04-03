@@ -3213,7 +3213,7 @@ public partial class MainWindow : Window
             dataTable.Rows[i][SourceFileColumnName] = sourceFileName;
         }
 
-        if (dataTable.Columns.Contains(DuckDbFilenameColumnName))
+        if (hasMultipleSources && dataTable.Columns.Contains(DuckDbFilenameColumnName))
             dataTable.Columns.Remove(DuckDbFilenameColumnName);
     }
 
