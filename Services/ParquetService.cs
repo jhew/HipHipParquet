@@ -421,10 +421,6 @@ public class ParquetService : IDisposable
                 });
             }
 
-            var countSql = $"SELECT COUNT(*) FROM {readerExpr}";
-            using var countCmd = new DuckDBCommand(countSql, _connection);
-            var countResult = await countCmd.ExecuteScalarAsync();
-
             var sourceSummaries = await GetParquetSourceFileSummariesAsync(filePaths, normalizedPaths);
 
             return new DataFileInfo
@@ -433,7 +429,7 @@ public class ParquetService : IDisposable
                 FilePath = filePaths[0],
                 Format = SupportedFileFormat.Parquet,
                 Columns = columns,
-                RowCount = Convert.ToInt64(countResult),
+                RowCount = sourceSummaries.Sum(s => s.RowCount),
                 SourceFiles = filePaths.ToList(),
                 SourceFileSummaries = sourceSummaries
             };

@@ -3198,8 +3198,6 @@ public partial class MainWindow : Window
         if (sourceFileColumn.Ordinal != 1)
             sourceFileColumn.SetOrdinal(1);
 
-        var perSourceRowCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
         for (int i = 0; i < dataTable.Rows.Count; i++)
         {
             dataTable.Rows[i][RowNumberColumnName] = i + 1;
@@ -3212,10 +3210,6 @@ public partial class MainWindow : Window
                     sourceFileName = Path.GetFileName(rawPath);
             }
 
-            if (!perSourceRowCounter.TryGetValue(sourceFileName, out var currentCount))
-                currentCount = 0;
-
-            perSourceRowCounter[sourceFileName] = currentCount + 1;
             dataTable.Rows[i][SourceFileColumnName] = sourceFileName;
         }
 
