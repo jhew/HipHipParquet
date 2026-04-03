@@ -1849,33 +1849,65 @@ public partial class MainWindow : Window
 
     private async Task CollectDistinctValuesAsync(string columnName, ColumnFilterState state)
     {
-        if (state.IsLoaded || string.IsNullOrEmpty(_currentFilePath)) return;
+        if (state.IsLoaded) return;
 
-        try
+        if (!string.IsNullOrEmpty(_currentFilePath))
         {
-            // Call async service method to get distinct values from full dataset
-            var (values, totalDistinct, truncated) = await _parquetService!.GetDistinctValuesAsync(
-                filePath: _currentFilePath,
-                columnName: columnName,
-                csvOptions: _activeCsvOptions,
-                jsonOptions: _activeJsonOptions,
-                maxValues: MaxDistinctValues,
-                cancellationToken: default);
+            try
+            {
+                // Single-file path: query distinct values via DuckDB over the full dataset
+                var (values, totalDistinct, truncated) = await _parquetService!.GetDistinctValuesAsync(
+                    filePath: _currentFilePath,
+                    columnName: columnName,
+                    csvOptions: _activeCsvOptions,
+                    jsonOptions: _activeJsonOptions,
+                    maxValues: MaxDistinctValues,
+                    cancellationToken: default);
 
-            // Update state with results
-            state.AllValues = values;
-            state.IsTruncated = truncated;
-            state.TotalDistinctCount = totalDistinct;
+                state.AllValues = values;
+                state.IsTruncated = truncated;
+                state.TotalDistinctCount = totalDistinct;
 
-            // Default: all values selected (no filter)
+                if (state.SelectedValues.Count == 0)
+                    state.SelectedValues = new HashSet<string>(values);
+
+                state.IsLoaded = true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load filter values: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        else if (_originalData != null && _originalData.Columns.Contains(columnName))
+        {
+            // Fallback for multi-file loads: compute distincts from the in-memory batch
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            bool hasBlank = false;
+
+            foreach (DataRow row in _originalData.Rows)
+            {
+                var raw = row[columnName];
+                if (raw == DBNull.Value || string.IsNullOrWhiteSpace(raw?.ToString()))
+                {
+                    hasBlank = true;
+                }
+                else
+                {
+                    seen.Add(raw.ToString()!);
+                }
+            }
+
+            var sorted = seen.OrderBy(v => v).Take(MaxDistinctValues - (hasBlank ? 1 : 0)).ToList();
+            if (hasBlank) sorted.Insert(0, "(Blank)");
+
+            state.AllValues = sorted;
+            state.IsTruncated = seen.Count > sorted.Count - (hasBlank ? 1 : 0);
+            state.TotalDistinctCount = seen.Count + (hasBlank ? 1 : 0);
+
             if (state.SelectedValues.Count == 0)
-                state.SelectedValues = new HashSet<string>(values);
+                state.SelectedValues = new HashSet<string>(sorted);
 
             state.IsLoaded = true;
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Failed to load filter values: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -2441,79 +2473,10 @@ public partial class MainWindow : Window
         try
         {
             var queryState = BuildCurrentQueryState();
-            
-            // Execute a COUNT query against the full dataset
-            using var connection = new DuckDB.NET.Data.DuckDBConnection("DataSource=:memory:");
-            await connection.OpenAsync();
-
-            using var transcodeScope = FileFormatDetector.PrepareFilePath(_currentFilePath, _activeCsvOptions);
-            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
-            var format = FileFormatDetector.DetectFormat(_currentFilePath);
-
-            if (format == SupportedFileFormat.Excel)
-                await _parquetService!.EnsureExcelExtensionAsync(connection);
-
-            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(
-                normalizedPath, format, _activeCsvOptions, _activeJsonOptions);
-
-            // Build WHERE clause (similar to ExecuteGridQueryAsync)
-            var conditions = new List<string>();
-
-            foreach (var kvp in queryState.ColumnFilters)
-            {
-                var columnName = kvp.Key;
-                var escapedColId = columnName.Replace("\"", "\"\"");
-                var selectedValues = kvp.Value;
-
-                // Empty selection means "show no rows" — emit a match-none condition
-                if (selectedValues.Count == 0)
-                {
-                    conditions.Add("1=0");
-                    continue;
-                }
-
-                var nonBlankValues = selectedValues.Where(v => v != "(Blank)").ToList();
-                var includeBlank = selectedValues.Contains("(Blank)");
-
-                var colConditions = new List<string>();
-                if (nonBlankValues.Count > 0)
-                {
-                    var escapedValues = string.Join(",", nonBlankValues.Select(v => $"'{v.Replace("'", "''")}'"));
-                    colConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) IN ({escapedValues})");
-                }
-                if (includeBlank)
-                {
-                    // Match NULL or empty/whitespace (aligns with in-memory filter semantics)
-                    colConditions.Add($"(\"{escapedColId}\" IS NULL OR TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) = '')");
-                }
-
-                if (colConditions.Count > 0)
-                    conditions.Add($"({string.Join(" OR ", colConditions)})");
-            }
-
-            if (!string.IsNullOrWhiteSpace(queryState.GlobalSearch))
-            {
-                var searchTerm = $"%{queryState.GlobalSearch.Replace("'", "''")}%";
-                var searchConditions = new List<string>();
-                foreach (var col in queryState.AvailableColumns)
-                {
-                    var escapedColId = col.Replace("\"", "\"\"");
-                    searchConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) LIKE '{searchTerm}'");
-                }
-                if (searchConditions.Count > 0)
-                    conditions.Add($"({string.Join(" OR ", searchConditions)})");
-            }
-
-            var whereClause = conditions.Count > 0 ? $" WHERE {string.Join(" AND ", conditions)}" : "";
-            var countSql = $"SELECT COUNT(*) FROM {readerExpr}{whereClause}";
-
-            using var countCmd = new DuckDB.NET.Data.DuckDBCommand(countSql, connection);
-            var result = await countCmd.ExecuteScalarAsync(cancellationToken);
-            return Convert.ToInt64(result ?? 0);
+            return await _parquetService!.GetFilteredRowCountAsync(queryState, cancellationToken);
         }
         catch
         {
-            // If count query fails, return the loaded batch size
             return _dataView?.Count ?? 0;
         }
     }

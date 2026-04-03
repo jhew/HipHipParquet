@@ -50,6 +50,7 @@ public class WorkspaceService
     /// </summary>
     public async Task DeleteViewAsync(string viewName)
     {
+        if (!_viewsLoaded) LoadSavedViews();
         _savedViews.RemoveAll(v => v.Name == viewName);
         await PersistViewsAsync();
     }
@@ -78,6 +79,7 @@ public class WorkspaceService
     /// </summary>
     public async Task DeleteRecipeAsync(string recipeName)
     {
+        if (!_recipesLoaded) LoadRecipes();
         _savedRecipes.RemoveAll(r => r.Name == recipeName);
         await PersistRecipesAsync();
     }

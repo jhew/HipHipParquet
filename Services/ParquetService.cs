@@ -565,57 +565,7 @@ public class ParquetService : IDisposable
             var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(
                 normalizedPath, format, queryState.CsvOptions, queryState.JsonOptions);
 
-            // Build WHERE clause from filters
-            var conditions = new List<string>();
-
-            // Add column-level value filters
-            foreach (var kvp in queryState.ColumnFilters)
-            {
-                var columnName = kvp.Key;
-                var escapedColId = columnName.Replace("\"", "\"\"");
-                var selectedValues = kvp.Value;
-
-                // Empty selection means "show no rows" — emit a match-none condition
-                if (selectedValues.Count == 0)
-                {
-                    conditions.Add("1=0");
-                    continue;
-                }
-
-                var nonBlankValues = selectedValues.Where(v => v != "(Blank)").ToList();
-                var includeBlank = selectedValues.Contains("(Blank)");
-
-                var colConditions = new List<string>();
-                if (nonBlankValues.Count > 0)
-                {
-                    var escapedValues = string.Join(",", nonBlankValues.Select(v => $"'{v.Replace("'", "''")}'"));
-                    colConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) IN ({escapedValues})");
-                }
-                if (includeBlank)
-                {
-                    // Match NULL or empty/whitespace strings (aligns with in-memory filter semantics)
-                    colConditions.Add($"(\"{escapedColId}\" IS NULL OR TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) = '')");
-                }
-
-                if (colConditions.Count > 0)
-                    conditions.Add($"({string.Join(" OR ", colConditions)})");
-            }
-
-            // Add global search filter (LIKE across all columns)
-            if (!string.IsNullOrWhiteSpace(queryState.GlobalSearch))
-            {
-                var searchTerm = $"%{queryState.GlobalSearch.Replace("'", "''")}%";
-                var searchConditions = new List<string>();
-                foreach (var col in queryState.AvailableColumns)
-                {
-                    var escapedColId = col.Replace("\"", "\"\"");
-                    searchConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) LIKE '{searchTerm}'");
-                }
-                if (searchConditions.Count > 0)
-                    conditions.Add($"({string.Join(" OR ", searchConditions)})");
-            }
-
-            var whereClause = conditions.Count > 0 ? $" WHERE {string.Join(" AND ", conditions)}" : "";
+            var whereClause = BuildSqlWhereClause(queryState);
 
             // Build ORDER BY clause — parse DataView.Sort format "ColumnName ASC|DESC",
             // validate the direction and escape the identifier to prevent SQL injection.
@@ -670,7 +620,97 @@ public class ParquetService : IDisposable
             throw;
         }
     }
-    
+
+    /// <summary>
+    /// Returns the total number of rows in the full dataset that match the current filters,
+    /// without applying paging. Delegates to the same WHERE-clause logic as ExecuteGridQueryAsync.
+    /// </summary>
+    public async Task<long> GetFilteredRowCountAsync(
+        GridQueryState queryState,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(queryState.SourceFilePath, queryState.CsvOptions);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
+            var format = FileFormatDetector.DetectFormat(queryState.SourceFilePath);
+
+            if (format == SupportedFileFormat.Excel)
+                await EnsureExcelExtensionAsync(connection);
+
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(
+                normalizedPath, format, queryState.CsvOptions, queryState.JsonOptions);
+
+            var whereClause = BuildSqlWhereClause(queryState);
+            var countSql = $"SELECT COUNT(*) FROM {readerExpr}{whereClause}";
+
+            using var countCmd = new DuckDBCommand(countSql, connection);
+            var result = await countCmd.ExecuteScalarAsync(cancellationToken);
+            return Convert.ToInt64(result ?? 0);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get filtered row count for {FilePath}", queryState.SourceFilePath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Builds a SQL WHERE clause (including the "WHERE" keyword) from the filter/search state
+    /// in <paramref name="queryState"/>. Returns an empty string when no conditions are active.
+    /// </summary>
+    private static string BuildSqlWhereClause(GridQueryState queryState)
+    {
+        var conditions = new List<string>();
+
+        foreach (var kvp in queryState.ColumnFilters)
+        {
+            var escapedColId = kvp.Key.Replace("\"", "\"\"");
+            var selectedValues = kvp.Value;
+
+            if (selectedValues.Count == 0)
+            {
+                conditions.Add("1=0");
+                continue;
+            }
+
+            var nonBlankValues = selectedValues.Where(v => v != "(Blank)").ToList();
+            var includeBlank = selectedValues.Contains("(Blank)");
+
+            var colConditions = new List<string>();
+            if (nonBlankValues.Count > 0)
+            {
+                var escapedValues = string.Join(",", nonBlankValues.Select(v => $"'{v.Replace("'", "''")}'"));
+                colConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) IN ({escapedValues})");
+            }
+            if (includeBlank)
+            {
+                colConditions.Add($"(\"{escapedColId}\" IS NULL OR TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) = '')");
+            }
+
+            if (colConditions.Count > 0)
+                conditions.Add($"({string.Join(" OR ", colConditions)})");
+        }
+
+        if (!string.IsNullOrWhiteSpace(queryState.GlobalSearch))
+        {
+            var searchTerm = $"%{queryState.GlobalSearch.Replace("'", "''")}%";
+            var searchConditions = new List<string>();
+            foreach (var col in queryState.AvailableColumns)
+            {
+                var escapedColId = col.Replace("\"", "\"\"");
+                searchConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) LIKE '{searchTerm}'");
+            }
+            if (searchConditions.Count > 0)
+                conditions.Add($"({string.Join(" OR ", searchConditions)})");
+        }
+
+        return conditions.Count > 0 ? $" WHERE {string.Join(" AND ", conditions)}" : "";
+    }
+
     public async Task SaveFileAsync(string filePath, DataTable dataTable)
     {
         try
