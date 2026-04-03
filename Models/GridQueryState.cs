@@ -1,40 +1,6 @@
 namespace HipHipParquet.Models;
 
 /// <summary>
-/// Represents a saved view or filter configuration that can be restored.
-/// </summary>
-public class SavedView
-{
-    public string Name { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public Dictionary<string, HashSet<string>> ColumnFilters { get; set; } = [];
-    public string GlobalSearch { get; set; } = string.Empty;
-    public string Sort { get; set; } = string.Empty;
-    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
-}
-
-/// <summary>
-/// Represents a repeatable cleaning recipe (e.g., trim, cast, normalize nulls).
-/// </summary>
-public class CleaningRecipe
-{
-    public string Name { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public List<RecipeStep> Steps { get; set; } = [];
-    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
-}
-
-/// <summary>
-/// A single step in a cleaning recipe.
-/// </summary>
-public class RecipeStep
-{
-    public string StepType { get; set; } = string.Empty; // "trim", "cast", "normalize_nulls", etc.
-    public string TargetColumn { get; set; } = string.Empty;
-    public Dictionary<string, string> Parameters { get; set; } = []; // e.g., { "targetType": "int" }
-}
-
-/// <summary>
 /// Represents the current state of grid filtering, searching, sorting, and paging.
 /// Can be translated into a SQL query for dataset-wide operations instead of in-memory DataView.RowFilter.
 /// </summary>

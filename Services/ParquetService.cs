@@ -498,23 +498,24 @@ public class ParquetService : IDisposable
 
             var escapedColId = columnName.Replace("\"", "\"\"");
 
-            // Check for NULL values first so we can reserve a slot in the limit
-            var nullSql = $"SELECT COUNT(*) FROM {readerExpr} WHERE \"{escapedColId}\" IS NULL";
+            // Check for blank values (NULL or empty/whitespace strings) so the
+            // blank bucket aligns with the in-memory ApplyAllFilters() semantics.
+            var nullSql = $"SELECT COUNT(*) FROM {readerExpr} WHERE \"{escapedColId}\" IS NULL OR TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) = ''";
             using var nullCmd = new DuckDBCommand(nullSql, connection);
             var nullCount = Convert.ToInt64(await nullCmd.ExecuteScalarAsync(cancellationToken));
             var hasNulls = nullCount > 0;
 
-            // Get total distinct count (non-null)
-            var countSql = $"SELECT COUNT(DISTINCT CAST(\"{escapedColId}\" AS VARCHAR)) FROM {readerExpr}";
+            // Get total distinct count of non-blank values
+            var countSql = $"SELECT COUNT(DISTINCT CAST(\"{escapedColId}\" AS VARCHAR)) FROM {readerExpr} WHERE \"{escapedColId}\" IS NOT NULL AND TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) <> ''";
             using var countCmd = new DuckDBCommand(countSql, connection);
             var countResult = await countCmd.ExecuteScalarAsync(cancellationToken);
             var nonNullDistinct = Convert.ToInt32(countResult ?? 0);
 
-            // Reserve one slot for "(Blank)" when NULLs exist so Values.Count never exceeds maxValues
+            // Reserve one slot for "(Blank)" when blanks exist so Values.Count never exceeds maxValues
             var valueLimit = hasNulls ? Math.Max(1, maxValues - 1) : maxValues;
 
-            // Get distinct non-null values
-            var valuesSql = $"SELECT DISTINCT CAST(\"{escapedColId}\" AS VARCHAR) FROM {readerExpr} WHERE \"{escapedColId}\" IS NOT NULL ORDER BY 1 LIMIT {valueLimit}";
+            // Get distinct non-blank values
+            var valuesSql = $"SELECT DISTINCT CAST(\"{escapedColId}\" AS VARCHAR) FROM {readerExpr} WHERE \"{escapedColId}\" IS NOT NULL AND TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) <> '' ORDER BY 1 LIMIT {valueLimit}";
             var values = new List<string>();
             using var valuesCmd = new DuckDBCommand(valuesSql, connection);
             using var reader = await valuesCmd.ExecuteReaderAsync(cancellationToken);
@@ -568,11 +569,19 @@ public class ParquetService : IDisposable
             var conditions = new List<string>();
 
             // Add column-level value filters
-            foreach (var kvp in queryState.ColumnFilters.Where(kv => kv.Value.Count > 0))
+            foreach (var kvp in queryState.ColumnFilters)
             {
                 var columnName = kvp.Key;
                 var escapedColId = columnName.Replace("\"", "\"\"");
                 var selectedValues = kvp.Value;
+
+                // Empty selection means "show no rows" — emit a match-none condition
+                if (selectedValues.Count == 0)
+                {
+                    conditions.Add("1=0");
+                    continue;
+                }
+
                 var nonBlankValues = selectedValues.Where(v => v != "(Blank)").ToList();
                 var includeBlank = selectedValues.Contains("(Blank)");
 
@@ -584,7 +593,8 @@ public class ParquetService : IDisposable
                 }
                 if (includeBlank)
                 {
-                    colConditions.Add($"\"{escapedColId}\" IS NULL");
+                    // Match NULL or empty/whitespace strings (aligns with in-memory filter semantics)
+                    colConditions.Add($"(\"{escapedColId}\" IS NULL OR TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) = '')");
                 }
 
                 if (colConditions.Count > 0)

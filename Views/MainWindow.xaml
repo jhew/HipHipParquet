@@ -146,13 +146,30 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <TextBox x:Name="SchemaSearchBox"
-                             Grid.Row="0"
-                             Margin="12,10,12,6"
-                             Padding="6,4"
-                             VerticalContentAlignment="Center"
-                             TextChanged="OnSchemaSearchTextChanged"
-                             ToolTip="Search columns by name or type"/>
+                    <Grid Grid.Row="0" Margin="12,10,12,6">
+                        <TextBox x:Name="SchemaSearchBox"
+                                 Padding="6,4"
+                                 VerticalContentAlignment="Center"
+                                 TextChanged="OnSchemaSearchTextChanged"
+                                 ToolTip="Filter the column list by name or data type"/>
+                        <TextBlock Text="Filter columns..."
+                                   IsHitTestVisible="False"
+                                   Foreground="Gray"
+                                   FontStyle="Italic"
+                                   Margin="8,0,0,0"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=SchemaSearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                     <ScrollViewer Grid.Row="1">
                         <StackPanel x:Name="SchemaPanel" Margin="12">
                             <TextBlock Text="Schema" FontWeight="Bold" FontSize="16" Margin="0,0,0,8"/>

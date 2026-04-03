@@ -179,7 +179,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        await RestoreWorkspaceStateAsync();
+        // Skip workspace restore when a startup command will immediately replace it
+        // (e.g. --compare-with-last opens a different file). Always restore for --restore-workspace.
+        if (string.IsNullOrWhiteSpace(_pendingStartupCommand) ||
+            string.Equals(_pendingStartupCommand, "restore-workspace", StringComparison.OrdinalIgnoreCase))
+        {
+            await RestoreWorkspaceStateAsync();
+        }
+
         await RunPendingStartupCommandAsync();
     }
 
@@ -2395,8 +2402,9 @@ public partial class MainWindow : Window
         
         foreach (var kvp in _columnFilters)
         {
-            if (kvp.Value.IsActive && kvp.Value.SelectedValues.Count > 0)
+            if (kvp.Value.IsActive)
             {
+                // Include all active filters, even empty selections (= match-none, signals 1=0 to SQL builder)
                 columnFilters[kvp.Key] = new HashSet<string>(kvp.Value.SelectedValues);
             }
         }
@@ -2412,7 +2420,7 @@ public partial class MainWindow : Window
             CsvOptions = _activeCsvOptions,
             JsonOptions = _activeJsonOptions,
             ColumnFilters = columnFilters,
-            GlobalSearch = GlobalSearchBox?.Text ?? string.Empty,
+            GlobalSearch = (GlobalSearchBox?.Text ?? string.Empty).Trim(),
             Sort = _dataView?.Sort ?? string.Empty,
             RowLimit = _currentRowLimit,
             RowOffset = 0,
@@ -2451,11 +2459,19 @@ public partial class MainWindow : Window
             // Build WHERE clause (similar to ExecuteGridQueryAsync)
             var conditions = new List<string>();
 
-            foreach (var kvp in queryState.ColumnFilters.Where(kv => kv.Value.Count > 0))
+            foreach (var kvp in queryState.ColumnFilters)
             {
                 var columnName = kvp.Key;
                 var escapedColId = columnName.Replace("\"", "\"\"");
                 var selectedValues = kvp.Value;
+
+                // Empty selection means "show no rows" — emit a match-none condition
+                if (selectedValues.Count == 0)
+                {
+                    conditions.Add("1=0");
+                    continue;
+                }
+
                 var nonBlankValues = selectedValues.Where(v => v != "(Blank)").ToList();
                 var includeBlank = selectedValues.Contains("(Blank)");
 
@@ -2467,7 +2483,8 @@ public partial class MainWindow : Window
                 }
                 if (includeBlank)
                 {
-                    colConditions.Add($"\"{escapedColId}\" IS NULL");
+                    // Match NULL or empty/whitespace (aligns with in-memory filter semantics)
+                    colConditions.Add($"(\"{escapedColId}\" IS NULL OR TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) = '')");
                 }
 
                 if (colConditions.Count > 0)
@@ -2567,6 +2584,14 @@ public partial class MainWindow : Window
     {
         try
         {
+            // Capture active column filter selections
+            var columnFilters = new Dictionary<string, List<string>>();
+            foreach (var kvp in _columnFilters)
+            {
+                if (kvp.Value.IsActive)
+                    columnFilters[kvp.Key] = [.. kvp.Value.SelectedValues];
+            }
+
             var state = new WorkspaceState
             {
                 FilePaths = _currentFilePaths?.ToList() ?? [],
@@ -2577,6 +2602,7 @@ public partial class MainWindow : Window
                 IsQualityPaneVisible = QualityReviewPanel.Visibility == Visibility.Visible,
                 SchemaPaneWidth = SchemaPaneColumn.Width.Value,
                 QualityPaneWidth = QualityPaneColumn.Width.Value,
+                ColumnFilters = columnFilters,
                 SavedAtUtc = DateTime.UtcNow
             };
 
@@ -2629,6 +2655,21 @@ public partial class MainWindow : Window
                 {
                     // Ignore sort restore failures when schemas differ from prior session.
                 }
+            }
+
+            // Restore column filter selections
+            if (state.ColumnFilters.Count > 0)
+            {
+                foreach (var kvp in state.ColumnFilters)
+                {
+                    if (_columnFilters.TryGetValue(kvp.Key, out var filterState))
+                    {
+                        filterState.SelectedValues = new HashSet<string>(kvp.Value);
+                        filterState.IsActive = true;
+                        UpdateFilterIndicator(kvp.Key);
+                    }
+                }
+                ApplyAllFilters();
             }
 
             ApplyPaneLayoutState(state);
@@ -3229,6 +3270,8 @@ public partial class MainWindow : Window
 
     private void ShowLoading(string message)
     {
+        // Immediately clear the empty state so the overlay renders on a clean background
+        EmptyStatePanel.Visibility = Visibility.Collapsed;
         LoadingText.Text = message;
         LoadingOverlay.Visibility = Visibility.Visible;
         MainTaskbarItemInfo.ProgressState = TaskbarItemProgressState.Indeterminate;
@@ -3252,6 +3295,8 @@ public partial class MainWindow : Window
         public bool IsQualityPaneVisible { get; set; } = true;
         public double SchemaPaneWidth { get; set; } = 250;
         public double QualityPaneWidth { get; set; } = 420;
+        /// <summary>Active column filter selections: column name → selected values.</summary>
+        public Dictionary<string, List<string>> ColumnFilters { get; set; } = [];
         public DateTime SavedAtUtc { get; set; }
     }
 
