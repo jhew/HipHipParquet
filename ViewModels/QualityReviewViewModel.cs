@@ -67,6 +67,18 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _analyzedAtDisplay = "";
 
+    [ObservableProperty]
+    private string _profileDisplayName = "";
+
+    [ObservableProperty]
+    private string _sourceSetSummary = "";
+
+    [ObservableProperty]
+    private bool _hasSourceManifest;
+
+    [ObservableProperty]
+    private ObservableCollection<SourceFileSummary> _sourceManifest = [];
+
     // Score components
     [ObservableProperty]
     private double _completenessScore;
@@ -261,6 +273,9 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
 
             // Update UI state
             FileProfile = profile;
+            ProfileDisplayName = SourceManifest.Count > 1
+                ? $"Parquet file set ({SourceManifest.Count} files)"
+                : profile.FileName;
             _allColumns = [.. profile.Columns];
             DisplayedColumns = new ObservableCollection<ColumnProfile>(profile.Columns);
 
@@ -289,7 +304,10 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             ExportHtmlReportCommand.NotifyCanExecuteChanged();
             AnalysisProgress = 100;
             TaskbarProgressValue = 1.0;
-            StatusMessage = $"Analysis complete — {profile.ColumnCount} columns, {profile.RowCount:N0} rows, score: {profile.OverallScore.Total:F0}/100";
+            var sourceSummary = HasSourceManifest
+                ? $"{SourceManifest.Count} source file{(SourceManifest.Count == 1 ? "" : "s")}"
+                : "single source";
+            StatusMessage = $"Analysis complete — {profile.ColumnCount} columns, {profile.RowCount:N0} rows, {sourceSummary}, score: {profile.OverallScore.Total:F0}/100";
         }
         catch (OperationCanceledException)
         {
@@ -588,7 +606,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         try
         {
             StatusMessage = "Generating HTML report...";
-            var html = _reportService.GenerateHtmlReport(FileProfile, Findings.ToList(), Comparison);
+            var html = _reportService.GenerateHtmlReport(FileProfile, Findings.ToList(), Comparison, SourceManifest.ToList());
             await System.IO.File.WriteAllTextAsync(saveDialog.FileName, html);
 
             var latestReportPointerPath = System.IO.Path.Combine(
@@ -644,7 +662,11 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     /// <summary>
     /// Sets the current file path when a new file is loaded in MainWindow.
     /// </summary>
-    public void SetFilePath(string filePath, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
+    public void SetFilePath(
+        string filePath,
+        CsvImportOptions? csvOptions = null,
+        JsonImportOptions? jsonOptions = null,
+        IReadOnlyList<SourceFileSummary>? sourceFiles = null)
     {
         CurrentFilePath = filePath;
         ActiveCsvOptions = csvOptions;
@@ -670,7 +692,11 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         IsGroupByExpanded = false;
         IsColumnProfilesExpanded = true;
         GroupByStatusMessage = "";
-        StatusMessage = "File loaded. Profiling can start automatically.";
+        ProfileDisplayName = "";
+        UpdateSourceManifest(sourceFiles);
+        StatusMessage = SourceManifest.Count > 1
+            ? $"{SourceManifest.Count} parquet files loaded as one logical table. Profiling can start automatically."
+            : "File loaded. Profiling can start automatically.";
         AnalyzeCommand.NotifyCanExecuteChanged();
         ExportHtmlReportCommand.NotifyCanExecuteChanged();
     }
@@ -713,9 +739,43 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         IsGroupByExpanded = false;
         IsColumnProfilesExpanded = true;
         GroupByStatusMessage = "";
+        ProfileDisplayName = "";
+        SourceSetSummary = "";
+        HasSourceManifest = false;
+        SourceManifest.Clear();
         StatusMessage = "Open a file and click Analyze to begin.";
         AnalyzeCommand.NotifyCanExecuteChanged();
         ExportHtmlReportCommand.NotifyCanExecuteChanged();
+    }
+
+    private void UpdateSourceManifest(IReadOnlyList<SourceFileSummary>? sourceFiles)
+    {
+        SourceManifest.Clear();
+
+        if (sourceFiles == null || sourceFiles.Count == 0)
+        {
+            HasSourceManifest = false;
+            SourceSetSummary = "";
+            return;
+        }
+
+        var totalRows = sourceFiles.Sum(s => s.RowCount);
+        foreach (var source in sourceFiles)
+        {
+            SourceManifest.Add(new SourceFileSummary
+            {
+                FilePath = source.FilePath,
+                RowCount = source.RowCount,
+                ContributionPercent = source.ContributionPercent > 0
+                    ? source.ContributionPercent
+                    : (totalRows > 0 ? Math.Round(source.RowCount * 100.0 / totalRows, 2) : 0)
+            });
+        }
+
+        HasSourceManifest = SourceManifest.Count > 0;
+        SourceSetSummary = SourceManifest.Count > 1
+            ? $"{SourceManifest.Count} parquet files analyzed as one logical table"
+            : "1 source file analyzed";
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────

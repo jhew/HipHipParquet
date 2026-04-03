@@ -213,9 +213,13 @@
 
                         <!-- File name + analyzed at -->
                         <TextBox Style="{StaticResource SelectableText}" FontSize="11" FontWeight="SemiBold"
-                                 Text="{Binding FileProfile.FileName, Mode=OneWay}" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                 Text="{Binding ProfileDisplayName, Mode=OneWay}" TextWrapping="Wrap" Margin="0,0,0,2"/>
                         <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#888"
                                  Text="{Binding AnalyzedAtDisplay, Mode=OneWay}" Margin="0,0,0,10"/>
+                        <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#666"
+                                 Text="{Binding SourceSetSummary, Mode=OneWay}"
+                                 Margin="0,0,0,10"
+                                 Visibility="{Binding HasSourceManifest, Converter={StaticResource BoolToVis}}"/>
 
                         <!-- Stat tiles: 3-column grid -->
                         <Grid>
@@ -283,6 +287,47 @@
                                 </StackPanel>
                             </Border>
                         </Grid>
+
+                        <Expander Header="Source Files"
+                                  Margin="0,12,0,0"
+                                  IsExpanded="False"
+                                  Visibility="{Binding HasSourceManifest, Converter={StaticResource BoolToVis}}">
+                            <Border Background="#FAFAFA" BorderBrush="#EAEAEA" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,6,0,0">
+                                <ListBox ItemsSource="{Binding SourceManifest}"
+                                         MaxHeight="300"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <ContentPresenter/>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel LastChildFill="True" Margin="0,2,0,2">
+                                                <TextBlock DockPanel.Dock="Right" Foreground="#666" FontSize="10"
+                                                           Text="{Binding RowCount, StringFormat='{}{0:N0} rows'}"/>
+                                                <TextBlock DockPanel.Dock="Right" Foreground="#999" FontSize="10" Margin="0,0,8,0"
+                                                           Text="{Binding ContributionPercent, StringFormat='({0:F1}%)'}"/>
+                                                <TextBlock Foreground="#333" FontSize="10" TextTrimming="CharacterEllipsis"
+                                                           Text="{Binding FileName}" ToolTip="{Binding FilePath}"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                        </Expander>
                     </StackPanel>
                 </Border>
 

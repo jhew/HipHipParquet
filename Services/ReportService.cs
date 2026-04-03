@@ -8,16 +8,28 @@ namespace HipHipParquet.Services;
 /// </summary>
 public class ReportService
 {
-    public string GenerateHtmlReport(FileProfile profile, List<NarrativeItem> findings, FileComparison? comparison = null)
+    public string GenerateHtmlReport(
+        FileProfile profile,
+        List<NarrativeItem> findings,
+        FileComparison? comparison = null,
+        IReadOnlyList<SourceFileSummary>? sourceManifest = null)
     {
         var sb = new StringBuilder();
+        var sources = sourceManifest?
+            .Where(s => !string.IsNullOrWhiteSpace(s.FilePath))
+            .OrderBy(s => s.FileName, NaturalStringComparer.Instance)
+            .ThenBy(s => s.FilePath, NaturalStringComparer.Instance)
+            .ToList() ?? [];
+        var sourceCount = sources.Count;
+        var hasFileSet = sourceCount > 1;
+        var fileSetTitle = hasFileSet ? $"{sourceCount} parquet files" : profile.FileName;
 
         sb.AppendLine("<!DOCTYPE html>");
         sb.AppendLine("<html lang=\"en\">");
         sb.AppendLine("<head>");
         sb.AppendLine("<meta charset=\"UTF-8\">");
         sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine($"<title>Quality Report — {Escape(profile.FileName)}</title>");
+        sb.AppendLine($"<title>Quality Report — {Escape(fileSetTitle)}</title>");
         sb.AppendLine("<style>");
         sb.AppendLine(GetCss());
         sb.AppendLine("</style>");
@@ -27,7 +39,9 @@ public class ReportService
         // Header
         sb.AppendLine("<div class=\"header\">");
         sb.AppendLine("<h1>📊 Data Quality Report</h1>");
-        sb.AppendLine($"<p class=\"subtitle\">{Escape(profile.FileName)} &mdash; Generated {profile.AnalyzedAt:MMMM dd, yyyy h:mm tt}</p>");
+        sb.AppendLine(hasFileSet
+            ? $"<p class=\"subtitle\">{sourceCount} parquet files analyzed as one logical table &mdash; Generated {profile.AnalyzedAt:MMMM dd, yyyy h:mm tt}</p>"
+            : $"<p class=\"subtitle\">{Escape(profile.FileName)} &mdash; Generated {profile.AnalyzedAt:MMMM dd, yyyy h:mm tt}</p>");
         sb.AppendLine("</div>");
 
         // File summary card
@@ -41,6 +55,33 @@ public class ReportService
         sb.AppendLine($"<div class=\"stat\"><span class=\"stat-value\">{profile.OverallCompleteness:F1}%</span><span class=\"stat-label\">Completeness</span></div>");
         sb.AppendLine($"<div class=\"stat\"><span class=\"stat-value\">{profile.ColumnsWithNulls}</span><span class=\"stat-label\">Columns with Nulls</span></div>");
         sb.AppendLine("</div>");
+
+        if (sourceCount > 0)
+        {
+            sb.AppendLine("<div class=\"card\">");
+            sb.AppendLine($"<h2>Source Manifest ({sourceCount})</h2>");
+            sb.AppendLine("<table class=\"columns-table\">");
+            sb.AppendLine("<thead><tr><th>File</th><th>Rows</th><th>Contribution</th></tr></thead>");
+            sb.AppendLine("<tbody>");
+
+            var totalRows = sources.Sum(s => s.RowCount);
+            foreach (var source in sources)
+            {
+                var pct = source.ContributionPercent > 0
+                    ? source.ContributionPercent
+                    : (totalRows > 0 ? source.RowCount * 100.0 / totalRows : 0);
+
+                sb.AppendLine("<tr>");
+                sb.AppendLine($"<td>{Escape(source.FileName)}</td>");
+                sb.AppendLine($"<td>{source.RowCount:N0}</td>");
+                sb.AppendLine($"<td>{pct:F1}%</td>");
+                sb.AppendLine("</tr>");
+            }
+
+            sb.AppendLine("</tbody>");
+            sb.AppendLine("</table>");
+            sb.AppendLine("</div>");
+        }
         sb.AppendLine("</div>");
 
         // Quality score
