@@ -252,7 +252,8 @@ public class ParquetService : IDisposable
             await connection.OpenAsync();
 
             var normalizedPaths = filePaths.Select(path => path.Replace("\\", "/")).ToArray();
-            var readerExpr = BuildParquetReaderExpression(normalizedPaths);
+            // Include DuckDB's filename virtual column so callers can preserve row provenance.
+            var readerExpr = BuildParquetReaderExpression(normalizedPaths, includeFilename: true);
             var limitClause = rowLimit.HasValue ? $" LIMIT {rowLimit.Value}" : "";
             var sql = $"SELECT * FROM {readerExpr}{limitClause}";
             _logger.LogDebug("Executing multi-file SQL: {SQL}", sql);
@@ -359,7 +360,17 @@ public class ParquetService : IDisposable
                 FilePath = filePath,
                 Format = format,
                 Columns = columns,
-                RowCount = rowCount
+                RowCount = rowCount,
+                SourceFiles = [filePath],
+                SourceFileSummaries =
+                [
+                    new SourceFileSummary
+                    {
+                        FilePath = filePath,
+                        RowCount = rowCount,
+                        ContributionPercent = 100
+                    }
+                ]
             };
         }
         catch (Exception ex)
@@ -414,6 +425,8 @@ public class ParquetService : IDisposable
             using var countCmd = new DuckDBCommand(countSql, _connection);
             var countResult = await countCmd.ExecuteScalarAsync();
 
+            var sourceSummaries = await GetParquetSourceFileSummariesAsync(filePaths, normalizedPaths);
+
             return new DataFileInfo
             {
                 // Use a single representative path for consumers that expect a real filesystem path.
@@ -421,7 +434,8 @@ public class ParquetService : IDisposable
                 Format = SupportedFileFormat.Parquet,
                 Columns = columns,
                 RowCount = Convert.ToInt64(countResult),
-                SourceFiles = filePaths.ToList()
+                SourceFiles = filePaths.ToList(),
+                SourceFileSummaries = sourceSummaries
             };
         }
         catch (Exception ex)
@@ -431,12 +445,66 @@ public class ParquetService : IDisposable
         }
     }
 
-    private static string BuildParquetReaderExpression(IEnumerable<string> normalizedPaths)
+    private static string BuildParquetReaderExpression(IEnumerable<string> normalizedPaths, bool includeFilename = false)
     {
         static string EscapePath(string path) => path.Replace("'", "''");
 
         var pathList = string.Join(", ", normalizedPaths.Select(path => $"'{EscapePath(path)}'"));
-        return $"read_parquet([{pathList}])";
+        var filenameOption = includeFilename ? ", filename = true" : string.Empty;
+        return $"read_parquet([{pathList}]{filenameOption})";
+    }
+
+    private async Task<List<SourceFileSummary>> GetParquetSourceFileSummariesAsync(
+        IReadOnlyList<string> originalPaths,
+        IReadOnlyList<string> normalizedPaths)
+    {
+        if (_connection == null)
+            return [];
+
+        var pathMap = normalizedPaths
+            .Select((normalized, index) => new { normalized, original = originalPaths[index] })
+            .ToDictionary(x => x.normalized, x => x.original, StringComparer.OrdinalIgnoreCase);
+
+        var summaryMap = originalPaths.ToDictionary(
+            path => path,
+            path => new SourceFileSummary { FilePath = path, RowCount = 0 },
+            StringComparer.OrdinalIgnoreCase);
+
+        var readerExpr = BuildParquetReaderExpression(normalizedPaths, includeFilename: true);
+        var sql = $"SELECT filename, COUNT(*) AS row_count FROM {readerExpr} GROUP BY filename";
+        using var cmd = new DuckDBCommand(sql, _connection);
+        using var reader = await cmd.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            var normalizedFilePath = reader.GetString("filename");
+            var rowCount = reader.GetInt64("row_count");
+
+            if (!pathMap.TryGetValue(normalizedFilePath, out var originalPath))
+                originalPath = normalizedFilePath;
+
+            if (!summaryMap.TryGetValue(originalPath, out var summary))
+            {
+                summary = new SourceFileSummary { FilePath = originalPath };
+                summaryMap[originalPath] = summary;
+            }
+
+            summary.RowCount = rowCount;
+        }
+
+        var ordered = originalPaths
+            .Select(path => summaryMap[path])
+            .ToList();
+
+        var totalRows = ordered.Sum(item => item.RowCount);
+        foreach (var summary in ordered)
+        {
+            summary.ContributionPercent = totalRows > 0
+                ? Math.Round(summary.RowCount * 100.0 / totalRows, 2)
+                : 0;
+        }
+
+        return ordered;
     }
     
     private async Task<long> GetRowCountAsync(string filePath, SupportedFileFormat format, CsvImportOptions? csvOptions = null, JsonImportOptions? jsonOptions = null)
@@ -1315,6 +1383,11 @@ public class DataFileInfo
     /// For single-file scenarios this may be empty or contain a single entry equal to <see cref="FilePath" />.
     /// </summary>
     public List<string> SourceFiles { get; set; } = [];
+
+    /// <summary>
+    /// Optional per-file row statistics for multi-file loads.
+    /// </summary>
+    public List<SourceFileSummary> SourceFileSummaries { get; set; } = [];
 }
 
 public class ColumnInfo

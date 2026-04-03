@@ -22,6 +22,9 @@ namespace HipHipParquet.Views;
 public partial class MainWindow : Window
 {
     private const double MaxQualityPaneWidthCap = 1300;
+    private const string RowNumberColumnName = "__RowNumber";
+    private const string SourceFileColumnName = "__SourceFile";
+    private const string DuckDbFilenameColumnName = "filename";
     public static readonly RoutedUICommand GoToRowCommand = new("Go to Row", "GoToRow", typeof(MainWindow));
     public static readonly RoutedUICommand FocusSearchCommand = new("Focus Search", "FocusSearch", typeof(MainWindow));
 
@@ -253,6 +256,11 @@ public partial class MainWindow : Window
     {
         try
         {
+            var orderedFilePaths = filePaths
+                .OrderBy(Path.GetFileName, NaturalStringComparer.Instance)
+                .ThenBy(path => path, NaturalStringComparer.Instance)
+                .ToList();
+
             ShowLoading("Loading parquet file set...");
             _currentFormat = SupportedFileFormat.Parquet;
             _activeCsvOptions = null;
@@ -276,27 +284,18 @@ public partial class MainWindow : Window
             _parquetService?.Dispose();
             _parquetService = new ParquetService(logger);
 
-            var fileInfo = await _parquetService.GetFileInfoAsync(filePaths);
+            var fileInfo = await _parquetService.GetFileInfoAsync(orderedFilePaths);
             _totalRowCount = fileInfo.RowCount;
 
             ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
             var dataTable = await _parquetService.LoadFilesAsync(
-                filePaths,
+                orderedFilePaths,
                 _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null);
 
             ShowLoading("Indexing rows...");
-            await Task.Run(() =>
-            {
-                if (!dataTable.Columns.Contains("__RowNumber"))
-                {
-                    var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
-                    rowNumColumn.SetOrdinal(0);
-                    for (int i = 0; i < dataTable.Rows.Count; i++)
-                        dataTable.Rows[i]["__RowNumber"] = i + 1;
-                }
-            });
+            await Task.Run(() => EnsureRowMetadataColumns(dataTable, orderedFilePaths));
 
-            UpdateSchemaPanel($"{filePaths.Count} parquet files", fileInfo);
+            UpdateSchemaPanel(orderedFilePaths[0], fileInfo);
 
             ShowLoading("Building grid...");
             SetupDataGrid(dataTable, fileInfo.Columns);
@@ -305,13 +304,13 @@ public partial class MainWindow : Window
             DataGridContainer.Visibility = Visibility.Visible;
             UpdateLoadMoreBanner(dataTable.Rows.Count);
 
-            foreach (var filePath in filePaths)
+            foreach (var filePath in orderedFilePaths)
                 AddToRecentFiles(filePath);
 
             // Multi-file parquet loads are treated as a logical table, not a single source file.
             // Keep the list of current paths so paging can work, but avoid overwriting source files.
-            _currentFilePaths = filePaths;
-            _currentFilePath = filePaths.Count == 1 ? filePaths[0] : null;
+            _currentFilePaths = orderedFilePaths;
+            _currentFilePath = orderedFilePaths.Count == 1 ? orderedFilePaths[0] : null;
             _hasUnsavedChanges = false;
             _pendingEditCount = 0;
             UpdateWindowTitle();
@@ -320,12 +319,12 @@ public partial class MainWindow : Window
             UpdateFormatBadge(SupportedFileFormat.Parquet);
 
             // Enable quality analysis on the first file of the set (best-effort for multi-file loads).
-            _qualityViewModel?.SetFilePath(filePaths[0]);
+            _qualityViewModel?.SetFilePath(orderedFilePaths[0], sourceFiles: fileInfo.SourceFileSummaries);
             if (_totalRowCount <= AutoProfileRowThreshold)
                 _qualityViewModel?.StartAutoAnalyze();
 
             StatusText.Text =
-                $"Loaded {filePaths.Count} parquet files — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
+                $"Loaded {orderedFilePaths.Count} parquet files — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
         }
         catch (Exception ex)
         {
@@ -976,16 +975,7 @@ public partial class MainWindow : Window
 
         // Compute row-number column on a background thread (avoids stalling the UI for large files).
         ShowLoading("Indexing rows...");
-        await Task.Run(() =>
-        {
-            if (!dataTable.Columns.Contains("__RowNumber"))
-            {
-                var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
-                rowNumColumn.SetOrdinal(0);
-                for (int i = 0; i < dataTable.Rows.Count; i++)
-                    dataTable.Rows[i]["__RowNumber"] = i + 1;
-            }
-        });
+        await Task.Run(() => EnsureRowMetadataColumns(dataTable, [filePath]));
         
         // Update schema panel
         UpdateSchemaPanel(filePath, fileInfo);
@@ -1019,7 +1009,7 @@ public partial class MainWindow : Window
         SetupFileWatcher(filePath);
 
         // Notify Quality panel of new file
-        _qualityViewModel?.SetFilePath(filePath, csvOptions, jsonOptions);
+        _qualityViewModel?.SetFilePath(filePath, csvOptions, jsonOptions, fileInfo.SourceFileSummaries);
         if (_totalRowCount <= AutoProfileRowThreshold)
             _qualityViewModel?.StartAutoAnalyze();
         
@@ -1253,12 +1243,41 @@ public partial class MainWindow : Window
         
         // File info
         var formatName = Services.FileFormatDetector.GetFormatDisplayName(_lastSchemaInfo.Format);
+        var sourceFileCount = _lastSchemaInfo.SourceFiles.Count;
+        var fileLabel = sourceFileCount > 1
+            ? $"📁 File Set: {sourceFileCount:N0} parquet files"
+            : $"📁 File: {System.IO.Path.GetFileName(_lastSchemaFilePath)}";
         var fileBlock = new TextBlock
         {
-            Text = $"📁 File: {System.IO.Path.GetFileName(_lastSchemaFilePath)}",
+            Text = fileLabel,
             Margin = new Thickness(0, 2, 0, 2)
         };
         SchemaPanel.Children.Add(fileBlock);
+
+        if (sourceFileCount > 1)
+        {
+            foreach (var sourceFile in _lastSchemaInfo.SourceFiles.Take(8))
+            {
+                SchemaPanel.Children.Add(new TextBlock
+                {
+                    Text = $"   • {Path.GetFileName(sourceFile)}",
+                    Margin = new Thickness(10, 0, 0, 1),
+                    Foreground = Brushes.DimGray,
+                    FontSize = 11
+                });
+            }
+
+            if (sourceFileCount > 8)
+            {
+                SchemaPanel.Children.Add(new TextBlock
+                {
+                    Text = $"   • ... and {sourceFileCount - 8:N0} more",
+                    Margin = new Thickness(10, 0, 0, 1),
+                    Foreground = Brushes.DimGray,
+                    FontSize = 11
+                });
+            }
+        }
 
         var formatBlock = new TextBlock
         {
@@ -1345,7 +1364,17 @@ public partial class MainWindow : Window
         if (_lastSchemaInfo == null || _lastSchemaFilePath == null) return;
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"File: {System.IO.Path.GetFileName(_lastSchemaFilePath)}");
+        if (_lastSchemaInfo.SourceFiles.Count > 1)
+        {
+            sb.AppendLine($"File Set: {_lastSchemaInfo.SourceFiles.Count:N0} parquet files");
+            sb.AppendLine("Source Files:");
+            foreach (var sourceFile in _lastSchemaInfo.SourceFiles)
+                sb.AppendLine($"  - {Path.GetFileName(sourceFile)}");
+        }
+        else
+        {
+            sb.AppendLine($"File: {System.IO.Path.GetFileName(_lastSchemaFilePath)}");
+        }
         sb.AppendLine($"Format: {Services.FileFormatDetector.GetFormatDisplayName(_lastSchemaInfo.Format)}");
         sb.AppendLine($"Rows: {_lastSchemaInfo.RowCount:N0}");
         sb.AppendLine($"Columns ({_lastSchemaInfo.Columns.Count}):");
@@ -3101,15 +3130,7 @@ public partial class MainWindow : Window
             ShowLoading("Indexing rows...");
             await Task.Run(() =>
             {
-                if (!dataTable.Columns.Contains("__RowNumber"))
-                {
-                    var rowNumColumn = dataTable.Columns.Add("__RowNumber", typeof(int));
-                    rowNumColumn.SetOrdinal(0);
-                }
-                var col = dataTable.Columns["__RowNumber"]!;
-                if (col.Ordinal != 0) col.SetOrdinal(0);
-                for (int i = 0; i < dataTable.Rows.Count; i++)
-                    dataTable.Rows[i]["__RowNumber"] = i + 1;
+                EnsureRowMetadataColumns(dataTable, _currentFilePaths);
             });
 
             SetupDataGrid(dataTable, null);
@@ -3149,6 +3170,57 @@ public partial class MainWindow : Window
             return System.IO.Path.GetFileName(_currentFilePaths[0]);
 
         return "current data";
+    }
+
+    private static void EnsureRowMetadataColumns(DataTable dataTable, IReadOnlyList<string>? sourceFiles)
+    {
+        var hasMultipleSources = sourceFiles != null && sourceFiles.Count > 1;
+        var firstSourcePath = sourceFiles != null && sourceFiles.Count > 0 ? sourceFiles[0] : string.Empty;
+        var singleSourceName = string.IsNullOrWhiteSpace(firstSourcePath) ? "(Unknown)" : Path.GetFileName(firstSourcePath);
+
+        if (!dataTable.Columns.Contains(RowNumberColumnName))
+        {
+            var rowNumColumn = dataTable.Columns.Add(RowNumberColumnName, typeof(int));
+            rowNumColumn.SetOrdinal(0);
+        }
+
+        if (!dataTable.Columns.Contains(SourceFileColumnName))
+        {
+            var sourceColumn = dataTable.Columns.Add(SourceFileColumnName, typeof(string));
+            sourceColumn.SetOrdinal(1);
+        }
+
+        var rowNumberColumn = dataTable.Columns[RowNumberColumnName]!;
+        if (rowNumberColumn.Ordinal != 0)
+            rowNumberColumn.SetOrdinal(0);
+
+        var sourceFileColumn = dataTable.Columns[SourceFileColumnName]!;
+        if (sourceFileColumn.Ordinal != 1)
+            sourceFileColumn.SetOrdinal(1);
+
+        var perSourceRowCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        for (int i = 0; i < dataTable.Rows.Count; i++)
+        {
+            dataTable.Rows[i][RowNumberColumnName] = i + 1;
+
+            var sourceFileName = singleSourceName;
+            if (hasMultipleSources && dataTable.Columns.Contains(DuckDbFilenameColumnName))
+            {
+                var rawPath = dataTable.Rows[i][DuckDbFilenameColumnName] as string;
+                if (!string.IsNullOrWhiteSpace(rawPath))
+                    sourceFileName = Path.GetFileName(rawPath);
+            }
+
+            if (!perSourceRowCounter.TryGetValue(sourceFileName, out var currentCount))
+                currentCount = 0;
+
+            perSourceRowCounter[sourceFileName] = currentCount + 1;
+            dataTable.Rows[i][SourceFileColumnName] = sourceFileName;
+        }
+
+        if (dataTable.Columns.Contains(DuckDbFilenameColumnName))
+            dataTable.Columns.Remove(DuckDbFilenameColumnName);
     }
 
     private async void OnLoadAllClick(object sender, RoutedEventArgs e)

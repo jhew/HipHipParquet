@@ -122,7 +122,7 @@ public partial class QualityGaugeControl : UserControl
         var geometry = new PathGeometry();
         geometry.Figures.Add(figure);
 
-        var path = new Path
+        var path = new System.Windows.Shapes.Path
         {
             Data = geometry,
             Fill = color
