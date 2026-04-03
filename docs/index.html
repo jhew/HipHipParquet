@@ -3,138 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Hip Hip Parquet - A fast, modern Windows desktop application for viewing and editing Apache Parquet files.">
-    <title>Hip Hip Parquet - Parquet File Viewer for Windows</title>
+    <meta name="description" content="Hip Hip Parquet — Windows desktop toolkit for exploring, profiling, and improving Parquet, CSV, and JSON datasets.">
+    <meta property="og:title" content="Hip Hip Parquet">
+    <meta property="og:description" content="Desktop data quality workbench for Windows. Import, profile, clean, compare, and export tabular data with Parquet at the core.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://hiphipparquet.com">
+    <title>Hip Hip Parquet — Data Quality Workbench for Windows</title>
+    <link rel="icon" href="https://raw.githubusercontent.com/jhew/HipHipParquet/main/Assets/app.png" type="image/png">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="container">
-            <div class="logo">
-                <h1>🎉 Hip Hip Parquet</h1>
-            </div>
-            <ul class="nav-links">
-                <li><a href="#features">Features</a></li>
-                <li><a href="#getting-started">Getting Started</a></li>
-                <li><a href="#download">Download</a></li>
-                <li><a href="https://github.com/jhew/HipHipParquet" target="_blank" rel="noopener noreferrer">GitHub</a></li>
-            </ul>
-        </div>
-    </nav>
 
-    <!-- Hero Section -->
-    <section class="hero">
+    <!-- Skip to main content -->
+    <a href="#main" class="skip-link">Skip to main content</a>
+
+    <!-- Hero -->
+    <header class="hero">
         <div class="container">
-            <h2>Fast, Modern Parquet File Viewer for Windows</h2>
-            <p>Open, view, search, edit, and save Apache Parquet files with an intuitive desktop application.</p>
+            <div class="hero-icon" aria-hidden="true">🎉</div>
+            <h1>Hip Hip Parquet</h1>
+            <p class="tagline">A Windows desktop toolkit for exploring, profiling, and improving your tabular data.</p>
+            <p class="sub">Parquet &bull; CSV &bull; JSON &bull; Excel &mdash; all in one place.</p>
             <div class="hero-buttons">
-                <a href="#download" class="btn btn-primary">Download Now</a>
-                <a href="https://github.com/jhew/HipHipParquet" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">View on GitHub</a>
-            </div>
-            <div class="badges">
-                <span class="badge">.NET 8</span>
-                <span class="badge">WPF UI</span>
-                <span class="badge">MIT License</span>
+                <a href="https://github.com/jhew/HipHipParquet/releases" class="btn btn-primary">Download for Windows</a>
+                <a href="https://github.com/jhew/HipHipParquet" class="btn btn-outline">View on GitHub</a>
             </div>
         </div>
-    </section>
+    </header>
 
-    <!-- What is Parquet Section -->
-    <section class="what-is">
-        <div class="container">
-            <h3>What are Parquet Files?</h3>
-            <p>Apache Parquet is a popular columnar storage format used in data engineering and analytics. It's highly efficient, widely supported by tools like Apache Spark, Pandas, and cloud data warehouses, and perfect for working with large datasets.</p>
-        </div>
-    </section>
+    <main id="main">
 
-    <!-- Features Section -->
-    <section id="features" class="features">
+    <!-- Features -->
+    <section class="features" aria-labelledby="features-heading">
         <div class="container">
-            <h2>Features ✨</h2>
-            
+            <h2 id="features-heading" class="sr-only">Features</h2>
             <div class="feature-grid">
-                <div class="feature-category">
-                    <h3>📂 File Operations</h3>
-                    <ul>
-                        <li><strong>Open Parquet Files</strong> - Load any .parquet file with a simple file picker or by right-clicking files in Windows Explorer</li>
-                        <li><strong>Edit & Save</strong> - Double-click any cell to edit values, then save changes back to Parquet format</li>
-                        <li><strong>Save As</strong> - Save your modified data to a new file</li>
-                        <li><strong>Recent Files</strong> - Quick access to your 10 most recently opened files</li>
-                        <li><strong>Unsaved Changes Warning</strong> - Get prompted before closing if you have unsaved edits</li>
-                    </ul>
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">📂</div>
+                    <h3>Import Anything</h3>
+                    <p>Open Parquet, CSV, TSV, JSON, NDJSON, and Excel files. Drag-and-drop or pick from recent files.</p>
                 </div>
-
-                <div class="feature-category">
-                    <h3>🔍 Data Exploration</h3>
-                    <ul>
-                        <li><strong>Row Numbers</strong> - Persistent row numbers that show original position even when sorted or filtered</li>
-                        <li><strong>Sortable Columns</strong> - Click any column header to sort data ascending or descending</li>
-                        <li><strong>Column Filters</strong> - Search and filter individual columns independently</li>
-                        <li><strong>Global Search</strong> - Search across all columns simultaneously to find any value</li>
-                        <li><strong>Schema Viewer</strong> - View file metadata, column names, data types, and row counts</li>
-                        <li><strong>Copy to Clipboard</strong> - Select cells and copy as CSV or TSV for use in Excel or Google Sheets</li>
-                    </ul>
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">🔍</div>
+                    <h3>Explore &amp; Edit</h3>
+                    <p>Sort, filter, search, and edit inline. Copy to clipboard as CSV or TSV for quick pasting.</p>
                 </div>
-
-                <div class="feature-category">
-                    <h3>🎨 User Experience</h3>
-                    <ul>
-                        <li><strong>Clean Interface</strong> - Modern, intuitive Windows design</li>
-                        <li><strong>Resizable Columns</strong> - Drag column borders to adjust width</li>
-                        <li><strong>Customizable Layout</strong> - Show/hide the schema pane and search filters as needed</li>
-                        <li><strong>Fast Performance</strong> - Handles large files efficiently using virtualized scrolling and DuckDB</li>
-                        <li><strong>Error Handling</strong> - Helpful error messages instead of crashes</li>
-                    </ul>
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">📊</div>
+                    <h3>Profile &amp; Score</h3>
+                    <p>One-click quality analysis with completeness, uniqueness, validity, and distribution metrics.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">⚖️</div>
+                    <h3>Compare Files</h3>
+                    <p>Side-by-side schema diff and data drift detection between any two files.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">🧹</div>
+                    <h3>Clean &amp; Transform</h3>
+                    <p>Build cleaning recipes to fix nulls, trim strings, standardize formats, and more.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">💾</div>
+                    <h3>Export Anywhere</h3>
+                    <p>Save back to Parquet or export to CSV, JSON, and HTML quality reports.</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Getting Started Section -->
-    <section id="getting-started" class="getting-started">
+    <!-- Support -->
+    <section class="support" aria-labelledby="support-heading">
         <div class="container">
-            <h2>Getting Started</h2>
-            
-            <div class="getting-started-content">
-                <div class="install-method">
-                    <h3>📥 Option 1: Download Pre-built Release (Easiest)</h3>
-                    <ol>
-                        <li>Go to the <a href="https://github.com/jhew/HipHipParquet/releases" target="_blank" rel="noopener noreferrer">Releases</a> page</li>
-                        <li>Download the latest <code>.zip</code> file</li>
-                        <li>Extract and run <code>HipHipParquet.exe</code></li>
-                    </ol>
-                </div>
-
-                <div class="install-method">
-                    <h3>🔨 Option 2: Build from Source</h3>
-                    <p>If you want to build it yourself:</p>
-                    <ul>
-                        <li>Clone the repository</li>
-                        <li>Open in Visual Studio 2022 or later</li>
-                        <li>Build and run the project</li>
-                    </ul>
-                </div>
+            <h2 id="support-heading">Support the project</h2>
+            <p>Hip Hip Parquet is free and open source under the MIT license.<br>If it saves you time, consider supporting development.</p>
+            <div class="support-buttons">
+                <a href="https://github.com/sponsors/jhew" class="btn btn-heart">&#10084;&#xFE0F; Sponsor on GitHub</a>
+                <a href="https://github.com/jhew/HipHipParquet/issues" class="btn btn-outline-dark">Report an Issue</a>
             </div>
         </div>
     </section>
 
-    <!-- Download Section -->
-    <section id="download" class="download">
-        <div class="container">
-            <h2>Download Hip Hip Parquet</h2>
-            <p>Get the latest version from GitHub Releases</p>
-            <a href="https://github.com/jhew/HipHipParquet/releases" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-large">Download Latest Release</a>
-            <p class="system-req">Windows 10 or later | .NET 8 Runtime</p>
-        </div>
-    </section>
+    </main>
 
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
-            <p>&copy; 2026 Hip Hip Parquet. Licensed under MIT License.</p>
-            <p><a href="https://github.com/jhew/HipHipParquet" target="_blank" rel="noopener noreferrer">GitHub</a> | <a href="https://github.com/jhew/HipHipParquet/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a></p>
+            <p>&copy; 2026 Hip Hip Parquet &middot; <a href="https://github.com/jhew/HipHipParquet">GitHub</a> &middot; <a href="https://github.com/jhew/HipHipParquet/blob/main/LICENSE">MIT License</a></p>
         </div>
     </footer>
+
 </body>
 </html>

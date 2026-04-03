@@ -1,4 +1,4 @@
 title: Hip Hip Parquet
-description: A fast, modern Windows desktop application for viewing and editing Apache Parquet files
-show_downloads: true
-theme: jekyll-theme-minimal
+description: Windows desktop toolkit for exploring, profiling, and improving Parquet, CSV, and JSON datasets
+url: https://hiphipparquet.com
+baseurl: ""
