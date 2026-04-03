@@ -1420,7 +1420,7 @@ public partial class MainWindow : Window
             for (int i = 0; i < dataTable.Columns.Count; i++)
             {
                 var column = dataTable.Columns[i];
-                if (column.ColumnName == "__RowNumber") continue;
+                if (column.ColumnName is "__RowNumber" or "__SourceFile") continue;
 
                 var columnInfo = columns?.FirstOrDefault(c => c.Name == column.ColumnName);
                 var gridColumn = CreateDataColumn(column, columnInfo, i);
@@ -2321,7 +2321,7 @@ public partial class MainWindow : Window
             
             foreach (DataColumn col in _originalData.Columns)
             {
-                if (col.ColumnName != "__RowNumber")
+                if (col.ColumnName is not ("__RowNumber" or "__SourceFile"))
                     globalConditions.Add($"Convert([{col.ColumnName}], 'System.String') LIKE '*{escapedGlobalText}*'");
             }
             
@@ -2471,7 +2471,7 @@ public partial class MainWindow : Window
         }
 
         var availableColumns = _originalData?.Columns.Cast<DataColumn>()
-            .Where(c => c.ColumnName != "__RowNumber")
+            .Where(c => c.ColumnName is not ("__RowNumber" or "__SourceFile"))
             .Select(c => c.ColumnName)
             .ToList() ?? new();
 
@@ -3177,6 +3177,10 @@ public partial class MainWindow : Window
         var hasMultipleSources = sourceFiles != null && sourceFiles.Count > 1;
         var firstSourcePath = sourceFiles != null && sourceFiles.Count > 0 ? sourceFiles[0] : string.Empty;
         var singleSourceName = string.IsNullOrWhiteSpace(firstSourcePath) ? "(Unknown)" : Path.GetFileName(firstSourcePath);
+        var hasDuplicateFileNames = hasMultipleSources && sourceFiles!
+            .Select(Path.GetFileName)
+            .GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .Any(g => g.Count() > 1);
 
         if (!dataTable.Columns.Contains(RowNumberColumnName))
         {
@@ -3207,7 +3211,7 @@ public partial class MainWindow : Window
             {
                 var rawPath = dataTable.Rows[i][DuckDbFilenameColumnName] as string;
                 if (!string.IsNullOrWhiteSpace(rawPath))
-                    sourceFileName = Path.GetFileName(rawPath);
+                    sourceFileName = hasDuplicateFileNames ? rawPath : Path.GetFileName(rawPath);
             }
 
             dataTable.Rows[i][SourceFileColumnName] = sourceFileName;

@@ -293,8 +293,27 @@
                                   IsExpanded="False"
                                   Visibility="{Binding HasSourceManifest, Converter={StaticResource BoolToVis}}">
                             <Border Background="#FAFAFA" BorderBrush="#EAEAEA" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,6,0,0">
-                                <ItemsControl ItemsSource="{Binding SourceManifest}">
-                                    <ItemsControl.ItemTemplate>
+                                <ListBox ItemsSource="{Binding SourceManifest}"
+                                         MaxHeight="300"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <ContentPresenter/>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <DockPanel LastChildFill="True" Margin="0,2,0,2">
                                                 <TextBlock DockPanel.Dock="Right" Foreground="#666" FontSize="10"
@@ -305,8 +324,8 @@
                                                            Text="{Binding FileName}" ToolTip="{Binding FilePath}"/>
                                             </DockPanel>
                                         </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </Border>
                         </Expander>
                     </StackPanel>

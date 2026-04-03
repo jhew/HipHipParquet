@@ -797,7 +797,7 @@ public class ParquetService : IDisposable
             var columnDefs = new List<string>();
             foreach (DataColumn col in dataTable.Columns)
             {
-                if (col.ColumnName == "__RowNumber") continue; // Skip internal row number column
+                if (col.ColumnName is "__RowNumber" or "__SourceFile") continue; // Skip internal columns
                 
                 var duckDbType = GetDuckDbType(col.DataType);
                 columnDefs.Add($"\"{col.ColumnName}\" {duckDbType}");
@@ -813,7 +813,7 @@ public class ParquetService : IDisposable
             
             // Insert data using parameterized queries (SQL injection-safe, batched in a transaction)
             var dataCols = dataTable.Columns.Cast<DataColumn>()
-                .Where(c => c.ColumnName != "__RowNumber").ToList();
+                .Where(c => c.ColumnName is not ("__RowNumber" or "__SourceFile")).ToList();
             var placeholders = string.Join(", ", Enumerable.Range(1, dataCols.Count).Select(i => $"${i}"));
             var insertSql = $"INSERT INTO {tempTableName} VALUES ({placeholders})";
 
