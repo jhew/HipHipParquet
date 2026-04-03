@@ -21,7 +21,7 @@ public class ParquetService : IDisposable
     /// <summary>
     /// Installs and loads the DuckDB spatial extension (required for Excel/XLSX reading via st_read).
     /// </summary>
-    private async Task EnsureExcelExtensionAsync(DuckDBConnection connection)
+    public async Task EnsureExcelExtensionAsync(DuckDBConnection connection)
     {
         try
         {
@@ -469,7 +469,248 @@ public class ParquetService : IDisposable
         var result = await cmd.ExecuteScalarAsync();
         return Convert.ToInt64(result);
     }
-    
+
+    /// <summary>
+    /// Gets distinct values for a column from the full dataset (not just loaded rows).
+    /// Returns up to maxValues results, with total distinct count and a truncation flag.
+    /// </summary>
+    public async Task<(List<string> Values, int TotalDistinct, bool Truncated)> GetDistinctValuesAsync(
+        string filePath,
+        string columnName,
+        CsvImportOptions? csvOptions = null,
+        JsonImportOptions? jsonOptions = null,
+        int maxValues = 500,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(filePath, csvOptions);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
+            var format = FileFormatDetector.DetectFormat(filePath);
+
+            if (format == SupportedFileFormat.Excel)
+                await EnsureExcelExtensionAsync(connection);
+
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
+
+            var escapedColId = columnName.Replace("\"", "\"\"");
+
+            // Check for blank values (NULL or empty/whitespace strings) so the
+            // blank bucket aligns with the in-memory ApplyAllFilters() semantics.
+            var nullSql = $"SELECT COUNT(*) FROM {readerExpr} WHERE \"{escapedColId}\" IS NULL OR TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) = ''";
+            using var nullCmd = new DuckDBCommand(nullSql, connection);
+            var nullCount = Convert.ToInt64(await nullCmd.ExecuteScalarAsync(cancellationToken));
+            var hasNulls = nullCount > 0;
+
+            // Get total distinct count of non-blank values
+            var countSql = $"SELECT COUNT(DISTINCT CAST(\"{escapedColId}\" AS VARCHAR)) FROM {readerExpr} WHERE \"{escapedColId}\" IS NOT NULL AND TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) <> ''";
+            using var countCmd = new DuckDBCommand(countSql, connection);
+            var countResult = await countCmd.ExecuteScalarAsync(cancellationToken);
+            var nonNullDistinct = Convert.ToInt32(countResult ?? 0);
+
+            // Reserve one slot for "(Blank)" when blanks exist so Values.Count never exceeds maxValues
+            var valueLimit = hasNulls ? Math.Max(1, maxValues - 1) : maxValues;
+
+            // Get distinct non-blank values
+            var valuesSql = $"SELECT DISTINCT CAST(\"{escapedColId}\" AS VARCHAR) FROM {readerExpr} WHERE \"{escapedColId}\" IS NOT NULL AND TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) <> '' ORDER BY 1 LIMIT {valueLimit}";
+            var values = new List<string>();
+            using var valuesCmd = new DuckDBCommand(valuesSql, connection);
+            using var reader = await valuesCmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (!reader.IsDBNull(0))
+                    values.Add(reader.GetString(0));
+            }
+
+            if (hasNulls)
+                values.Insert(0, "(Blank)");
+
+            // totalDistinct includes the blank bucket so callers get an accurate count
+            var totalDistinct = nonNullDistinct + (hasNulls ? 1 : 0);
+            var truncated = values.Count >= maxValues && totalDistinct > maxValues;
+
+            _logger.LogDebug("Distinct values for {Column}: {Count}/{Total} (truncated: {Truncated})", columnName, values.Count, totalDistinct, truncated);
+            return (values, totalDistinct, truncated);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get distinct values for column {Column} in {FilePath}", columnName, filePath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Executes a query based on GridQueryState and returns the result as a DataTable.
+    /// Supports filtering, global search, sorting, and paging.
+    /// </summary>
+    public async Task<DataTable> ExecuteGridQueryAsync(
+        GridQueryState queryState,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(queryState.SourceFilePath, queryState.CsvOptions);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
+            var format = FileFormatDetector.DetectFormat(queryState.SourceFilePath);
+
+            if (format == SupportedFileFormat.Excel)
+                await EnsureExcelExtensionAsync(connection);
+
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(
+                normalizedPath, format, queryState.CsvOptions, queryState.JsonOptions);
+
+            var whereClause = BuildSqlWhereClause(queryState);
+
+            // Build ORDER BY clause — parse DataView.Sort format "ColumnName ASC|DESC",
+            // validate the direction and escape the identifier to prevent SQL injection.
+            var orderClause = "";
+            if (!string.IsNullOrWhiteSpace(queryState.Sort))
+            {
+                var sortParts = queryState.Sort.Trim().Split(' ', 2);
+                var sortCol = sortParts[0];
+                var sortDir = sortParts.Length >= 2 && sortParts[1].Trim().Equals("DESC", StringComparison.OrdinalIgnoreCase)
+                    ? "DESC" : "ASC";
+                // Only emit the ORDER BY if the column is a known schema column
+                if (queryState.AvailableColumns.Contains(sortCol, StringComparer.Ordinal)
+                    || queryState.AvailableColumns.Any(c => string.Equals(c, sortCol, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var escapedSortCol = sortCol.Replace("\"", "\"\"");
+                    orderClause = $" ORDER BY \"{escapedSortCol}\" {sortDir}";
+                }
+            }
+
+            // Build the full query with LIMIT/OFFSET for paging
+            var sql = $"SELECT * FROM {readerExpr}{whereClause}{orderClause} LIMIT {queryState.RowLimit} OFFSET {queryState.RowOffset}";
+
+            _logger.LogDebug("Executing grid query: {SQL}", sql);
+
+            using var command = new DuckDBCommand(sql, connection);
+            using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            var dataTable = new DataTable();
+            for (int i = 0; i < reader.FieldCount; i++)
+                dataTable.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var row = dataTable.NewRow();
+                for (int i = 0; i < reader.FieldCount; i++)
+                    row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                dataTable.Rows.Add(row);
+            }
+
+            // Also get the total filtered count (for display purposes)
+            var countSql = $"SELECT COUNT(*) FROM {readerExpr}{whereClause}";
+            using var countCmd = new DuckDBCommand(countSql, connection);
+            var countResult = await countCmd.ExecuteScalarAsync(cancellationToken);
+            queryState.FilteredRowCount = Convert.ToInt64(countResult ?? 0);
+
+            _logger.LogInformation("Grid query returned {RowCount} rows (filtered: {FilteredCount})", dataTable.Rows.Count, queryState.FilteredRowCount);
+            return dataTable;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute grid query for {FilePath}", queryState.SourceFilePath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Returns the total number of rows in the full dataset that match the current filters,
+    /// without applying paging. Delegates to the same WHERE-clause logic as ExecuteGridQueryAsync.
+    /// </summary>
+    public async Task<long> GetFilteredRowCountAsync(
+        GridQueryState queryState,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+
+            using var transcodeScope = FileFormatDetector.PrepareFilePath(queryState.SourceFilePath, queryState.CsvOptions);
+            var normalizedPath = transcodeScope.FilePath.Replace("\\", "/");
+            var format = FileFormatDetector.DetectFormat(queryState.SourceFilePath);
+
+            if (format == SupportedFileFormat.Excel)
+                await EnsureExcelExtensionAsync(connection);
+
+            var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(
+                normalizedPath, format, queryState.CsvOptions, queryState.JsonOptions);
+
+            var whereClause = BuildSqlWhereClause(queryState);
+            var countSql = $"SELECT COUNT(*) FROM {readerExpr}{whereClause}";
+
+            using var countCmd = new DuckDBCommand(countSql, connection);
+            var result = await countCmd.ExecuteScalarAsync(cancellationToken);
+            return Convert.ToInt64(result ?? 0);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get filtered row count for {FilePath}", queryState.SourceFilePath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Builds a SQL WHERE clause (including the "WHERE" keyword) from the filter/search state
+    /// in <paramref name="queryState"/>. Returns an empty string when no conditions are active.
+    /// </summary>
+    private static string BuildSqlWhereClause(GridQueryState queryState)
+    {
+        var conditions = new List<string>();
+
+        foreach (var kvp in queryState.ColumnFilters)
+        {
+            var escapedColId = kvp.Key.Replace("\"", "\"\"");
+            var selectedValues = kvp.Value;
+
+            if (selectedValues.Count == 0)
+            {
+                conditions.Add("1=0");
+                continue;
+            }
+
+            var nonBlankValues = selectedValues.Where(v => v != "(Blank)").ToList();
+            var includeBlank = selectedValues.Contains("(Blank)");
+
+            var colConditions = new List<string>();
+            if (nonBlankValues.Count > 0)
+            {
+                var escapedValues = string.Join(",", nonBlankValues.Select(v => $"'{v.Replace("'", "''")}'"));
+                colConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) IN ({escapedValues})");
+            }
+            if (includeBlank)
+            {
+                colConditions.Add($"(\"{escapedColId}\" IS NULL OR TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) = '')");
+            }
+
+            if (colConditions.Count > 0)
+                conditions.Add($"({string.Join(" OR ", colConditions)})");
+        }
+
+        if (!string.IsNullOrWhiteSpace(queryState.GlobalSearch))
+        {
+            var searchTerm = $"%{queryState.GlobalSearch.Replace("'", "''")}%";
+            var searchConditions = new List<string>();
+            foreach (var col in queryState.AvailableColumns)
+            {
+                var escapedColId = col.Replace("\"", "\"\"");
+                searchConditions.Add($"CAST(\"{escapedColId}\" AS VARCHAR) LIKE '{searchTerm}'");
+            }
+            if (searchConditions.Count > 0)
+                conditions.Add($"({string.Join(" OR ", searchConditions)})");
+        }
+
+        return conditions.Count > 0 ? $" WHERE {string.Join(" AND ", conditions)}" : "";
+    }
+
     public async Task SaveFileAsync(string filePath, DataTable dataTable)
     {
         try
