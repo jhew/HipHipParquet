@@ -135,6 +135,7 @@ public partial class MainWindow : Window
 
         if (result == MessageBoxResult.Yes)
         {
+            bool saved;
             if (string.IsNullOrEmpty(_currentFilePath))
             {
                 var saveFileDialog = new SaveFileDialog
@@ -145,14 +146,17 @@ public partial class MainWindow : Window
                 };
 
                 if (saveFileDialog.ShowDialog() == true)
-                    await SaveFileAsync(saveFileDialog.FileName);
+                    saved = await SaveFileAsync(saveFileDialog.FileName);
                 else
                     return; // user cancelled save dialog → keep window open
             }
             else
             {
-                await SaveFileAsync(_currentFilePath);
+                saved = await SaveFileAsync(_currentFilePath);
             }
+
+            if (!saved)
+                return; // save failed — keep window open so the user doesn't lose data
         }
 
         // "No" or save complete — now close for real.
@@ -252,7 +256,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task LoadParquetFilesAsSingleTableAsync(IReadOnlyList<string> filePaths)
+    private async Task LoadParquetFilesAsSingleTableAsync(IReadOnlyList<string> filePaths, int? rowLimit = null)
     {
         try
         {
@@ -276,7 +280,7 @@ public partial class MainWindow : Window
 
             _qualityViewModel?.ClearFile();
 
-            var effectiveLimit = RowLimitBatch;
+            var effectiveLimit = rowLimit ?? RowLimitBatch;
             _currentRowLimit = effectiveLimit;
 
             var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
@@ -847,6 +851,13 @@ public partial class MainWindow : Window
              .Replace("*", "[*]")
              .Replace("%", "[%]");
 
+    /// <summary>
+    /// Escapes a column name for use in a DataView.RowFilter expression.
+    /// DataView uses brackets to delimit column names; embedded ] must be escaped as \].
+    /// </summary>
+    private static string EscapeDataViewColumnName(string name) =>
+        $"[{name.Replace("]", @"\]")}]";
+
     private void OnGlobalSearchTextChanged(object sender, TextChangedEventArgs e)
     {
         // Debounce: restart the timer on every keystroke.
@@ -1073,17 +1084,21 @@ public partial class MainWindow : Window
         }
     }
     
-    private async Task SaveFileAsync(string filePath, bool showConfirmation = false)
+    private async Task<bool> SaveFileAsync(string filePath, bool showConfirmation = false)
     {
         try
         {
             if (_originalData == null)
             {
                 StatusText.Text = "Nothing to save";
-                return;
+                return false;
             }
 
             ShowLoading("Saving file...");
+
+            // Suppress the file watcher during save to avoid spurious "modified externally" prompts
+            if (_fileWatcher != null)
+                _fileWatcher.EnableRaisingEvents = false;
             
             // Reuse stored service, or create one
             if (_parquetService == null)
@@ -1105,14 +1120,21 @@ public partial class MainWindow : Window
 
             if (showConfirmation)
                 MessageBox.Show($"File saved to:\n{filePath}", "Save Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            return true;
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Error saving file: {ex.Message}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
             StatusText.Text = "Error saving file";
+            return false;
         }
         finally
         {
+            // Re-enable the file watcher after save completes (or fails)
+            if (_fileWatcher != null)
+                _fileWatcher.EnableRaisingEvents = true;
+
             HideLoading();
         }
     }
@@ -2299,13 +2321,15 @@ public partial class MainWindow : Window
             {
                 // Use IN (...) to produce a single condition instead of one OR per value
                 var inList = string.Join(", ", nonBlankSelected.Select(v => $"'{v.Replace("'", "''")}'")); 
-                conditions.Add($"Convert([{columnName}], 'System.String') IN ({inList})");
+                var escapedCol = EscapeDataViewColumnName(columnName);
+                conditions.Add($"Convert({escapedCol}, 'System.String') IN ({inList})");
             }
 
             if (includeBlank)
             {
-                conditions.Add($"Convert([{columnName}], 'System.String') = ''");
-                conditions.Add($"[{columnName}] IS NULL");
+                var escapedCol = EscapeDataViewColumnName(columnName);
+                conditions.Add($"Convert({escapedCol}, 'System.String') = ''");
+                conditions.Add($"{escapedCol} IS NULL");
             }
 
             if (conditions.Count > 0)
@@ -2322,7 +2346,7 @@ public partial class MainWindow : Window
             foreach (DataColumn col in _originalData.Columns)
             {
                 if (col.ColumnName is not ("__RowNumber" or "__SourceFile"))
-                    globalConditions.Add($"Convert([{col.ColumnName}], 'System.String') LIKE '*{escapedGlobalText}*'");
+                    globalConditions.Add($"Convert({EscapeDataViewColumnName(col.ColumnName)}, 'System.String') LIKE '*{escapedGlobalText}*'");
             }
             
             if (globalConditions.Count > 0)
@@ -3240,7 +3264,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            await LoadParquetFilesAsSingleTableAsync(_currentFilePaths);
+            await LoadParquetFilesAsSingleTableAsync(_currentFilePaths, _currentRowLimit);
         }
     }
 
@@ -3483,6 +3507,29 @@ public partial class MainWindow : Window
                 MessageBox.Show(
                     "Download failed. Opening the releases page so you can install manually.",
                     "Download Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                OpenUrl(update.ReleasePageUrl);
+                return;
+            }
+
+            // Verify installer integrity: checksum first, then Authenticode signature
+            var verified = false;
+            if (!string.IsNullOrEmpty(update.ChecksumsUrl))
+            {
+                ShowLoading("Verifying checksum…");
+                verified = await Services.UpdateService.VerifyChecksumAsync(installerPath, update.ChecksumsUrl, cts.Token);
+                HideLoading();
+            }
+
+            if (!verified && Services.UpdateService.VerifyAuthenticodeSignature(installerPath))
+                verified = true;
+
+            if (!verified)
+            {
+                try { File.Delete(installerPath); } catch { /* best-effort cleanup */ }
+                MessageBox.Show(
+                    "The downloaded installer could not be verified (no valid checksum or Authenticode signature).\n\n" +
+                    "Opening the releases page so you can download and verify manually.",
+                    "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
                 OpenUrl(update.ReleasePageUrl);
                 return;
             }

@@ -13,6 +13,12 @@ public class ParquetService : IDisposable
     private DuckDBConnection? _connection;
     private bool _disposed = false;
     
+    /// <summary>
+    /// Escapes a column name for use as a DuckDB double-quoted identifier.
+    /// Doubles any embedded double-quote characters to prevent identifier injection.
+    /// </summary>
+    public static string EscapeDuckDbIdentifier(string name) => $"\"{name.Replace("\"", "\"\"")}\"";
+
     public ParquetService(ILogger<ParquetService> logger)
     {
         _logger = logger;
@@ -20,11 +26,17 @@ public class ParquetService : IDisposable
 
     /// <summary>
     /// Installs and loads the DuckDB spatial extension (required for Excel/XLSX reading via st_read).
+    /// Only signed extensions from the official DuckDB repository are allowed.
     /// </summary>
     public async Task EnsureExcelExtensionAsync(DuckDBConnection connection)
     {
         try
         {
+            // Restrict to signed extensions from the official DuckDB repository only.
+            using var configCmd = new DuckDBCommand(
+                "SET allow_unsigned_extensions = false;", connection);
+            await configCmd.ExecuteNonQueryAsync();
+
             using var installCmd = new DuckDBCommand("INSTALL spatial; LOAD spatial;", connection);
             await installCmd.ExecuteNonQueryAsync();
         }
@@ -800,7 +812,7 @@ public class ParquetService : IDisposable
                 if (col.ColumnName is "__RowNumber" or "__SourceFile") continue; // Skip internal columns
                 
                 var duckDbType = GetDuckDbType(col.DataType);
-                columnDefs.Add($"\"{col.ColumnName}\" {duckDbType}");
+                columnDefs.Add($"{EscapeDuckDbIdentifier(col.ColumnName)} {duckDbType}");
             }
             
             var createTableSql = $"CREATE TABLE {tempTableName} ({string.Join(", ", columnDefs)})";
@@ -848,17 +860,31 @@ public class ParquetService : IDisposable
                 throw;
             }
             
-            // Export to target format
+            // Export to a temporary sibling file, then atomically replace the target.
             var exportFormat = FileFormatDetector.GetDuckDbExportFormat(format);
             var exportOptions = FileFormatDetector.GetDuckDbExportOptions(format);
-            var escapedExportPath = normalizedPath.Replace("'", "''");
-            var exportSql = $"COPY {tempTableName} TO '{escapedExportPath}' (FORMAT {exportFormat}{exportOptions})";
+            var dir = Path.GetDirectoryName(filePath) ?? Path.GetTempPath();
+            var tempFileName = $".~{Path.GetFileNameWithoutExtension(filePath)}-{Guid.NewGuid():N}{Path.GetExtension(filePath)}";
+            var tempFilePath = Path.Combine(dir, tempFileName);
+            var normalizedTempPath = tempFilePath.Replace("\\", "/");
+            var escapedTempPath = normalizedTempPath.Replace("'", "''");
+            var exportSql = $"COPY {tempTableName} TO '{escapedTempPath}' (FORMAT {exportFormat}{exportOptions})";
             _logger.LogDebug("Exporting to {Format}: {SQL}", formatName, exportSql);
             
             using (var exportCommand = new DuckDBCommand(exportSql, _connection))
             {
                 await exportCommand.ExecuteNonQueryAsync();
             }
+
+            // Validate the temp file was written successfully before replacing
+            if (!File.Exists(tempFilePath) || new FileInfo(tempFilePath).Length == 0)
+            {
+                try { File.Delete(tempFilePath); } catch { /* best-effort cleanup */ }
+                throw new IOException("Export produced an empty or missing file.");
+            }
+
+            // Atomic replace: move temp file over the original
+            File.Move(tempFilePath, filePath, overwrite: true);
             
             // Clean up temporary table
             var dropSql = $"DROP TABLE {tempTableName}";
@@ -979,7 +1005,7 @@ public class ParquetService : IDisposable
     private async Task<ColumnProfile> ProfileColumnAsync(DuckDBConnection connection, string src, string colName, string colType, long totalRows, bool isNullable = true)
     {
         var category = CategorizeColumn(colType);
-        var escapedCol = $"\"{colName}\"";
+        var escapedCol = EscapeDuckDbIdentifier(colName);
 
         var profile = new ColumnProfile
         {
@@ -1234,7 +1260,7 @@ public class ParquetService : IDisposable
                 await EnsureExcelExtensionAsync(connection);
 
             var src = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
-            var groupByCols = string.Join(", ", groupByColumns.Select(c => $"\"{c}\""));
+            var groupByCols = string.Join(", ", groupByColumns.Select(c => EscapeDuckDbIdentifier(c)));
 
             // Get distinct group values
             var groupSql = $"SELECT {groupByCols}, COUNT(*) AS group_count FROM {src} GROUP BY {groupByCols} ORDER BY group_count DESC LIMIT 100";
@@ -1293,10 +1319,11 @@ public class ParquetService : IDisposable
                 for (int i = 0; i < groupByColumns.Count; i++)
                 {
                     var val = keyParts[i];
+                    var escapedGroupCol = EscapeDuckDbIdentifier(groupByColumns[i]);
                     if (val == "(null)")
-                        whereClauses.Add($"\"{groupByColumns[i]}\" IS NULL");
+                        whereClauses.Add($"{escapedGroupCol} IS NULL");
                     else
-                        whereClauses.Add($"\"{groupByColumns[i]}\"::VARCHAR = '{val.Replace("'", "''")}'");
+                        whereClauses.Add($"{escapedGroupCol}::VARCHAR = '{val.Replace("'", "''")}'");
                 }
                 var whereClause = string.Join(" AND ", whereClauses);
                 var filteredSrc = $"(SELECT * FROM {src} WHERE {whereClause})";

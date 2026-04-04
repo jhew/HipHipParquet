@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
 
 namespace HipHipParquet.Services;
@@ -64,8 +65,9 @@ public static class UpdateService
         if (latest <= current)
             return null;
 
-        // Find setup .exe asset URL from trusted GitHub domains.
+        // Find setup .exe asset URL and SHA256SUMS URL from trusted GitHub domains.
         string? downloadUrl = null;
+        string? checksumsUrl = null;
         var assets = json["assets"]?.AsArray();
         if (assets != null)
         {
@@ -73,18 +75,16 @@ public static class UpdateService
             {
                 var name = asset?["name"]?.GetValue<string>() ?? "";
                 var url = asset?["browser_download_url"]?.GetValue<string>();
-                if (url != null && name.EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (IsTrustedGithubDownloadUrl(url))
-                    {
-                        downloadUrl = url;
-                        break;
-                    }
-                }
+                if (url == null || !IsTrustedGithubDownloadUrl(url)) continue;
+
+                if (name.EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
+                    downloadUrl ??= url;
+                else if (name.EndsWith("-SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase))
+                    checksumsUrl ??= url;
             }
         }
 
-        return new UpdateInfo(latest, downloadUrl, ReleasesPageUrl);
+        return new UpdateInfo(latest, downloadUrl, checksumsUrl, ReleasesPageUrl);
     }
 
     private static bool IsTrustedGithubDownloadUrl(string url)
@@ -175,10 +175,84 @@ public static class UpdateService
         var v = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version;
         return v ?? new Version(1, 0, 0, 0);
     }
+
+    /// <summary>
+    /// Verifies that the downloaded installer has a valid Authenticode signature.
+    /// Returns true if the file is signed with a valid certificate chain; false otherwise.
+    /// </summary>
+    public static bool VerifyAuthenticodeSignature(string filePath)
+    {
+        try
+        {
+            using var cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(filePath));
+            using var chain = new X509Chain();
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
+            chain.ChainPolicy.RevocationFlag = X509RevocationFlag.EntireChain;
+            return chain.Build(cert);
+        }
+        catch
+        {
+            // File is not signed or certificate is invalid
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Downloads the SHA256SUMS file and verifies that the installer's hash matches.
+    /// Returns true if the checksum matches; false if it doesn't match or can't be verified.
+    /// </summary>
+    public static async Task<bool> VerifyChecksumAsync(
+        string installerPath,
+        string checksumsUrl,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!IsTrustedGithubDownloadUrl(checksumsUrl))
+                return false;
+
+            var checksumsText = await SharedClient.GetStringAsync(checksumsUrl, cancellationToken);
+            var installerFileName = Path.GetFileName(installerPath);
+
+            // Remove the unique GUID suffix to get the original release name.
+            // Downloaded files have format: "BaseName-<guid>.exe" but checksums reference "BaseName.exe"
+            // We need to match by scanning checksum lines for a -Setup.exe entry.
+            string? expectedHash = null;
+            foreach (var line in checksumsText.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                // Format: "<hash>  <filename>"
+                var parts = line.Trim().Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 2 && parts[1].Trim().EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    expectedHash = parts[0].Trim();
+                    break;
+                }
+            }
+
+            if (string.IsNullOrEmpty(expectedHash))
+                return false;
+
+            var actualHash = await ComputeFileSha256Async(installerPath, cancellationToken);
+            return string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task<string> ComputeFileSha256Async(string filePath, CancellationToken cancellationToken)
+    {
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, true);
+        var hash = await sha256.ComputeHashAsync(stream, cancellationToken);
+        return Convert.ToHexString(hash);
+    }
 }
 
 /// <summary>Describes an available update.</summary>
 /// <param name="LatestVersion">The newer version on GitHub.</param>
 /// <param name="InstallerUrl">Direct download URL for the setup .exe (may be null).</param>
+/// <param name="ChecksumsUrl">Direct download URL for the SHA256SUMS file (may be null).</param>
 /// <param name="ReleasePageUrl">Fallback: the GitHub releases page URL.</param>
-public record UpdateInfo(Version LatestVersion, string? InstallerUrl, string ReleasePageUrl);
+public record UpdateInfo(Version LatestVersion, string? InstallerUrl, string? ChecksumsUrl, string ReleasePageUrl);

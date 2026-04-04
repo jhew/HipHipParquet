@@ -59,12 +59,11 @@
         <!-- Selectable text style: TextBox that looks and behaves like a TextBlock -->
         <Style x:Key="SelectableText" TargetType="TextBox">
             <Setter Property="IsReadOnly" Value="True"/>
-            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="IsTabStop" Value="True"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="0"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="KeyboardNavigation.TabNavigation" Value="None"/>
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden"/>

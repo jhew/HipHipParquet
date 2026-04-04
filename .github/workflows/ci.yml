@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore HipHipParquet.slnx
+
+      - name: Build
+        run: dotnet build HipHipParquet.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Tests/HipHipParquet.Tests.csproj --configuration Release --no-build --verbosity normal
+
+      - name: Publish (smoke test)
+        shell: pwsh
+        run: |
+          dotnet publish HipHipParquet.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained false `
+            -p:PublishSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            --output publish-smoke
+
+      - name: Verify publish output exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "publish-smoke/HipHipParquet.exe")) {
+            Write-Error "Expected HipHipParquet.exe not found in publish output"
+            exit 1
+          }
