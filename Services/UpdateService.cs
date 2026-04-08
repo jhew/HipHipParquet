@@ -188,7 +188,20 @@ public static class UpdateService
             using var chain = new X509Chain();
             chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
             chain.ChainPolicy.RevocationFlag = X509RevocationFlag.EntireChain;
-            return chain.Build(cert);
+            chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromSeconds(10);
+            var valid = chain.Build(cert);
+            if (!valid)
+            {
+                // If the only failures are offline/unknown revocation (e.g., CRL endpoint blocked),
+                // treat the signature as acceptable — the cert chain is otherwise valid and the
+                // file is not actively flagged as revoked.
+                var onlyRevocationUnknown = chain.ChainStatus.All(s =>
+                    s.Status == X509ChainStatusFlags.RevocationStatusUnknown ||
+                    s.Status == X509ChainStatusFlags.OfflineRevocation);
+                if (onlyRevocationUnknown)
+                    return true;
+            }
+            return valid;
         }
         catch
         {
@@ -214,15 +227,19 @@ public static class UpdateService
             var checksumsText = await SharedClient.GetStringAsync(checksumsUrl, cancellationToken);
             var installerFileName = Path.GetFileName(installerPath);
 
-            // Remove the unique GUID suffix to get the original release name.
-            // Downloaded files have format: "BaseName-<guid>.exe" but checksums reference "BaseName.exe"
-            // We need to match by scanning checksum lines for a -Setup.exe entry.
+            // The temp file name has format "BaseName-<guid>.exe" where <guid> is 32 hex chars (N format).
+            // Strip the GUID suffix to recover the original release filename for lookup in the checksums file.
+            var originalInstallerName = System.Text.RegularExpressions.Regex.Replace(
+                installerFileName,
+                @"-[0-9a-fA-F]{32}(?=\.[^.]+$)",
+                string.Empty);
+
             string? expectedHash = null;
             foreach (var line in checksumsText.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             {
                 // Format: "<hash>  <filename>"
                 var parts = line.Trim().Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length == 2 && parts[1].Trim().EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
+                if (parts.Length == 2 && parts[1].Trim().Equals(originalInstallerName, StringComparison.OrdinalIgnoreCase))
                 {
                     expectedHash = parts[0].Trim();
                     break;

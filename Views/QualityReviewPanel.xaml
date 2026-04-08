@@ -59,7 +59,7 @@
         <!-- Selectable text style: TextBox that looks and behaves like a TextBlock -->
         <Style x:Key="SelectableText" TargetType="TextBox">
             <Setter Property="IsReadOnly" Value="True"/>
-            <Setter Property="IsTabStop" Value="True"/>
+            <Setter Property="IsTabStop" Value="False"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="0"/>

@@ -1078,9 +1078,12 @@ public partial class MainWindow : Window
         
         if (saveFileDialog.ShowDialog() == true)
         {
-            await SaveFileAsync(saveFileDialog.FileName, showConfirmation: true);
-            _currentFilePath = saveFileDialog.FileName;
-            UpdateWindowTitle();
+            var success = await SaveFileAsync(saveFileDialog.FileName, showConfirmation: true);
+            if (success)
+            {
+                _currentFilePath = saveFileDialog.FileName;
+                UpdateWindowTitle();
+            }
         }
     }
     

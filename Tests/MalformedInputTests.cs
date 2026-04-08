@@ -22,18 +22,17 @@ public class MalformedInputTests
     }
 
     [Theory]
-    [InlineData("file\0name.csv")]
-    [InlineData("file<name>.parquet")]
-    [InlineData("file|name.json")]
-    public void DetectFormat_InvalidPathCharacters_StillDetectsExtension(string fileName)
+    [InlineData("file\0name.csv", SupportedFileFormat.Csv)]
+    [InlineData("file<name>.parquet", SupportedFileFormat.Parquet)]
+    [InlineData("file|name.json", SupportedFileFormat.Json)]
+    public void DetectFormat_InvalidPathCharacters_StillDetectsExtension(string fileName, SupportedFileFormat expectedFormat)
     {
         // These names are invalid for real file paths but the format detector
         // should still handle them by extension without throwing.
-        var ex = Record.Exception(() => FileFormatDetector.DetectFormat(fileName));
-        // Either returns a format or throws — both are acceptable defensive behaviors
-        // but we prefer no crash
-        if (ex != null)
-            Assert.IsType<ArgumentException>(ex);
+        SupportedFileFormat detectedFormat = default;
+        var ex = Record.Exception(() => detectedFormat = FileFormatDetector.DetectFormat(fileName));
+        Assert.Null(ex);
+        Assert.Equal(expectedFormat, detectedFormat);
     }
 
     [Theory]

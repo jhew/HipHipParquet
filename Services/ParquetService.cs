@@ -863,8 +863,9 @@ public class ParquetService : IDisposable
             // Export to a temporary sibling file, then atomically replace the target.
             var exportFormat = FileFormatDetector.GetDuckDbExportFormat(format);
             var exportOptions = FileFormatDetector.GetDuckDbExportOptions(format);
-            var dir = Path.GetDirectoryName(filePath) ?? Path.GetTempPath();
-            var tempFileName = $".~{Path.GetFileNameWithoutExtension(filePath)}-{Guid.NewGuid():N}{Path.GetExtension(filePath)}";
+            var resolvedFilePath = Path.GetFullPath(filePath);
+            var dir = Path.GetDirectoryName(resolvedFilePath)!;
+            var tempFileName = $".~{Path.GetFileNameWithoutExtension(resolvedFilePath)}-{Guid.NewGuid():N}{Path.GetExtension(resolvedFilePath)}";
             var tempFilePath = Path.Combine(dir, tempFileName);
             var normalizedTempPath = tempFilePath.Replace("\\", "/");
             var escapedTempPath = normalizedTempPath.Replace("'", "''");
@@ -884,7 +885,15 @@ public class ParquetService : IDisposable
             }
 
             // Atomic replace: move temp file over the original
-            File.Move(tempFilePath, filePath, overwrite: true);
+            try
+            {
+                File.Move(tempFilePath, resolvedFilePath, overwrite: true);
+            }
+            catch
+            {
+                try { File.Delete(tempFilePath); } catch { /* best-effort cleanup */ }
+                throw;
+            }
             
             // Clean up temporary table
             var dropSql = $"DROP TABLE {tempTableName}";

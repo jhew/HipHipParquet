@@ -28,7 +28,7 @@ public class IdentifierEscapingTests
     {
         var result = ParquetService.EscapeDuckDbIdentifier("a\"b");
         Assert.Equal("\"a\"\"b\"", result);
-        // Verify it starts and ends with a single quote
+        // Verify it starts and ends with a double quote
         Assert.StartsWith("\"", result);
         Assert.EndsWith("\"", result);
     }
