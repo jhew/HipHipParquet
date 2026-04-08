@@ -151,7 +151,8 @@
                                  Padding="6,4"
                                  VerticalContentAlignment="Center"
                                  TextChanged="OnSchemaSearchTextChanged"
-                                 ToolTip="Filter the column list by name or data type"/>
+                                 ToolTip="Filter the column list by name or data type"
+                                 AutomationProperties.Name="Filter columns"/>
                         <TextBlock Text="Filter columns..."
                                    IsHitTestVisible="False"
                                    Foreground="Gray"
@@ -375,7 +376,8 @@
                     <TextBox x:Name="GlobalSearchBox" 
                             Width="200" 
                             TextChanged="OnGlobalSearchTextChanged"
-                            VerticalContentAlignment="Center"/>
+                            VerticalContentAlignment="Center"
+                            AutomationProperties.Name="Global search"/>
                 </StackPanel>
             </StatusBarItem>
         </StatusBar>

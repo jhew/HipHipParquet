@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Hip Hip Parquet — Windows desktop toolkit for exploring, profiling, and improving Parquet, CSV, and JSON datasets.">
+    <meta name="description" content="Hip Hip Parquet is a Windows desktop toolkit for exploring, profiling, and improving tabular data locally, so analysis stays on your PC.">
     <meta property="og:title" content="Hip Hip Parquet">
-    <meta property="og:description" content="Desktop data quality workbench for Windows. Import, profile, clean, compare, and export tabular data with Parquet at the core.">
+    <meta property="og:description" content="Analyze Parquet, CSV, JSON, and Excel locally on Windows. Your data stays on your PC while you profile, clean, compare, and export.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://hiphipparquet.com">
-    <title>Hip Hip Parquet — Data Quality Workbench for Windows</title>
+    <title>Hip Hip Parquet - Local Data Quality Workbench for Windows</title>
     <link rel="icon" href="https://raw.githubusercontent.com/jhew/HipHipParquet/main/Assets/app.png" type="image/png">
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -20,10 +20,9 @@
     <!-- Hero -->
     <header class="hero">
         <div class="container">
-            <div class="hero-icon" aria-hidden="true">🎉</div>
-            <h1>Hip Hip Parquet</h1>
-            <p class="tagline">A Windows desktop toolkit for exploring, profiling, and improving your tabular data.</p>
-            <p class="sub">Parquet &bull; CSV &bull; JSON &bull; Excel &mdash; all in one place.</p>
+            <h1><span class="title-icon" aria-hidden="true">&#127881;</span> Hip Hip Parquet</h1>
+            <p class="tagline">Explore, profile, and improve tabular data right on your Windows PC.</p>
+            <p class="sub">Parquet &bull; CSV &bull; JSON &bull; Excel &mdash; analyze locally and keep your data on your machine.</p>
             <div class="hero-buttons">
                 <a href="https://github.com/jhew/HipHipParquet/releases" class="btn btn-primary">Download for Windows</a>
                 <a href="https://github.com/jhew/HipHipParquet" class="btn btn-outline">View on GitHub</a>
@@ -33,38 +32,66 @@
 
     <main id="main">
 
+    <!-- Privacy -->
+    <section class="privacy" aria-labelledby="privacy-heading">
+        <div class="container privacy-layout">
+            <div class="privacy-copy">
+                <p class="section-kicker">Why teams trust it</p>
+                <h2 id="privacy-heading">Fast answers from your data, without moving the data.</h2>
+                <p>Hip Hip Parquet is a Windows desktop app built for analysts, engineers, and operations teams who need to inspect real files quickly while keeping control of where those files live.</p>
+            </div>
+            <div class="privacy-points">
+                <div class="privacy-point">
+                    <h3>Local analysis</h3>
+                    <p>Profiling, comparison, cleaning, and export workflows run on-device.</p>
+                </div>
+                <div class="privacy-point">
+                    <h3>No forced upload</h3>
+                    <p>You do not need to push datasets to a hosted service just to understand their quality.</p>
+                </div>
+                <div class="privacy-point">
+                    <h3>Built for sensitive work</h3>
+                    <p>Use it confidently with customer records, operations data, or internal files you would rather keep on the machine in front of you.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Features -->
     <section class="features" aria-labelledby="features-heading">
         <div class="container">
-            <h2 id="features-heading" class="sr-only">Features</h2>
+            <div class="features-header">
+                <h2 id="features-heading">Built for practical data work</h2>
+                <p class="section-intro">Open messy files, understand them quickly, and ship cleaner outputs from one desktop tool.</p>
+            </div>
             <div class="feature-grid">
                 <div class="feature-card">
-                    <div class="feature-icon" aria-hidden="true">📂</div>
+                    <div class="feature-icon" aria-hidden="true">&#128194;</div>
                     <h3>Import Anything</h3>
                     <p>Open Parquet, CSV, TSV, JSON, NDJSON, and Excel files. Drag-and-drop or pick from recent files.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon" aria-hidden="true">🔍</div>
+                    <div class="feature-icon" aria-hidden="true">&#128269;</div>
                     <h3>Explore &amp; Edit</h3>
                     <p>Sort, filter, search, and edit inline. Copy to clipboard as CSV or TSV for quick pasting.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon" aria-hidden="true">📊</div>
+                    <div class="feature-icon" aria-hidden="true">&#128202;</div>
                     <h3>Profile &amp; Score</h3>
-                    <p>One-click quality analysis with completeness, uniqueness, validity, and distribution metrics.</p>
+                    <p>Run one-click local quality analysis with completeness, uniqueness, validity, and distribution metrics.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon" aria-hidden="true">⚖️</div>
+                    <div class="feature-icon" aria-hidden="true">&#9878;</div>
                     <h3>Compare Files</h3>
                     <p>Side-by-side schema diff and data drift detection between any two files.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon" aria-hidden="true">🧹</div>
+                    <div class="feature-icon" aria-hidden="true">&#129529;</div>
                     <h3>Clean &amp; Transform</h3>
                     <p>Build cleaning recipes to fix nulls, trim strings, standardize formats, and more.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon" aria-hidden="true">💾</div>
+                    <div class="feature-icon" aria-hidden="true">&#128190;</div>
                     <h3>Export Anywhere</h3>
                     <p>Save back to Parquet or export to CSV, JSON, and HTML quality reports.</p>
                 </div>
