@@ -237,11 +237,19 @@ public static class UpdateService
             string? expectedHash = null;
             foreach (var line in checksumsText.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             {
-                // Format: "<hash>  <filename>"
-                var parts = line.Trim().Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length == 2 && parts[1].Trim().Equals(originalInstallerName, StringComparison.OrdinalIgnoreCase))
+                // Accept common SHA256SUMS formats such as:
+                // "<hash>  <filename>", "<hash>\t<filename>", and "<hash>  *<filename>".
+                var match = System.Text.RegularExpressions.Regex.Match(
+                    line.Trim(),
+                    @"^(?<hash>[A-Fa-f0-9]+)\s+(?<filename>.+)$");
+
+                if (!match.Success)
+                    continue;
+
+                var parsedFileName = match.Groups["filename"].Value.Trim().TrimStart('*');
+                if (parsedFileName.Equals(originalInstallerName, StringComparison.OrdinalIgnoreCase))
                 {
-                    expectedHash = parts[0].Trim();
+                    expectedHash = match.Groups["hash"].Value.Trim();
                     break;
                 }
             }

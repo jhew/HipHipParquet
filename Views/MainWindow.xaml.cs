@@ -3523,8 +3523,19 @@ public partial class MainWindow : Window
                 HideLoading();
             }
 
-            if (!verified && Services.UpdateService.VerifyAuthenticodeSignature(installerPath))
-                verified = true;
+            if (!verified)
+            {
+                ShowLoading("Verifying signature\u2026");
+                try
+                {
+                    verified = await Task.Run(() =>
+                        Services.UpdateService.VerifyAuthenticodeSignature(installerPath));
+                }
+                finally
+                {
+                    HideLoading();
+                }
+            }
 
             if (!verified)
             {
