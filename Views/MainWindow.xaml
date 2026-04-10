@@ -252,6 +252,7 @@
                              SelectionUnit="CellOrRowHeader"
                              Margin="12,5,12,12"
                              CellEditEnding="OnCellEditEnding"
+                             PreviewMouseRightButtonDown="OnDataGridPreviewMouseRightButtonDown"
                              EnableRowVirtualization="True"
                              EnableColumnVirtualization="True"
                              VirtualizingPanel.IsVirtualizing="True"
@@ -288,6 +289,12 @@
                                 <MenuItem Header="Copy Row(s) with Headers" Click="OnContextCopyRowsWithHeadersClick">
                                     <MenuItem.Icon>
                                         <TextBlock Text="➡️" FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator/>
+                                <MenuItem Header="Delete Row(s)" Click="OnContextDeleteRowsClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="X" FontSize="12" FontWeight="Bold"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <Separator/>

@@ -692,6 +692,93 @@ public partial class MainWindow : Window
     {
         CopySelectionToClipboard(",", true);
     }
+
+    private void OnContextDeleteRowsClick(object sender, RoutedEventArgs e)
+    {
+        DeleteSelectedRows();
+    }
+
+    private void DeleteSelectedRows()
+    {
+        try
+        {
+            if (_originalData == null)
+            {
+                StatusText.Text = "No data loaded";
+                return;
+            }
+
+            CommitPendingGridEdits();
+
+            var selectedRows = GetSelectedRowViews();
+            if (selectedRows.Count == 0)
+            {
+                StatusText.Text = "No rows selected to delete";
+                return;
+            }
+
+            var rowCount = selectedRows.Count;
+            var result = MessageBox.Show(
+                rowCount == 1
+                    ? "Delete the selected row? This action cannot be undone."
+                    : $"Delete {rowCount} selected rows? This action cannot be undone.",
+                rowCount == 1 ? "Delete Row" : "Delete Rows",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
+                return;
+
+            var deletedCount = DataTableEditHelper.DeleteRows(_originalData, selectedRows, RowNumberColumnName);
+            if (deletedCount == 0)
+            {
+                StatusText.Text = "No rows were deleted";
+                return;
+            }
+
+            DataGrid.UnselectAllCells();
+            DataGrid.UnselectAll();
+
+            _hasUnsavedChanges = true;
+            _pendingEditCount += deletedCount;
+            UpdateWindowTitle();
+            UpdatePendingChangesTray();
+            UpdateRowCount();
+            UpdateLoadMoreBanner(_totalRowCount > _currentRowLimit ? _originalData.Rows.Count : (int)_totalRowCount);
+
+            StatusText.Text = deletedCount == 1
+                ? "Deleted 1 row"
+                : $"Deleted {deletedCount:N0} rows";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error deleting rows: {ex.Message}", "Delete Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Delete failed";
+        }
+    }
+
+    private void CommitPendingGridEdits()
+    {
+        DataGrid.CommitEdit(DataGridEditingUnit.Cell, true);
+        DataGrid.CommitEdit(DataGridEditingUnit.Row, true);
+    }
+
+    private List<DataRowView> GetSelectedRowViews()
+    {
+        var selectedRows = (_savedSelectedItems ?? DataGrid.SelectedItems.Cast<object>().ToList())
+            .OfType<DataRowView>()
+            .Distinct()
+            .ToList();
+
+        if (selectedRows.Count > 0)
+            return selectedRows;
+
+        return (_savedSelectedCells ?? DataGrid.SelectedCells.ToList())
+            .Select(cell => cell.Item)
+            .OfType<DataRowView>()
+            .Distinct()
+            .ToList();
+    }
     
     private void CopyRows(bool includeHeaders)
     {
@@ -886,6 +973,57 @@ public partial class MainWindow : Window
             CopySelectionToClipboard(",", false);
             e.Handled = true;
         }
+    }
+
+    private void OnDataGridPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not DataGrid grid || e.OriginalSource is not DependencyObject source)
+            return;
+
+        var row = FindVisualParent<DataGridRow>(source);
+        if (row == null)
+            return;
+
+        var rowHeader = FindVisualParent<DataGridRowHeader>(source);
+        if (rowHeader != null)
+        {
+            if (!row.IsSelected)
+            {
+                grid.UnselectAllCells();
+                grid.UnselectAll();
+                row.IsSelected = true;
+                row.Focus();
+            }
+
+            return;
+        }
+
+        var cell = FindVisualParent<DataGridCell>(source);
+        if (cell == null || cell.IsSelected)
+            return;
+
+        var cellInfo = new DataGridCellInfo(row.Item, cell.Column);
+        if (grid.SelectedCells.Contains(cellInfo) || row.IsSelected)
+            return;
+
+        grid.UnselectAllCells();
+        grid.UnselectAll();
+        grid.CurrentCell = cellInfo;
+        cell.IsSelected = true;
+        cell.Focus();
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
+    {
+        while (child != null)
+        {
+            if (child is T parent)
+                return parent;
+
+            child = VisualTreeHelper.GetParent(child);
+        }
+
+        return null;
     }
 
     private async Task LoadFileAsync(string filePath, CsvImportOptions? csvOptions = null, int? rowLimit = null, JsonImportOptions? jsonOptions = null)
