@@ -76,6 +76,7 @@
             <MenuItem Header="_View">
                 <MenuItem x:Name="ToggleSchemaPaneMenuItem" Header="Toggle _Schema Pane" Click="OnToggleSchemaPaneClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem x:Name="ToggleQualityPanelMenuItem" Header="Toggle _Quality Review Panel" Click="OnToggleQualityPanelClick" IsCheckable="True" IsChecked="True"/>
+                <MenuItem x:Name="ToggleQueryHubMenuItem" Header="Toggle _Query Hub" Click="OnToggleQueryHubClick" IsCheckable="True" IsChecked="True"/>
             </MenuItem>
             <MenuItem Header="_Workspace">
                 <MenuItem Header="_Save Current View" Click="OnSaveCurrentViewClick"/>
@@ -88,6 +89,9 @@
                 <MenuItem Header="Restore Workspace S_napshot" Click="OnRestoreWorkspaceSnapshotClick"/>
             </MenuItem>
             <MenuItem Header="_Edit" SubmenuOpened="OnEditMenuOpened" SubmenuClosed="OnEditMenuClosed">
+                <MenuItem x:Name="UndoMenuItem" Header="_Undo" Click="OnUndoLastActionClick" InputGestureText="Ctrl+Z"/>
+                <MenuItem x:Name="EditDeleteRowsMenuItem" Header="_Delete Row(s)" Click="OnContextDeleteRowsClick" InputGestureText="Del"/>
+                <Separator/>
                 <MenuItem Header="_Copy" Click="OnCopyClick" InputGestureText="Ctrl+C">
                     <MenuItem.Icon>
                         <TextBlock Text="📋" FontSize="14"/>
@@ -217,11 +221,182 @@
                 <Grid x:Name="DataGridContainer" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
+
+                    <Border x:Name="NotebookHub"
+                            Grid.Row="0"
+                            Margin="12,12,12,0"
+                            Padding="12"
+                            Background="#F8FAFC"
+                            BorderBrush="#D6DEE8"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="280"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Query Hub" FontSize="16" FontWeight="Bold"/>
+                                <TextBlock x:Name="NotebookSourceHintText"
+                                           Margin="0,4,0,8"
+                                           Foreground="#52606D"
+                                           Text="Open a source to start building local notebook steps."
+                                           TextWrapping="Wrap"/>
+
+                                <TextBlock Text="Sources" FontWeight="SemiBold"/>
+                                <ListBox x:Name="NotebookSourcesList"
+                                         Height="92"
+                                         Margin="0,4,0,10"
+                                         DisplayMemberPath="SourceLabel"
+                                         SelectionChanged="OnNotebookSourceSelectionChanged"/>
+
+                                <TextBlock Text="Notebook Blocks" FontWeight="SemiBold"/>
+                                <ListBox x:Name="NotebookBlocksList"
+                                         Height="122"
+                                         Margin="0,4,0,0"
+                                         DisplayMemberPath="TimelineLabel"
+                                         SelectionChanged="OnNotebookBlockSelectionChanged"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <WrapPanel VerticalAlignment="Center">
+                                    <Border x:Name="NotebookModeBadge"
+                                            CornerRadius="10"
+                                            Padding="8,3"
+                                            Background="#E3F2FD"
+                                            Margin="0,0,8,0">
+                                        <TextBlock x:Name="NotebookModeBadgeText"
+                                                   Text="Ready"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#1565C0"/>
+                                    </Border>
+                                    <TextBlock x:Name="NotebookActiveSourceText"
+                                               VerticalAlignment="Center"
+                                               FontWeight="SemiBold"
+                                               Foreground="#1F2933"
+                                               Text="No active source"/>
+                                </WrapPanel>
+
+                                <TextBlock x:Name="NotebookQueryLabelText"
+                                           Margin="0,8,0,0"
+                                           Foreground="#52606D"
+                                           Text="Run local DuckDB SQL over any opened notebook source alias."/>
+
+                                <TextBox x:Name="NotebookQueryTextBox"
+                                         Margin="0,6,0,8"
+                                         Height="112"
+                                         AcceptsReturn="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         FontFamily="Consolas"
+                                         TextWrapping="NoWrap"/>
+
+                                <WrapPanel>
+                                    <Button x:Name="RunNotebookQueryButton"
+                                            Content="Run Query"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnRunNotebookQueryClick"/>
+                                    <Button x:Name="SaveNotebookQueryButton"
+                                            Content="Save Query"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnSaveNotebookQueryClick"/>
+                                    <ComboBox x:Name="SavedNotebookQueriesComboBox"
+                                              Width="220"
+                                              Margin="0,0,8,8"
+                                              DisplayMemberPath="Name"/>
+                                    <Button x:Name="LoadSavedNotebookQueryButton"
+                                            Content="Load Saved"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnLoadSavedNotebookQueryClick"/>
+                                    <Button x:Name="DeleteSavedNotebookQueryButton"
+                                            Content="Delete Saved"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnDeleteSavedNotebookQueryClick"/>
+                                </WrapPanel>
+
+                                <WrapPanel>
+                                    <Button x:Name="MaterializeWorkingSetButton"
+                                            Content="Load as Working Set"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnMaterializeWorkingSetClick"/>
+                                    <Button x:Name="NotebookExportButton"
+                                            Content="Export Current Scope..."
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnNotebookExportClick"/>
+                                    <Button x:Name="NullEmptyCheckButton"
+                                            Content="Null / Empty Check"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnNotebookNullEmptyCheckClick"/>
+                                    <Button x:Name="DuplicateCheckButton"
+                                            Content="Duplicate Check"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnNotebookDuplicateCheckClick"/>
+                                    <Button x:Name="RegexCheckButton"
+                                            Content="Regex Check"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnNotebookRegexCheckClick"/>
+                                </WrapPanel>
+
+                                <WrapPanel>
+                                    <Button x:Name="SaveSchemaTemplateButton"
+                                            Content="Save Schema Template"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnSaveSchemaTemplateClick"/>
+                                    <ComboBox x:Name="SchemaTemplatesComboBox"
+                                              Width="220"
+                                              Margin="0,0,8,8"
+                                              DisplayMemberPath="Name"/>
+                                    <Button x:Name="ValidateSchemaTemplateButton"
+                                            Content="Validate Template"
+                                            Padding="12,5"
+                                            Margin="0,0,8,8"
+                                            Click="OnValidateSchemaTemplateClick"/>
+                                </WrapPanel>
+
+                                <WrapPanel VerticalAlignment="Center">
+                                    <Button x:Name="PreviewPreviousPageButton"
+                                            Content="Previous Page"
+                                            Padding="12,5"
+                                            Margin="0,0,8,0"
+                                            Click="OnPreviewPreviousPageClick"/>
+                                    <Button x:Name="PreviewNextPageButton"
+                                            Content="Next Page"
+                                            Padding="12,5"
+                                            Margin="0,0,12,0"
+                                            Click="OnPreviewNextPageClick"/>
+                                    <TextBlock x:Name="PreviewPageStatusText"
+                                               VerticalAlignment="Center"
+                                               Foreground="#52606D"
+                                               Text="Preview controls appear for large sources."/>
+                                </WrapPanel>
+
+                                <TextBlock x:Name="NotebookLastCheckText"
+                                           Margin="0,8,0,0"
+                                           Foreground="#52606D"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
                     
                     <!-- Load More Banner -->
-                    <Border x:Name="LoadMoreBanner" Grid.Row="0" 
+                    <Border x:Name="LoadMoreBanner" Grid.Row="1" 
                             Background="#FFF3E0" BorderBrush="#FFB74D" BorderThickness="0,0,0,1"
                             Padding="8,6" Visibility="Collapsed">
                         <DockPanel>
@@ -240,7 +415,7 @@
 
                     <!-- Data Grid -->
                     <DataGrid x:Name="DataGrid" 
-                             Grid.Row="1"
+                             Grid.Row="2"
                              AutoGenerateColumns="False"
                              HeadersVisibility="All"
                              GridLinesVisibility="All"
@@ -258,7 +433,11 @@
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling">
                         <DataGrid.ContextMenu>
-                            <ContextMenu>
+                            <ContextMenu x:Name="DataGridContextMenu"
+                                         Opened="OnDataGridContextMenuOpened"
+                                         Closed="OnDataGridContextMenuClosed">
+                                <MenuItem x:Name="UndoContextMenuItem" Header="Undo" Click="OnUndoLastActionClick"/>
+                                <Separator/>
                                 <MenuItem Header="Copy" Click="OnContextCopyClick">
                                     <MenuItem.Icon>
                                         <TextBlock Text="📋" FontSize="12"/>
@@ -291,12 +470,21 @@
                                         <TextBlock Text="➡️" FontSize="12"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
+                                <MenuItem x:Name="CopyRowsAsCsvContextMenuItem" Header="Copy Row(s) as CSV" Click="OnContextCopyRowsAsCsvClick"/>
+                                <MenuItem x:Name="CopyRowsAsJsonContextMenuItem" Header="Copy Row(s) as JSON" Click="OnContextCopyRowsAsJsonClick"/>
                                 <Separator/>
-                                <MenuItem Header="Delete Row(s)" Click="OnContextDeleteRowsClick">
+                                <MenuItem x:Name="DeleteRowsContextMenuItem" Header="Delete Row(s)" Click="OnContextDeleteRowsClick">
                                     <MenuItem.Icon>
                                         <TextBlock Text="X" FontSize="12" FontWeight="Bold"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
+                                <MenuItem x:Name="KeepSelectedRowsContextMenuItem" Header="Keep Only Selected Rows" Click="OnContextKeepSelectedRowsClick"/>
+                                <MenuItem x:Name="DeleteUnselectedRowsContextMenuItem" Header="Delete Unselected Rows" Click="OnContextDeleteUnselectedRowsClick"/>
+                                <MenuItem x:Name="DuplicateRowsContextMenuItem" Header="Duplicate Row(s)" Click="OnContextDuplicateRowsClick"/>
+                                <MenuItem x:Name="InsertBlankAboveContextMenuItem" Header="Insert Blank Row Above" Click="OnContextInsertBlankRowAboveClick"/>
+                                <MenuItem x:Name="InsertBlankBelowContextMenuItem" Header="Insert Blank Row Below" Click="OnContextInsertBlankRowBelowClick"/>
+                                <MenuItem x:Name="ExportSelectedRowsContextMenuItem" Header="Export Selected Rows..." Click="OnContextExportSelectedRowsClick"/>
+                                <MenuItem x:Name="DeleteDuplicateRowsContextMenuItem" Header="Delete Duplicate Rows..." Click="OnContextDeleteDuplicateRowsClick"/>
                                 <Separator/>
                                 <MenuItem Header="Copy Column(s)" Click="OnContextCopyColumnsClick">
                                     <MenuItem.Icon>
@@ -308,6 +496,15 @@
                                         <TextBlock Text="⬇️" FontSize="12"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
+                                <Separator/>
+                                <MenuItem x:Name="FilterToValueContextMenuItem" Header="Filter to This Value" Click="OnContextFilterToValueClick"/>
+                                <MenuItem x:Name="ExcludeValueContextMenuItem" Header="Exclude This Value" Click="OnContextExcludeValueClick"/>
+                                <MenuItem x:Name="ShowBlankValuesContextMenuItem" Header="Show Blank Values" Click="OnContextShowBlankValuesClick"/>
+                                <Separator/>
+                                <MenuItem x:Name="SetSelectedCellsToNullContextMenuItem" Header="Set Selected Cells to Null" Click="OnContextSetSelectedCellsToNullClick"/>
+                                <MenuItem x:Name="FillDownContextMenuItem" Header="Fill Down" Click="OnContextFillDownClick"/>
+                                <MenuItem x:Name="TrimWhitespaceContextMenuItem" Header="Trim Whitespace" Click="OnContextTrimWhitespaceClick"/>
+                                <MenuItem x:Name="ReplaceSelectionContextMenuItem" Header="Replace in Selection..." Click="OnContextReplaceInSelectionClick"/>
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                     </DataGrid>
@@ -379,6 +576,30 @@
                                     VerticalAlignment="Center"/>
                             </StackPanel>
                             </Border>
+                    <Border x:Name="UndoActionBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
+                            Visibility="Collapsed" Background="#E8F5E9">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="UndoActionText" Text="" FontSize="11"
+                                       FontWeight="SemiBold" Foreground="#2E7D32" VerticalAlignment="Center"/>
+                            <Button Content="Undo" FontSize="10"
+                                    Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
+                                    Background="Transparent" Foreground="#2E7D32" Cursor="Hand"
+                                    ToolTip="Undo the last edit" Click="OnUndoLastActionClick"
+                                    VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="QualityStaleBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
+                            Visibility="Collapsed" Background="#FFF3E0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Quality review is stale" FontSize="11"
+                                       FontWeight="SemiBold" Foreground="#E65100" VerticalAlignment="Center"/>
+                            <Button Content="Refresh" FontSize="10"
+                                    Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
+                                    Background="Transparent" Foreground="#E65100" Cursor="Hand"
+                                    ToolTip="Refresh the quality review" Click="OnRefreshQualityReviewClick"
+                                    VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
                     <TextBlock Text="🔍 Global Search:" Margin="0,0,5,0" VerticalAlignment="Center"/>
                     <TextBox x:Name="GlobalSearchBox" 
                             Width="200" 

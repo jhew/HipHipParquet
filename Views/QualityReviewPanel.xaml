@@ -130,6 +130,21 @@
                     <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="#CCCCCC" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
                 <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Border Background="#FFF3E0" CornerRadius="12" Padding="8,3" Margin="0,0,8,0"
+                            Visibility="{Binding IsProfileStale, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Refresh recommended" FontSize="10" Foreground="#E65100" FontWeight="SemiBold"/>
+                            <Button Content="Refresh"
+                                    Command="{Binding AnalyzeCommand}"
+                                    Background="Transparent"
+                                    Foreground="#E65100"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    Padding="6,0,0,0"
+                                    FontSize="10"
+                                    FontWeight="Bold"/>
+                        </StackPanel>
+                    </Border>
                     <Button Content="Analyze" 
                             Command="{Binding AnalyzeCommand}" 
                             Background="White" Foreground="#512BD4" 

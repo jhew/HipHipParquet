@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Data;
 using Microsoft.Win32;
@@ -45,6 +45,8 @@ public partial class MainWindow : Window
     private bool _closingConfirmed = false;
     private DataFileInfo? _lastSchemaInfo;
     private string? _lastSchemaFilePath;
+    private readonly List<EditUndoSnapshot> _undoHistory = [];
+    private const int MaxUndoHistory = 20;
 
     // ── Column filter state (Fabric Lakehouse-style dropdowns) ────────────
     private readonly Dictionary<string, ColumnFilterState> _columnFilters = new();
@@ -71,6 +73,19 @@ public partial class MainWindow : Window
     // ── Stored service reference for reuse ───────────────────────────────
     private ParquetService? _parquetService;
     private readonly WorkspaceService _workspaceService = new();
+    private NotebookSessionService? _notebookSession;
+    private readonly ObservableCollection<NotebookSource> _notebookSources = [];
+    private readonly ObservableCollection<NotebookBlock> _notebookBlocks = [];
+    private string? _activeNotebookSourceAlias;
+    private CancellationTokenSource? _previewLoadCts;
+    private long _previewRowOffset;
+    private long _previewFilteredRowCount;
+    private bool _isPreviewMode;
+    private bool _suppressNotebookSourceSelectionChanged;
+    private bool _suppressNotebookBlockSelectionChanged;
+    private bool _suppressFilterApply;
+    private string? _lastSuggestedNotebookQuery;
+    private bool _queryHubVisible = true;
 
     // ── Search debounce ───────────────────────────────────────────────────
     private readonly System.Windows.Threading.DispatcherTimer _filterDebounceTimer;
@@ -86,6 +101,9 @@ public partial class MainWindow : Window
         LoadRecentFiles();
         UpdateRecentFilesMenu();
         RefreshSavedViewsMenu();
+        InitializeNotebookHub();
+        RefreshSavedNotebookQueries();
+        RefreshSchemaTemplates();
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
         MainContentGrid.SizeChanged += (_, _) => ClampQualityPaneWidth();
@@ -100,6 +118,920 @@ public partial class MainWindow : Window
             _filterDebounceTimer.Stop();
             ApplyAllFilters();
         };
+
+        UpdateNotebookUiState();
+    }
+
+    private void InitializeNotebookHub()
+    {
+        NotebookSourcesList.ItemsSource = _notebookSources;
+        NotebookBlocksList.ItemsSource = _notebookBlocks;
+        NotebookSourceHintText.Text = "Open a source to start building local notebook steps.";
+        NotebookLastCheckText.Text = "Trust checks run locally against the active source or query result.";
+
+        NotebookQueryTextBox.TextChanged += (_, _) => UpdateNotebookUiState();
+        SavedNotebookQueriesComboBox.SelectionChanged += (_, _) => UpdateNotebookUiState();
+        SchemaTemplatesComboBox.SelectionChanged += (_, _) => UpdateNotebookUiState();
+    }
+
+    private NotebookSessionService GetNotebookSession()
+    {
+        if (_notebookSession != null)
+            return _notebookSession;
+
+        var logger = App.Current.Services.GetService<ILogger<NotebookSessionService>>()
+            ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<NotebookSessionService>.Instance;
+
+        _notebookSession = new NotebookSessionService(logger);
+        return _notebookSession;
+    }
+
+    private void RefreshSavedNotebookQueries()
+    {
+        SavedNotebookQueriesComboBox.ItemsSource = _workspaceService.GetNotebookQueries()
+            .OrderByDescending(query => query.UpdatedAtUtc)
+            .ToList();
+        UpdateNotebookUiState();
+    }
+
+    private void RefreshSchemaTemplates()
+    {
+        SchemaTemplatesComboBox.ItemsSource = _workspaceService.GetSchemaTemplates()
+            .OrderBy(template => template.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        UpdateNotebookUiState();
+    }
+
+    private void AddNotebookBlock(NotebookBlockKind kind, string title, string summary, string? sourceAlias = null, string? sql = null)
+    {
+        _notebookBlocks.Insert(0, new NotebookBlock
+        {
+            Kind = kind,
+            Title = title,
+            Summary = summary,
+            SourceAlias = sourceAlias,
+            Sql = sql
+        });
+
+        while (_notebookBlocks.Count > 60)
+            _notebookBlocks.RemoveAt(_notebookBlocks.Count - 1);
+    }
+
+    private void UpdateNotebookUiState()
+    {
+        var hasSources = _notebookSources.Count > 0;
+        var hasActiveSource = hasSources && !string.IsNullOrWhiteSpace(_activeNotebookSourceAlias);
+
+        NotebookHub.Visibility = hasSources && _queryHubVisible ? Visibility.Visible : Visibility.Collapsed;
+        RunNotebookQueryButton.IsEnabled = hasSources && !string.IsNullOrWhiteSpace(NotebookQueryTextBox.Text);
+        SaveNotebookQueryButton.IsEnabled = !string.IsNullOrWhiteSpace(NotebookQueryTextBox.Text);
+        LoadSavedNotebookQueryButton.IsEnabled = SavedNotebookQueriesComboBox.SelectedItem is NotebookQueryDocument;
+        DeleteSavedNotebookQueryButton.IsEnabled = SavedNotebookQueriesComboBox.SelectedItem is NotebookQueryDocument;
+        MaterializeWorkingSetButton.IsEnabled = hasActiveSource;
+        NotebookExportButton.IsEnabled = hasActiveSource;
+        NullEmptyCheckButton.IsEnabled = hasActiveSource;
+        DuplicateCheckButton.IsEnabled = hasActiveSource;
+        RegexCheckButton.IsEnabled = hasActiveSource;
+        SaveSchemaTemplateButton.IsEnabled = hasActiveSource;
+        ValidateSchemaTemplateButton.IsEnabled = hasActiveSource && SchemaTemplatesComboBox.SelectedItem is SchemaTemplate;
+
+        PreviewPreviousPageButton.IsEnabled = hasActiveSource && _isPreviewMode && _previewRowOffset > 0;
+        PreviewNextPageButton.IsEnabled = hasActiveSource && _isPreviewMode && (_previewRowOffset + _currentRowLimit) < _previewFilteredRowCount;
+        MaterializeWorkingSetButton.Content = _isPreviewMode ? "Load Current Scope as Working Set" : "Working Set Loaded";
+        MaterializeWorkingSetButton.IsEnabled = hasActiveSource && _isPreviewMode;
+        NotebookQueryLabelText.Text = hasActiveSource
+            ? $"Run local DuckDB SQL over opened notebook aliases. Active source: {_activeNotebookSourceAlias}."
+            : "Run local DuckDB SQL over any opened notebook source alias.";
+
+        if (!hasSources)
+        {
+            NotebookActiveSourceText.Text = "No active source";
+            PreviewPageStatusText.Text = "Preview controls appear for large sources.";
+            SetNotebookModeBadge("Ready", "#E3F2FD", "#1565C0");
+            return;
+        }
+
+        NotebookSourceHintText.Text = BuildNotebookAliasHint();
+
+        if (!hasActiveSource)
+        {
+            NotebookActiveSourceText.Text = "Choose a source to preview or query.";
+            PreviewPageStatusText.Text = "Preview controls appear for large sources.";
+            SetNotebookModeBadge("Notebook", "#E8F5E9", "#2E7D32");
+            return;
+        }
+
+        if (_isPreviewMode)
+            SetNotebookModeBadge("Read-Only Preview", "#FFF3E0", "#E65100");
+        else
+            SetNotebookModeBadge("Editable Working Set", "#E8F5E9", "#2E7D32");
+    }
+
+    private void SetNotebookModeBadge(string text, string backgroundHex, string foregroundHex)
+    {
+        NotebookModeBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(backgroundHex));
+        NotebookModeBadgeText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(foregroundHex));
+        NotebookModeBadgeText.Text = text;
+    }
+
+    private string BuildNotebookAliasHint()
+    {
+        if (_notebookSources.Count == 0)
+            return "Open a source to start building local notebook steps.";
+
+        var aliases = string.Join(", ", _notebookSources.Select(source => source.Alias));
+        return $"DuckDB aliases: {aliases}. Select a notebook block to reopen its source or SQL.";
+    }
+
+    private void SuggestNotebookQuery(NotebookSource source)
+    {
+        var suggestedQuery = BuildSuggestedNotebookQuery(source);
+        var currentQuery = NotebookQueryTextBox.Text?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(currentQuery) ||
+            string.Equals(currentQuery, _lastSuggestedNotebookQuery, StringComparison.Ordinal))
+        {
+            NotebookQueryTextBox.Text = suggestedQuery;
+            NotebookQueryTextBox.SelectAll();
+        }
+
+        _lastSuggestedNotebookQuery = suggestedQuery;
+    }
+
+    private static string BuildSuggestedNotebookQuery(NotebookSource source)
+        => $"SELECT *{Environment.NewLine}FROM {source.Alias}{Environment.NewLine}LIMIT 100;";
+
+    private static List<ColumnInfo> BuildColumnInfos(NotebookSource source)
+        => source.Columns
+            .Select(column => new ColumnInfo
+            {
+                Name = column.Name,
+                Type = column.Type,
+                Nullable = column.Nullable
+            })
+            .ToList();
+
+    private static IReadOnlyList<string> ResolveNotebookSourceFiles(NotebookSource source)
+    {
+        if (source.FilePaths.Count > 0)
+            return source.FilePaths;
+
+        if (!string.IsNullOrWhiteSpace(source.FilePath))
+            return [source.FilePath];
+
+        return [source.DisplayName];
+    }
+
+    private async Task<NotebookSource> RegisterNotebookFileSourceAsync(IReadOnlyList<string> filePaths, DataFileInfo fileInfo)
+    {
+        var session = GetNotebookSession();
+        var notebookColumns = fileInfo.Columns
+            .Select(column => new NotebookColumnSchema
+            {
+                Name = column.Name,
+                Type = column.Type,
+                Nullable = column.Nullable
+            })
+            .ToList();
+
+        var source = await session.RegisterFileSourceAsync(
+            filePaths,
+            _activeCsvOptions,
+            _activeJsonOptions,
+            knownColumns: notebookColumns,
+            knownRowCount: fileInfo.RowCount,
+            knownFormat: fileInfo.Format);
+
+        _notebookSources.Add(source);
+        AddNotebookBlock(
+            NotebookBlockKind.Source,
+            source.DisplayName,
+            $"{source.RowCount:N0} rows available as `{source.Alias}`.",
+            source.Alias);
+
+        UpdateNotebookUiState();
+        return source;
+    }
+
+    private void SelectActiveNotebookSource(string alias)
+    {
+        _activeNotebookSourceAlias = alias;
+        _suppressNotebookSourceSelectionChanged = true;
+        NotebookSourcesList.SelectedItem = _notebookSources.FirstOrDefault(source => string.Equals(source.Alias, alias, StringComparison.OrdinalIgnoreCase));
+        _suppressNotebookSourceSelectionChanged = false;
+        UpdateNotebookUiState();
+    }
+
+    private bool TryGetActiveNotebookSource(out NotebookSource source)
+    {
+        source = _notebookSources.FirstOrDefault(item => string.Equals(item.Alias, _activeNotebookSourceAlias, StringComparison.OrdinalIgnoreCase))
+            ?? new NotebookSource();
+        return !string.IsNullOrWhiteSpace(source.Alias);
+    }
+
+    private async Task ActivateNotebookSourceAsync(
+        NotebookSource source,
+        IReadOnlyList<SourceFileSummary>? sourceFiles = null,
+        string parquetPartsSuffix = "",
+        string? unknownExtension = null,
+        bool autoAnalyze = true)
+    {
+        var previousAlias = _activeNotebookSourceAlias;
+        var sourceChanged = !string.Equals(previousAlias, source.Alias, StringComparison.OrdinalIgnoreCase);
+        if (sourceChanged)
+            ResetGridQueryUi();
+
+        SelectActiveNotebookSource(source.Alias);
+        SuggestNotebookQuery(source);
+        NotebookActiveSourceText.Text = $"{source.DisplayName} ({source.Alias})";
+        EmptyStatePanel.Visibility = Visibility.Collapsed;
+        DataGridContainer.Visibility = Visibility.Visible;
+        _currentFilePath = source.FilePath;
+        _currentFilePaths = source.FilePaths.Count > 0 ? source.FilePaths : null;
+        _activeCsvOptions = source.CsvOptions;
+        _activeJsonOptions = source.JsonOptions;
+        if (source.Format.HasValue)
+            _currentFormat = source.Format.Value;
+        UpdateSchemaPanelForNotebookSource(source);
+        UpdateFormatBadgeForNotebookSource(source);
+
+        ConfigureQualityContextForSource(source, sourceFiles, autoAnalyze);
+
+        if (source.RowCount > RowLimitBatch)
+        {
+            await LoadNotebookPreviewAsync(source, parquetPartsSuffix, unknownExtension, resetPaging: true);
+            return;
+        }
+
+        await LoadNotebookWorkingSetAsync(
+            source,
+            queryState: null,
+            preserveOriginalSaveTarget: source.Kind == NotebookSourceKind.File,
+            parquetPartsSuffix: parquetPartsSuffix,
+            unknownExtension: unknownExtension,
+            clearFiltersAfterLoad: false);
+    }
+
+    private void ConfigureQualityContextForSource(
+        NotebookSource source,
+        IReadOnlyList<SourceFileSummary>? sourceFiles,
+        bool autoAnalyze)
+    {
+        if (source.Kind != NotebookSourceKind.File)
+        {
+            DisposeFileWatcher();
+            _qualityViewModel?.ClearFile();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(source.FilePath))
+        {
+            SetupFileWatcher(source.FilePath);
+            _qualityViewModel?.SetFilePath(source.FilePath, source.CsvOptions, source.JsonOptions, sourceFiles);
+        }
+        else if (source.FilePaths.Count > 0)
+        {
+            DisposeFileWatcher();
+            _qualityViewModel?.SetFilePath(source.FilePaths[0], sourceFiles: sourceFiles);
+        }
+
+        if (autoAnalyze && source.RowCount <= AutoProfileRowThreshold)
+            _qualityViewModel?.StartAutoAnalyze();
+    }
+
+    private async Task LoadNotebookPreviewAsync(
+        NotebookSource source,
+        string parquetPartsSuffix = "",
+        string? unknownExtension = null,
+        bool resetPaging = false)
+    {
+        if (resetPaging)
+            _previewRowOffset = 0;
+
+        _previewLoadCts?.Cancel();
+        _previewLoadCts?.Dispose();
+        _previewLoadCts = new CancellationTokenSource();
+
+        try
+        {
+            ShowLoading($"Previewing {source.DisplayName}...");
+
+            var queryState = CreateQueryStateForSource(source, RowLimitBatch, _previewRowOffset);
+            var dataTable = await GetNotebookSession().GetPreviewPageAsync(source.Alias, queryState, _previewLoadCts.Token);
+
+            ShowLoading("Indexing preview rows...");
+            await Task.Run(() => EnsureRowMetadataColumns(dataTable, ResolveNotebookSourceFiles(source)));
+
+            _suppressFilterApply = true;
+            try
+            {
+                SetupDataGrid(dataTable, BuildColumnInfos(source));
+            }
+            finally
+            {
+                _suppressFilterApply = false;
+            }
+
+            _isPreviewMode = true;
+            _previewFilteredRowCount = queryState.FilteredRowCount;
+            _totalRowCount = source.RowCount;
+            _currentRowLimit = RowLimitBatch;
+            _hasUnsavedChanges = false;
+            _pendingEditCount = 0;
+            ResetUndoHistory();
+            UpdateWindowTitle();
+            UpdatePendingChangesTray();
+            EnableSaveMenuItems();
+            LoadMoreBanner.Visibility = Visibility.Collapsed;
+            DataGrid.IsReadOnly = true;
+            UpdateEditMenuState();
+            UpdateContextMenuState();
+            UpdateRowCount();
+
+            var firstRow = dataTable.Rows.Count > 0 ? _previewRowOffset + 1 : 0;
+            var lastRow = _previewRowOffset + dataTable.Rows.Count;
+            PreviewPageStatusText.Text = dataTable.Rows.Count == 0
+                ? "No rows match the current scope."
+                : $"Rows {firstRow:N0}-{lastRow:N0} of {_previewFilteredRowCount:N0} in the current scope";
+
+            StatusText.Text = dataTable.Rows.Count == 0
+                ? $"Previewing {source.DisplayName} - no rows matched the current scope"
+                : $"Previewing {source.DisplayName}{parquetPartsSuffix} - rows {firstRow:N0}-{lastRow:N0} of {_previewFilteredRowCount:N0}";
+
+            if (!string.IsNullOrWhiteSpace(unknownExtension))
+                StatusText.Text += $" - unknown extension '{unknownExtension}' treated as CSV";
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            UpdateNotebookUiState();
+            HideLoading();
+        }
+    }
+
+    private async Task LoadNotebookWorkingSetAsync(
+        NotebookSource source,
+        GridQueryState? queryState,
+        bool preserveOriginalSaveTarget,
+        string parquetPartsSuffix = "",
+        string? unknownExtension = null,
+        bool clearFiltersAfterLoad = false)
+    {
+        try
+        {
+            ShowLoading($"Loading working set from {source.DisplayName}...");
+
+            var dataTable = await GetNotebookSession().MaterializeSourceAsync(source.Alias, queryState);
+
+            ShowLoading("Indexing working set...");
+            await Task.Run(() => EnsureRowMetadataColumns(dataTable, ResolveNotebookSourceFiles(source)));
+
+            if (clearFiltersAfterLoad)
+                ResetGridQueryUi();
+
+            SetupDataGrid(dataTable, BuildColumnInfos(source));
+
+            _isPreviewMode = false;
+            _previewRowOffset = 0;
+            _previewFilteredRowCount = dataTable.Rows.Count;
+            _totalRowCount = dataTable.Rows.Count;
+            _currentRowLimit = dataTable.Rows.Count;
+            _hasUnsavedChanges = false;
+            _pendingEditCount = 0;
+            ResetUndoHistory();
+            UpdateWindowTitle();
+            UpdatePendingChangesTray();
+            LoadMoreBanner.Visibility = Visibility.Collapsed;
+            DataGrid.IsReadOnly = false;
+            UpdateEditMenuState();
+            UpdateContextMenuState();
+
+            if (preserveOriginalSaveTarget)
+            {
+                _currentFilePath = source.FilePath;
+                _currentFilePaths = ResolveNotebookSourceFiles(source);
+            }
+            else
+            {
+                _currentFilePath = null;
+                _currentFilePaths = null;
+                DisposeFileWatcher();
+                _qualityViewModel?.ClearFile();
+            }
+
+            EnableSaveMenuItems();
+            UpdateRowCount();
+
+            StatusText.Text = $"Loaded {dataTable.Rows.Count:N0} rows from {source.DisplayName}{parquetPartsSuffix} as an editable working set";
+            if (!string.IsNullOrWhiteSpace(unknownExtension))
+                StatusText.Text += $" - unknown extension '{unknownExtension}' treated as CSV";
+        }
+        finally
+        {
+            UpdateNotebookUiState();
+            HideLoading();
+        }
+    }
+
+    private void ResetGridQueryUi()
+    {
+        foreach (var kvp in _columnFilters)
+        {
+            kvp.Value.IsActive = false;
+            kvp.Value.IsLoaded = false;
+            kvp.Value.SelectedValues.Clear();
+        }
+
+        _savedColumnFilterSelections.Clear();
+        _savedGlobalSearch = string.Empty;
+        _savedSort = string.Empty;
+
+        GlobalSearchBox.TextChanged -= OnGlobalSearchTextChanged;
+        GlobalSearchBox.Text = string.Empty;
+        GlobalSearchBox.TextChanged += OnGlobalSearchTextChanged;
+
+        foreach (var column in DataGrid.Columns)
+            column.SortDirection = null;
+
+        UpdateFilterBadge();
+    }
+
+    private GridQueryState CreateQueryStateForSource(NotebookSource source, int rowLimit, long rowOffset)
+    {
+        var queryState = BuildCurrentQueryState();
+        queryState.AvailableColumns = source.Columns.Select(column => column.Name).ToList();
+        queryState.RowLimit = rowLimit;
+        queryState.RowOffset = (int)Math.Min(int.MaxValue, rowOffset);
+        queryState.TotalRowCount = source.RowCount;
+        queryState.CsvOptions = source.CsvOptions;
+        queryState.JsonOptions = source.JsonOptions;
+        queryState.SourceFilePath = source.FilePath ?? string.Empty;
+        return queryState;
+    }
+
+    private void UpdateSchemaPanelForNotebookSource(NotebookSource source)
+    {
+        var info = new DataFileInfo
+        {
+            FilePath = source.FilePath ?? source.DisplayName,
+            Format = source.Format ?? SupportedFileFormat.Parquet,
+            RowCount = source.RowCount,
+            SourceFiles = source.FilePaths.ToList(),
+            Columns = BuildColumnInfos(source)
+        };
+
+        UpdateSchemaPanel(source.FilePath ?? source.DisplayName, info);
+    }
+
+    private void UpdateFormatBadgeForNotebookSource(NotebookSource source)
+    {
+        if (source.Format.HasValue)
+        {
+            UpdateFormatBadge(source.Format.Value);
+            return;
+        }
+
+        FormatBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#ECEFF1"));
+        FormatBadgeText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#37474F"));
+        FormatBadgeText.Text = "DuckDB";
+        FormatBadge.Visibility = Visibility.Visible;
+    }
+
+    private void DisposeFileWatcher()
+    {
+        if (_fileWatcher == null)
+            return;
+
+        _fileWatcher.EnableRaisingEvents = false;
+        _fileWatcher.Dispose();
+        _fileWatcher = null;
+    }
+
+    private async void OnNotebookSourceSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressNotebookSourceSelectionChanged || NotebookSourcesList.SelectedItem is not NotebookSource source)
+            return;
+
+        await ActivateNotebookSourceAsync(source, autoAnalyze: false);
+    }
+
+    private async void OnNotebookBlockSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressNotebookBlockSelectionChanged || NotebookBlocksList.SelectedItem is not NotebookBlock block)
+            return;
+
+        _suppressNotebookBlockSelectionChanged = true;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(block.Sql))
+            {
+                _lastSuggestedNotebookQuery = null;
+                NotebookQueryTextBox.Text = block.Sql;
+            }
+
+            if (!string.IsNullOrWhiteSpace(block.SourceAlias) &&
+                _notebookSources.FirstOrDefault(item => string.Equals(item.Alias, block.SourceAlias, StringComparison.OrdinalIgnoreCase)) is { } source)
+            {
+                await ActivateNotebookSourceAsync(source, autoAnalyze: false);
+            }
+        }
+        finally
+        {
+            NotebookBlocksList.SelectedItem = null;
+            _suppressNotebookBlockSelectionChanged = false;
+        }
+    }
+
+    private async void OnRunNotebookQueryClick(object sender, RoutedEventArgs e)
+    {
+        if (_notebookSources.Count == 0)
+        {
+            StatusText.Text = "Open a source before running notebook queries";
+            return;
+        }
+
+        try
+        {
+            ShowLoading("Running DuckDB query...");
+            var sql = NotebookQueryTextBox.Text;
+            var resultSource = await GetNotebookSession().ExecuteReadOnlyQueryAsync(sql, preferredAlias: "query_result");
+            _notebookSources.Add(resultSource);
+            AddNotebookBlock(NotebookBlockKind.Query, "DuckDB Query", $"Created `{resultSource.Alias}` from the current SQL.", resultSource.Alias, sql);
+            AddNotebookBlock(NotebookBlockKind.Result, resultSource.DisplayName, $"{resultSource.RowCount:N0} rows available in `{resultSource.Alias}`.", resultSource.Alias);
+            await ActivateNotebookSourceAsync(resultSource, autoAnalyze: false);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Query failed: {ex.Message}", "Query Hub", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Notebook query failed";
+        }
+        finally
+        {
+            UpdateNotebookUiState();
+            HideLoading();
+        }
+    }
+
+    private async void OnSaveNotebookQueryClick(object sender, RoutedEventArgs e)
+    {
+        var sql = NotebookQueryTextBox.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            StatusText.Text = "Enter a query before saving it";
+            return;
+        }
+
+        var name = GridActionDialogs.ShowSingleTextInputDialog(
+            this,
+            "Save Query",
+            "Query name",
+            $"Query {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+            confirmText: "Save");
+
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        await _workspaceService.SaveNotebookQueryAsync(new NotebookQueryDocument
+        {
+            Name = name.Trim(),
+            Sql = sql,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+
+        RefreshSavedNotebookQueries();
+        StatusText.Text = $"Saved notebook query '{name.Trim()}'";
+    }
+
+    private void OnLoadSavedNotebookQueryClick(object sender, RoutedEventArgs e)
+    {
+        if (SavedNotebookQueriesComboBox.SelectedItem is not NotebookQueryDocument query)
+        {
+            StatusText.Text = "Choose a saved query first";
+            return;
+        }
+
+        _lastSuggestedNotebookQuery = null;
+        NotebookQueryTextBox.Text = query.Sql;
+        StatusText.Text = $"Loaded query '{query.Name}'";
+    }
+
+    private async void OnDeleteSavedNotebookQueryClick(object sender, RoutedEventArgs e)
+    {
+        if (SavedNotebookQueriesComboBox.SelectedItem is not NotebookQueryDocument query)
+        {
+            StatusText.Text = "Choose a saved query first";
+            return;
+        }
+
+        var result = MessageBox.Show(
+            $"Delete saved query '{query.Name}'?",
+            "Delete Saved Query",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
+        await _workspaceService.DeleteNotebookQueryAsync(query.Name);
+        RefreshSavedNotebookQueries();
+        StatusText.Text = $"Deleted saved query '{query.Name}'";
+    }
+
+    private async void OnMaterializeWorkingSetClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetActiveNotebookSource(out var source))
+        {
+            StatusText.Text = "Choose a notebook source first";
+            return;
+        }
+
+        if (!_isPreviewMode)
+        {
+            StatusText.Text = "The active source is already loaded as an editable working set";
+            return;
+        }
+
+        var scopeState = CreateQueryStateForSource(source, RowLimitBatch, 0);
+        var scopeCount = _previewFilteredRowCount > 0 ? _previewFilteredRowCount : source.RowCount;
+        if (scopeCount > 250_000)
+        {
+            var confirm = MessageBox.Show(
+                $"This working set will materialize {scopeCount:N0} rows into memory.\n\nContinue?",
+                "Large Working Set",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (confirm != MessageBoxResult.Yes)
+                return;
+        }
+
+        var preserveOriginalSaveTarget =
+            source.Kind == NotebookSourceKind.File &&
+            source.FilePaths.Count == 1 &&
+            !scopeState.HasActiveFilters &&
+            scopeCount == source.RowCount;
+
+        await LoadNotebookWorkingSetAsync(
+            source,
+            scopeState,
+            preserveOriginalSaveTarget,
+            clearFiltersAfterLoad: true);
+
+        AddNotebookBlock(
+            NotebookBlockKind.Result,
+            $"{source.DisplayName} working set",
+            $"{_totalRowCount:N0} rows loaded into an editable working set.",
+            source.Alias);
+    }
+
+    private async void OnNotebookExportClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetActiveNotebookSource(out var source))
+        {
+            StatusText.Text = "Choose a notebook source first";
+            return;
+        }
+
+        if (!_isPreviewMode)
+        {
+            OnExportAsClick(sender, e);
+            return;
+        }
+
+        var saveFileDialog = new SaveFileDialog
+        {
+            Filter = Services.FileFormatDetector.GetSaveFileDialogFilter(),
+            Title = "Export Current Notebook Scope",
+            FileName = Path.GetFileNameWithoutExtension(source.DisplayName)
+        };
+
+        if (saveFileDialog.ShowDialog() != true)
+            return;
+
+        try
+        {
+            ShowLoading("Exporting notebook scope...");
+            var scopeState = CreateQueryStateForSource(source, RowLimitBatch, 0);
+            await GetNotebookSession().ExportSourceAsync(source.Alias, saveFileDialog.FileName, scopeState);
+            AddNotebookBlock(
+                NotebookBlockKind.Export,
+                Path.GetFileName(saveFileDialog.FileName),
+                $"Exported the current notebook scope to {Path.GetFileName(saveFileDialog.FileName)}.",
+                source.Alias);
+            StatusText.Text = $"Exported {Path.GetFileName(saveFileDialog.FileName)}";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Export failed: {ex.Message}", "Notebook Export", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Notebook export failed";
+        }
+        finally
+        {
+            HideLoading();
+        }
+    }
+
+    private async void OnNotebookNullEmptyCheckClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetActiveNotebookSource(out var source))
+        {
+            StatusText.Text = "Choose a notebook source first";
+            return;
+        }
+
+        try
+        {
+            ShowLoading("Running null / empty check...");
+            var result = await GetNotebookSession().RunNullEmptyCheckAsync(source.Alias);
+            RenderNotebookValidationResult(source.Alias, result);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Null / empty check failed: {ex.Message}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Null / empty check failed";
+        }
+        finally
+        {
+            HideLoading();
+        }
+    }
+
+    private async void OnNotebookDuplicateCheckClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetActiveNotebookSource(out var source))
+        {
+            StatusText.Text = "Choose a notebook source first";
+            return;
+        }
+
+        var preselectedColumns = GetSelectedColumnNamesFromCells()
+            .Where(name => source.Columns.Any(column => string.Equals(column.Name, name, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        var chosenColumns = GridActionDialogs.ShowColumnPickerDialog(
+            this,
+            "Duplicate Check",
+            "Choose the column(s) that define a duplicate row key.",
+            source.Columns.Select(column => column.Name).ToList(),
+            preselectedColumns);
+
+        if (chosenColumns == null || chosenColumns.Count == 0)
+            return;
+
+        try
+        {
+            ShowLoading("Running duplicate check...");
+            var result = await GetNotebookSession().RunDuplicateCheckAsync(source.Alias, chosenColumns);
+            RenderNotebookValidationResult(source.Alias, result);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Duplicate check failed: {ex.Message}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Duplicate check failed";
+        }
+        finally
+        {
+            HideLoading();
+        }
+    }
+
+    private async void OnNotebookRegexCheckClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetActiveNotebookSource(out var source))
+        {
+            StatusText.Text = "Choose a notebook source first";
+            return;
+        }
+
+        var regexOptions = GridActionDialogs.ShowRegexCheckDialog(
+            this,
+            source.Columns.Select(column => column.Name).ToList());
+
+        if (regexOptions == null)
+            return;
+
+        try
+        {
+            ShowLoading("Running regex check...");
+            var result = await GetNotebookSession().RunRegexCheckAsync(source.Alias, regexOptions.ColumnName, regexOptions.Pattern);
+            RenderNotebookValidationResult(source.Alias, result);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Regex check failed: {ex.Message}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Regex check failed";
+        }
+        finally
+        {
+            HideLoading();
+        }
+    }
+
+    private async void OnSaveSchemaTemplateClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetActiveNotebookSource(out var source))
+        {
+            StatusText.Text = "Choose a notebook source first";
+            return;
+        }
+
+        var templateName = GridActionDialogs.ShowSingleTextInputDialog(
+            this,
+            "Save Schema Template",
+            "Template name",
+            $"{source.DisplayName} template",
+            confirmText: "Save");
+
+        if (string.IsNullOrWhiteSpace(templateName))
+            return;
+
+        var template = new SchemaTemplate
+        {
+            Name = templateName.Trim(),
+            Description = $"Saved from {source.DisplayName}",
+            CreatedAtUtc = DateTime.UtcNow,
+            Columns = source.Columns
+                .Select(column => new SchemaTemplateColumn
+                {
+                    Name = column.Name,
+                    Type = column.Type,
+                    Nullable = column.Nullable,
+                    Required = true
+                })
+                .ToList()
+        };
+
+        await _workspaceService.SaveSchemaTemplateAsync(template);
+        RefreshSchemaTemplates();
+        SchemaTemplatesComboBox.SelectedItem = ((IEnumerable<SchemaTemplate>)SchemaTemplatesComboBox.ItemsSource!).FirstOrDefault(item => item.Name == template.Name);
+        AddNotebookBlock(NotebookBlockKind.Validation, template.Name, $"Saved schema template with {template.Columns.Count:N0} columns.", source.Alias);
+        StatusText.Text = $"Saved schema template '{template.Name}'";
+    }
+
+    private async void OnValidateSchemaTemplateClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetActiveNotebookSource(out var source))
+        {
+            StatusText.Text = "Choose a notebook source first";
+            return;
+        }
+
+        if (SchemaTemplatesComboBox.SelectedItem is not SchemaTemplate template)
+        {
+            StatusText.Text = "Choose a schema template first";
+            return;
+        }
+
+        try
+        {
+            ShowLoading("Validating schema template...");
+            var result = await GetNotebookSession().ValidateSchemaTemplateAsync(source.Alias, template);
+            RenderNotebookValidationResult(source.Alias, result);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Schema validation failed: {ex.Message}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Schema validation failed";
+        }
+        finally
+        {
+            HideLoading();
+        }
+    }
+
+    private async void OnPreviewPreviousPageClick(object sender, RoutedEventArgs e)
+    {
+        if (!_isPreviewMode || !TryGetActiveNotebookSource(out var source))
+            return;
+
+        _previewRowOffset = Math.Max(0, _previewRowOffset - RowLimitBatch);
+        await LoadNotebookPreviewAsync(source);
+    }
+
+    private async void OnPreviewNextPageClick(object sender, RoutedEventArgs e)
+    {
+        if (!_isPreviewMode || !TryGetActiveNotebookSource(out var source))
+            return;
+
+        _previewRowOffset += RowLimitBatch;
+        await LoadNotebookPreviewAsync(source);
+    }
+
+    private void RenderNotebookValidationResult(string sourceAlias, NotebookValidationResult result)
+    {
+        var summaryBuilder = new System.Text.StringBuilder();
+        summaryBuilder.Append(result.Summary);
+
+        foreach (var finding in result.Findings.Take(3))
+            summaryBuilder.AppendLine().Append("- ").Append(finding.Message);
+
+        NotebookLastCheckText.Text = summaryBuilder.ToString();
+        AddNotebookBlock(NotebookBlockKind.Validation, result.Title, result.Summary, sourceAlias);
+        StatusText.Text = result.Summary;
     }
     
     private async void OnWindowClosing(object? sender, CancelEventArgs e)
@@ -109,7 +1041,10 @@ public partial class MainWindow : Window
             // Second pass — let the close proceed and clean up.
             SaveWorkspaceState();
             _parquetService?.Dispose();
+            _notebookSession?.Dispose();
             _fileWatcher?.Dispose();
+            _previewLoadCts?.Cancel();
+            _previewLoadCts?.Dispose();
             return;
         }
 
@@ -117,7 +1052,10 @@ public partial class MainWindow : Window
         {
             SaveWorkspaceState();
             _parquetService?.Dispose();
+            _notebookSession?.Dispose();
             _fileWatcher?.Dispose();
+            _previewLoadCts?.Cancel();
+            _previewLoadCts?.Dispose();
             return;
         }
 
@@ -291,22 +1229,7 @@ public partial class MainWindow : Window
             var fileInfo = await _parquetService.GetFileInfoAsync(orderedFilePaths);
             _totalRowCount = fileInfo.RowCount;
 
-            ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
-            var dataTable = await _parquetService.LoadFilesAsync(
-                orderedFilePaths,
-                _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null);
-
-            ShowLoading("Indexing rows...");
-            await Task.Run(() => EnsureRowMetadataColumns(dataTable, orderedFilePaths));
-
             UpdateSchemaPanel(orderedFilePaths[0], fileInfo);
-
-            ShowLoading("Building grid...");
-            SetupDataGrid(dataTable, fileInfo.Columns);
-
-            EmptyStatePanel.Visibility = Visibility.Collapsed;
-            DataGridContainer.Visibility = Visibility.Visible;
-            UpdateLoadMoreBanner(dataTable.Rows.Count);
 
             foreach (var filePath in orderedFilePaths)
                 AddToRecentFiles(filePath);
@@ -317,18 +1240,17 @@ public partial class MainWindow : Window
             _currentFilePath = orderedFilePaths.Count == 1 ? orderedFilePaths[0] : null;
             _hasUnsavedChanges = false;
             _pendingEditCount = 0;
+            ResetUndoHistory();
             UpdateWindowTitle();
             UpdatePendingChangesTray();
             EnableSaveMenuItems();
             UpdateFormatBadge(SupportedFileFormat.Parquet);
 
-            // Enable quality analysis on the first file of the set (best-effort for multi-file loads).
-            _qualityViewModel?.SetFilePath(orderedFilePaths[0], sourceFiles: fileInfo.SourceFileSummaries);
-            if (_totalRowCount <= AutoProfileRowThreshold)
-                _qualityViewModel?.StartAutoAnalyze();
+            var notebookSource = await RegisterNotebookFileSourceAsync(orderedFilePaths, fileInfo);
+            await ActivateNotebookSourceAsync(notebookSource, fileInfo.SourceFileSummaries);
 
-            StatusText.Text =
-                $"Loaded {orderedFilePaths.Count} parquet files — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
+            StatusText.Text = $"Loaded {orderedFilePaths.Count:N0} parquet files into the notebook workspace";
+            // Legacy in-place status text removed in favor of notebook activation status.
         }
         catch (Exception ex)
         {
@@ -533,6 +1455,15 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnToggleQueryHubClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem)
+        {
+            _queryHubVisible = menuItem.IsChecked;
+            UpdateNotebookUiState();
+        }
+    }
+
     private void OnQualitySplitterDragCompleted(object sender, DragCompletedEventArgs e)
     {
         ClampQualityPaneWidth();
@@ -586,6 +1517,13 @@ public partial class MainWindow : Window
                 {
                     MainTaskbarItemInfo.ProgressValue = _qualityViewModel.TaskbarProgressValue;
                 }
+
+                if (e.PropertyName is nameof(QualityReviewViewModel.HasProfile)
+                    or nameof(QualityReviewViewModel.IsProfileStale)
+                    or nameof(QualityReviewViewModel.IsAnalyzing))
+                {
+                    UpdateQualityStaleBadge();
+                }
             };
 
             // attach a few helper handlers once the grid exists
@@ -601,11 +1539,33 @@ public partial class MainWindow : Window
     
     private void OnEditMenuOpened(object sender, RoutedEventArgs e)
     {
+        CaptureCurrentSelection();
+        UpdateEditMenuState();
+    }
+
+    private void OnEditMenuClosed(object sender, RoutedEventArgs e)
+    {
+        ClearCapturedSelection();
+    }
+
+    private void OnDataGridContextMenuOpened(object sender, RoutedEventArgs e)
+    {
+        CaptureCurrentSelection();
+        UpdateContextMenuState();
+    }
+
+    private void OnDataGridContextMenuClosed(object sender, RoutedEventArgs e)
+    {
+        ClearCapturedSelection();
+    }
+
+    private void CaptureCurrentSelection()
+    {
         _savedSelectedCells = DataGrid.SelectedCells.ToList();
         _savedSelectedItems = DataGrid.SelectedItems.Cast<object>().ToList();
     }
 
-    private void OnEditMenuClosed(object sender, RoutedEventArgs e)
+    private void ClearCapturedSelection()
     {
         _savedSelectedCells = null;
         _savedSelectedItems = null;
@@ -693,68 +1653,392 @@ public partial class MainWindow : Window
         CopySelectionToClipboard(",", true);
     }
 
+    private void OnContextCopyRowsAsCsvClick(object sender, RoutedEventArgs e)
+    {
+        CopyRowsToClipboard(",", false);
+    }
+
+    private void OnContextCopyRowsAsJsonClick(object sender, RoutedEventArgs e)
+    {
+        CopyRowsAsJsonToClipboard();
+    }
+
     private void OnContextDeleteRowsClick(object sender, RoutedEventArgs e)
     {
         DeleteSelectedRows();
     }
 
+    private void OnContextKeepSelectedRowsClick(object sender, RoutedEventArgs e)
+    {
+        KeepOnlySelectedRows();
+    }
+
+    private void OnContextDeleteUnselectedRowsClick(object sender, RoutedEventArgs e)
+    {
+        DeleteUnselectedRows();
+    }
+
+    private void OnContextDuplicateRowsClick(object sender, RoutedEventArgs e)
+    {
+        DuplicateSelectedRows();
+    }
+
+    private void OnContextInsertBlankRowAboveClick(object sender, RoutedEventArgs e)
+    {
+        InsertBlankRow(insertBelow: false);
+    }
+
+    private void OnContextInsertBlankRowBelowClick(object sender, RoutedEventArgs e)
+    {
+        InsertBlankRow(insertBelow: true);
+    }
+
+    private async void OnContextExportSelectedRowsClick(object sender, RoutedEventArgs e)
+    {
+        await ExportSelectedRowsAsync();
+    }
+
+    private void OnContextDeleteDuplicateRowsClick(object sender, RoutedEventArgs e)
+    {
+        DeleteDuplicateRows();
+    }
+
+    private void OnContextFilterToValueClick(object sender, RoutedEventArgs e)
+    {
+        ApplyCurrentCellFilter(CurrentCellFilterAction.IncludeValue);
+    }
+
+    private void OnContextExcludeValueClick(object sender, RoutedEventArgs e)
+    {
+        ApplyCurrentCellFilter(CurrentCellFilterAction.ExcludeValue);
+    }
+
+    private void OnContextShowBlankValuesClick(object sender, RoutedEventArgs e)
+    {
+        ApplyCurrentCellFilter(CurrentCellFilterAction.OnlyBlanks);
+    }
+
+    private void OnContextSetSelectedCellsToNullClick(object sender, RoutedEventArgs e)
+    {
+        SetSelectedCellsToNull();
+    }
+
+    private void OnContextFillDownClick(object sender, RoutedEventArgs e)
+    {
+        FillDownSelectedCells();
+    }
+
+    private void OnContextTrimWhitespaceClick(object sender, RoutedEventArgs e)
+    {
+        TrimWhitespaceInSelection();
+    }
+
+    private void OnContextReplaceInSelectionClick(object sender, RoutedEventArgs e)
+    {
+        ReplaceInSelection();
+    }
+
+    private async void OnRefreshQualityReviewClick(object sender, RoutedEventArgs e)
+    {
+        if (_qualityViewModel == null || !_qualityViewModel.HasFile || _qualityViewModel.IsAnalyzing)
+            return;
+
+        await _qualityViewModel.AnalyzeCommand.ExecuteAsync(null);
+        UpdateQualityStaleBadge();
+    }
+
+    private void OnUndoLastActionClick(object sender, RoutedEventArgs e)
+    {
+        if (!CanEditCurrentWorkingSet())
+        {
+            StatusText.Text = "Undo is only available for editable working sets";
+            return;
+        }
+
+        UndoLastEdit();
+    }
+
     private void DeleteSelectedRows()
     {
+        if (!CanEditCurrentWorkingSet())
+        {
+            StatusText.Text = "Row deletion is only available for editable working sets";
+            return;
+        }
+
+        CommitPendingGridEdits();
+
+        var selectedRows = GetSelectedRowViews();
+        if (selectedRows.Count == 0)
+        {
+            StatusText.Text = "No rows selected to delete";
+            return;
+        }
+
+        var rowCount = selectedRows.Count;
+        var result = MessageBox.Show(
+            rowCount == 1
+                ? "Delete the selected row from the current dataset? This action cannot be undone."
+                : $"Delete {rowCount:N0} selected rows from the current dataset? This action cannot be undone.",
+            rowCount == 1 ? "Delete Row" : "Delete Rows",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
+        ExecuteUndoableMutation(
+            actionDescription: rowCount == 1 ? "Deleted 1 row" : $"Deleted {rowCount:N0} rows",
+            mutation: () => DataTableEditHelper.DeleteRows(_originalData!, selectedRows, RowNumberColumnName),
+            successMessageFactory: deletedCount => deletedCount == 1 ? "Deleted 1 row" : $"Deleted {deletedCount:N0} rows",
+            structuralChange: true,
+            clearSelection: true);
+    }
+
+    private void KeepOnlySelectedRows()
+    {
+        if (_originalData == null)
+        {
+            StatusText.Text = "No data loaded";
+            return;
+        }
+
+        CommitPendingGridEdits();
+
+        var selectedRows = GetSelectedRowViews();
+        if (selectedRows.Count == 0)
+        {
+            StatusText.Text = "No rows selected";
+            return;
+        }
+
+        var rowCount = selectedRows.Count;
+        var removedCount = _originalData.Rows.Count - selectedRows.Select(r => r.Row).Distinct().Count();
+        if (removedCount <= 0)
+        {
+            StatusText.Text = "All loaded rows are already selected";
+            return;
+        }
+
+        var result = MessageBox.Show(
+            $"Keep the {rowCount:N0} selected row{(rowCount == 1 ? string.Empty : "s")} and delete the remaining {removedCount:N0} row{(removedCount == 1 ? string.Empty : "s")} from the current dataset?",
+            "Keep Only Selected Rows",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
+        ExecuteUndoableMutation(
+            actionDescription: rowCount == 1 ? "Kept 1 selected row" : $"Kept {rowCount:N0} selected rows",
+            mutation: () => DataTableEditHelper.KeepOnlyRows(_originalData, selectedRows, RowNumberColumnName),
+            successMessageFactory: _ => rowCount == 1 ? "Kept 1 selected row" : $"Kept {rowCount:N0} selected rows",
+            structuralChange: true,
+            clearSelection: true);
+    }
+
+    private void DeleteUnselectedRows()
+    {
+        if (_originalData == null)
+        {
+            StatusText.Text = "No data loaded";
+            return;
+        }
+
+        CommitPendingGridEdits();
+
+        var selectedRows = GetSelectedRowViews();
+        if (selectedRows.Count == 0)
+        {
+            StatusText.Text = "No rows selected";
+            return;
+        }
+
+        var removedCount = _originalData.Rows.Count - selectedRows.Select(r => r.Row).Distinct().Count();
+        if (removedCount <= 0)
+        {
+            StatusText.Text = "No unselected rows to delete";
+            return;
+        }
+
+        var result = MessageBox.Show(
+            $"Delete the {removedCount:N0} unselected row{(removedCount == 1 ? string.Empty : "s")} and keep the current selection?",
+            "Delete Unselected Rows",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
+        ExecuteUndoableMutation(
+            actionDescription: removedCount == 1 ? "Deleted 1 unselected row" : $"Deleted {removedCount:N0} unselected rows",
+            mutation: () => DataTableEditHelper.DeleteUnselectedRows(_originalData, selectedRows, RowNumberColumnName),
+            successMessageFactory: deletedCount => deletedCount == 1 ? "Deleted 1 unselected row" : $"Deleted {deletedCount:N0} unselected rows",
+            structuralChange: true,
+            clearSelection: true);
+    }
+
+    private void DuplicateSelectedRows()
+    {
+        if (_originalData == null)
+        {
+            StatusText.Text = "No data loaded";
+            return;
+        }
+
+        CommitPendingGridEdits();
+
+        var selectedRows = GetSelectedRowViews();
+        if (selectedRows.Count == 0)
+        {
+            StatusText.Text = "No rows selected to duplicate";
+            return;
+        }
+
+        ExecuteUndoableMutation(
+            actionDescription: selectedRows.Count == 1 ? "Duplicated 1 row" : $"Duplicated {selectedRows.Count:N0} rows",
+            mutation: () => DataTableEditHelper.DuplicateRows(_originalData, selectedRows, RowNumberColumnName),
+            successMessageFactory: duplicatedCount => duplicatedCount == 1 ? "Duplicated 1 row" : $"Duplicated {duplicatedCount:N0} rows",
+            structuralChange: true,
+            clearSelection: true);
+    }
+
+    private void InsertBlankRow(bool insertBelow)
+    {
+        if (_originalData == null)
+        {
+            StatusText.Text = "No data loaded";
+            return;
+        }
+
+        CommitPendingGridEdits();
+
+        var anchorRow = GetPrimarySelectedRow();
+        if (anchorRow == null)
+        {
+            StatusText.Text = "Select a row first";
+            return;
+        }
+
+        ExecuteUndoableMutation(
+            actionDescription: insertBelow ? "Inserted a blank row below" : "Inserted a blank row above",
+            mutation: () => DataTableEditHelper.InsertBlankRow(_originalData, anchorRow.Row, insertBelow, RowNumberColumnName, SourceFileColumnName),
+            successMessageFactory: _ => insertBelow ? "Inserted a blank row below" : "Inserted a blank row above",
+            structuralChange: true,
+            clearSelection: true);
+    }
+
+    private async Task ExportSelectedRowsAsync()
+    {
+        if (_originalData == null)
+        {
+            StatusText.Text = "No data loaded";
+            return;
+        }
+
+        CommitPendingGridEdits();
+
+        var selectedRows = GetSelectedRowViews();
+        if (selectedRows.Count == 0)
+        {
+            StatusText.Text = "No rows selected to export";
+            return;
+        }
+
+        var baseFileName = string.IsNullOrWhiteSpace(_currentFilePath)
+            ? "selected_rows"
+            : $"{Path.GetFileNameWithoutExtension(_currentFilePath)}_selected_rows";
+
+        var saveFileDialog = new SaveFileDialog
+        {
+            Filter = Services.FileFormatDetector.GetSaveFileDialogFilter(),
+            Title = "Export Selected Rows...",
+            FileName = baseFileName
+        };
+
+        if (saveFileDialog.ShowDialog() != true)
+            return;
+
         try
         {
-            if (_originalData == null)
+            ShowLoading("Exporting selected rows...");
+
+            if (_parquetService == null)
             {
-                StatusText.Text = "No data loaded";
-                return;
+                var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                    ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+                _parquetService = new ParquetService(logger);
             }
 
-            CommitPendingGridEdits();
+            var exportTable = DataTableEditHelper.CreateTableFromRows(_originalData, selectedRows, RowNumberColumnName);
+            await _parquetService.SaveFileAsync(saveFileDialog.FileName, exportTable);
 
-            var selectedRows = GetSelectedRowViews();
-            if (selectedRows.Count == 0)
-            {
-                StatusText.Text = "No rows selected to delete";
-                return;
-            }
-
-            var rowCount = selectedRows.Count;
-            var result = MessageBox.Show(
-                rowCount == 1
-                    ? "Delete the selected row? This action cannot be undone."
-                    : $"Delete {rowCount} selected rows? This action cannot be undone.",
-                rowCount == 1 ? "Delete Row" : "Delete Rows",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-
-            if (result != MessageBoxResult.Yes)
-                return;
-
-            var deletedCount = DataTableEditHelper.DeleteRows(_originalData, selectedRows, RowNumberColumnName);
-            if (deletedCount == 0)
-            {
-                StatusText.Text = "No rows were deleted";
-                return;
-            }
-
-            DataGrid.UnselectAllCells();
-            DataGrid.UnselectAll();
-
-            _hasUnsavedChanges = true;
-            _pendingEditCount += deletedCount;
-            UpdateWindowTitle();
-            UpdatePendingChangesTray();
-            UpdateRowCount();
-            UpdateLoadMoreBanner(_totalRowCount > _currentRowLimit ? _originalData.Rows.Count : (int)_totalRowCount);
-
-            StatusText.Text = deletedCount == 1
-                ? "Deleted 1 row"
-                : $"Deleted {deletedCount:N0} rows";
+            StatusText.Text = $"Exported {selectedRows.Count:N0} selected row{(selectedRows.Count == 1 ? string.Empty : "s")} to {Path.GetFileName(saveFileDialog.FileName)}";
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error deleting rows: {ex.Message}", "Delete Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-            StatusText.Text = "Delete failed";
+            MessageBox.Show($"Error exporting selected rows: {ex.Message}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            StatusText.Text = "Selected-row export failed";
         }
+        finally
+        {
+            HideLoading();
+        }
+    }
+
+    private void DeleteDuplicateRows()
+    {
+        if (_originalData == null)
+        {
+            StatusText.Text = "No data loaded";
+            return;
+        }
+
+        CommitPendingGridEdits();
+
+        var availableColumns = GetVisibleDataColumnNames();
+        if (availableColumns.Count == 0)
+        {
+            StatusText.Text = "No data columns available";
+            return;
+        }
+
+        var preselectedColumns = GetSelectedColumnNamesFromCells();
+        if (preselectedColumns.Count == 0 && TryGetCurrentCellContext(out var cellContext))
+            preselectedColumns = [cellContext.ColumnName];
+
+        var chosenColumns = GridActionDialogs.ShowColumnPickerDialog(
+            this,
+            "Delete Duplicate Rows",
+            "Choose the column(s) used to identify duplicates. The first matching row in each group will be kept.",
+            availableColumns,
+            preselectedColumns);
+
+        if (chosenColumns == null || chosenColumns.Count == 0)
+            return;
+
+        var duplicateCount = DataTableEditHelper.CountDuplicateRows(_originalData, chosenColumns);
+        if (duplicateCount == 0)
+        {
+            StatusText.Text = "No duplicate rows found for the selected columns";
+            return;
+        }
+
+        var result = MessageBox.Show(
+            $"Delete {duplicateCount:N0} duplicate row{(duplicateCount == 1 ? string.Empty : "s")} using {chosenColumns.Count:N0} chosen column{(chosenColumns.Count == 1 ? string.Empty : "s")}? The first row in each duplicate group will be kept.",
+            "Delete Duplicate Rows",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
+        ExecuteUndoableMutation(
+            actionDescription: duplicateCount == 1 ? "Deleted 1 duplicate row" : $"Deleted {duplicateCount:N0} duplicate rows",
+            mutation: () => DataTableEditHelper.DeleteDuplicateRows(_originalData, chosenColumns, RowNumberColumnName),
+            successMessageFactory: deletedCount => deletedCount == 1 ? "Deleted 1 duplicate row" : $"Deleted {deletedCount:N0} duplicate rows",
+            structuralChange: true,
+            clearSelection: true);
     }
 
     private void CommitPendingGridEdits()
@@ -762,6 +2046,9 @@ public partial class MainWindow : Window
         DataGrid.CommitEdit(DataGridEditingUnit.Cell, true);
         DataGrid.CommitEdit(DataGridEditingUnit.Row, true);
     }
+
+    private bool CanEditCurrentWorkingSet()
+        => _originalData != null && !_isPreviewMode;
 
     private List<DataRowView> GetSelectedRowViews()
     {
@@ -779,62 +2066,575 @@ public partial class MainWindow : Window
             .Distinct()
             .ToList();
     }
-    
-    private void CopyRows(bool includeHeaders)
+
+    private DataRowView? GetPrimarySelectedRow()
+    {
+        var selectedRows = GetSelectedRowViews();
+        if (selectedRows.Count > 0)
+            return selectedRows[0];
+
+        if (DataGrid.CurrentCell.Item is DataRowView rowView)
+            return rowView;
+
+        return null;
+    }
+
+    private void ExecuteUndoableMutation(string actionDescription, Func<int> mutation, Func<int, string> successMessageFactory, bool structuralChange, bool clearSelection)
+    {
+        if (_originalData == null)
+        {
+            StatusText.Text = "No data loaded";
+            return;
+        }
+
+        PushUndoSnapshot(actionDescription);
+
+        try
+        {
+            var affectedCount = mutation();
+            if (affectedCount <= 0)
+            {
+                DiscardLatestUndoSnapshot();
+                StatusText.Text = "No changes were made";
+                return;
+            }
+
+            FinalizeDataMutation(actionDescription, affectedCount, successMessageFactory(affectedCount), structuralChange, clearSelection);
+        }
+        catch (Exception ex)
+        {
+            DiscardLatestUndoSnapshot();
+            MessageBox.Show($"Error applying edit: {ex.Message}", "Edit Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Edit failed";
+        }
+    }
+
+    private void FinalizeDataMutation(string actionDescription, int affectedCount, string successMessage, bool structuralChange, bool clearSelection)
+    {
+        if (_originalData == null)
+            return;
+
+        if (clearSelection)
+        {
+            DataGrid.UnselectAllCells();
+            DataGrid.UnselectAll();
+        }
+
+        DataGrid.Items.Refresh();
+
+        if (structuralChange)
+        {
+            _totalRowCount = _originalData.Rows.Count;
+            UpdateLoadMoreBanner(_originalData.Rows.Count);
+        }
+
+        _hasUnsavedChanges = true;
+        _pendingEditCount += Math.Max(1, affectedCount);
+        UpdateWindowTitle();
+        UpdatePendingChangesTray();
+        UpdateRowCount();
+        EnableSaveMenuItems();
+        UpdateUndoUi();
+        MarkQualityReviewStale();
+
+        StatusText.Text = successMessage;
+        UndoActionText.Text = actionDescription;
+    }
+
+    private void PushUndoSnapshot(string actionDescription)
+    {
+        if (_originalData == null)
+            return;
+
+        _undoHistory.Add(new EditUndoSnapshot(
+            actionDescription,
+            _originalData.Copy(),
+            _hasUnsavedChanges,
+            _pendingEditCount,
+            _totalRowCount,
+            _qualityViewModel?.IsProfileStale == true));
+
+        if (_undoHistory.Count > MaxUndoHistory)
+            _undoHistory.RemoveAt(0);
+
+        UpdateUndoUi();
+    }
+
+    private void DiscardLatestUndoSnapshot()
+    {
+        if (_undoHistory.Count == 0)
+            return;
+
+        _undoHistory.RemoveAt(_undoHistory.Count - 1);
+        UpdateUndoUi();
+    }
+
+    private void UndoLastEdit()
+    {
+        if (_undoHistory.Count == 0)
+        {
+            StatusText.Text = "Nothing to undo";
+            return;
+        }
+
+        var snapshot = _undoHistory[^1];
+        _undoHistory.RemoveAt(_undoHistory.Count - 1);
+
+        RestoreDataTableSnapshot(snapshot);
+        StatusText.Text = $"Undid: {snapshot.ActionDescription}";
+        UpdateUndoUi();
+    }
+
+    private void RestoreDataTableSnapshot(EditUndoSnapshot snapshot)
+    {
+        _originalData = snapshot.Snapshot.Copy();
+        _dataView = _originalData.DefaultView;
+        SetupDataGrid(_originalData, BuildColumnInfos(_originalData));
+        _isPreviewMode = false;
+        DataGrid.IsReadOnly = false;
+        _hasUnsavedChanges = snapshot.WasUnsaved;
+        _pendingEditCount = snapshot.PendingEditCount;
+        _totalRowCount = snapshot.TotalRowCount;
+        UpdateWindowTitle();
+        UpdatePendingChangesTray();
+        UpdateLoadMoreBanner(_originalData.Rows.Count);
+        EnableSaveMenuItems();
+        UpdateNotebookUiState();
+
+        if (_qualityViewModel != null)
+        {
+            _qualityViewModel.RestoreProfileStaleState(snapshot.WasQualityReviewStale);
+            UpdateQualityStaleBadge();
+        }
+    }
+
+    private void UpdateUndoUi()
+    {
+        var hasUndo = _undoHistory.Count > 0 && CanEditCurrentWorkingSet();
+        UndoMenuItem.IsEnabled = hasUndo;
+        UndoContextMenuItem.IsEnabled = hasUndo;
+        UndoActionBadge.Visibility = hasUndo ? Visibility.Visible : Visibility.Collapsed;
+        UndoActionText.Text = hasUndo ? _undoHistory[^1].ActionDescription : string.Empty;
+    }
+
+    private void ResetUndoHistory()
+    {
+        _undoHistory.Clear();
+        UpdateUndoUi();
+    }
+
+    private void UpdateEditMenuState()
+    {
+        var canEdit = CanEditCurrentWorkingSet();
+        var selectedRowCount = GetSelectedRowViews().Count;
+        EditDeleteRowsMenuItem.Header = selectedRowCount == 1 ? "_Delete Row" : "_Delete Row(s)";
+        EditDeleteRowsMenuItem.IsEnabled = canEdit && selectedRowCount > 0;
+        UpdateUndoUi();
+    }
+
+    private void UpdateContextMenuState()
+    {
+        var canEdit = CanEditCurrentWorkingSet();
+        var selectedRows = GetSelectedRowViews();
+        var selectedRowCount = selectedRows.Count;
+        var selectedCells = GetSelectedEditableCellTargets();
+        var currentCellAvailable = TryGetCurrentCellContext(out var currentCellContext);
+        var visibleRowCount = _dataView?.Count ?? 0;
+
+        DeleteRowsContextMenuItem.Header = selectedRowCount == 1 ? "Delete Row" : selectedRowCount > 1 ? $"Delete {selectedRowCount:N0} Rows" : "Delete Row(s)";
+        DeleteRowsContextMenuItem.IsEnabled = canEdit && selectedRowCount > 0;
+        KeepSelectedRowsContextMenuItem.IsEnabled = canEdit && selectedRowCount > 0 && visibleRowCount > selectedRowCount;
+        DeleteUnselectedRowsContextMenuItem.IsEnabled = canEdit && selectedRowCount > 0 && visibleRowCount > selectedRowCount;
+        DuplicateRowsContextMenuItem.Header = selectedRowCount == 1 ? "Duplicate Row" : selectedRowCount > 1 ? $"Duplicate {selectedRowCount:N0} Rows" : "Duplicate Row(s)";
+        DuplicateRowsContextMenuItem.IsEnabled = canEdit && selectedRowCount > 0;
+        InsertBlankAboveContextMenuItem.IsEnabled = canEdit && (selectedRowCount > 0 || currentCellAvailable);
+        InsertBlankBelowContextMenuItem.IsEnabled = canEdit && (selectedRowCount > 0 || currentCellAvailable);
+        ExportSelectedRowsContextMenuItem.Header = selectedRowCount == 1 ? "Export Selected Row..." : selectedRowCount > 1 ? $"Export {selectedRowCount:N0} Selected Rows..." : "Export Selected Rows...";
+        ExportSelectedRowsContextMenuItem.IsEnabled = canEdit && selectedRowCount > 0;
+        DeleteDuplicateRowsContextMenuItem.IsEnabled = canEdit && GetVisibleDataColumnNames().Count > 0;
+
+        CopyRowsAsCsvContextMenuItem.Header = selectedRowCount == 1 ? "Copy Row as CSV" : selectedRowCount > 1 ? "Copy Rows as CSV" : "Copy Row(s) as CSV";
+        CopyRowsAsCsvContextMenuItem.IsEnabled = selectedRowCount > 0;
+        CopyRowsAsJsonContextMenuItem.Header = selectedRowCount == 1 ? "Copy Row as JSON" : selectedRowCount > 1 ? "Copy Rows as JSON" : "Copy Row(s) as JSON";
+        CopyRowsAsJsonContextMenuItem.IsEnabled = selectedRowCount > 0;
+
+        FilterToValueContextMenuItem.IsEnabled = currentCellAvailable;
+        ExcludeValueContextMenuItem.IsEnabled = currentCellAvailable;
+        ShowBlankValuesContextMenuItem.IsEnabled = currentCellAvailable;
+
+        if (currentCellAvailable)
+        {
+            var valueLabel = currentCellContext.IsBlank ? "blank" : $"\"{currentCellContext.DisplayValue}\"";
+            FilterToValueContextMenuItem.Header = $"Filter to {valueLabel}";
+            ExcludeValueContextMenuItem.Header = $"Exclude {valueLabel}";
+            ShowBlankValuesContextMenuItem.Header = $"Show Blank Values in {currentCellContext.ColumnName}";
+        }
+        else
+        {
+            FilterToValueContextMenuItem.Header = "Filter to This Value";
+            ExcludeValueContextMenuItem.Header = "Exclude This Value";
+            ShowBlankValuesContextMenuItem.Header = "Show Blank Values";
+        }
+
+        SetSelectedCellsToNullContextMenuItem.IsEnabled = canEdit && selectedCells.Count > 0;
+        FillDownContextMenuItem.IsEnabled = canEdit && selectedCells.Count > 1;
+        TrimWhitespaceContextMenuItem.IsEnabled = canEdit && selectedCells.Count > 0;
+        ReplaceSelectionContextMenuItem.IsEnabled = canEdit && selectedCells.Count > 0;
+
+        UpdateUndoUi();
+    }
+
+    private void UpdateQualityStaleBadge()
+    {
+        QualityStaleBadge.Visibility = _qualityViewModel?.IsProfileStale == true ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void MarkQualityReviewStale()
+    {
+        _qualityViewModel?.MarkProfileStale();
+        UpdateQualityStaleBadge();
+    }
+
+    private static List<ColumnInfo> BuildColumnInfos(DataTable dataTable)
+        => dataTable.Columns.Cast<DataColumn>()
+            .Where(c => c.ColumnName is not (RowNumberColumnName or SourceFileColumnName))
+            .Select(c => new ColumnInfo
+            {
+                Name = c.ColumnName,
+                Type = c.DataType.Name,
+                Nullable = c.AllowDBNull
+            })
+            .ToList();
+
+    private List<string> GetVisibleDataColumnNames()
+        => DataGrid.Columns
+            .Where(col => col.Visibility == Visibility.Visible)
+            .OrderBy(col => col.DisplayIndex)
+            .Select(GetBoundColumnName)
+            .Where(name => !string.IsNullOrWhiteSpace(name) && name is not (RowNumberColumnName or SourceFileColumnName))
+            .Cast<string>()
+            .ToList();
+
+    private List<string> GetSelectedColumnNamesFromCells()
+        => GetSelectedEditableCellTargets()
+            .Select(target => target.ColumnName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+    private List<DataTableCellTarget> GetSelectedEditableCellTargets()
+    {
+        var selectedCells = _savedSelectedCells ?? DataGrid.SelectedCells.ToList();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var targets = new List<DataTableCellTarget>();
+
+        foreach (var cell in selectedCells)
+        {
+            if (cell.Item is not DataRowView rowView)
+                continue;
+
+            var columnName = GetBoundColumnName(cell.Column);
+            if (string.IsNullOrWhiteSpace(columnName) || columnName is RowNumberColumnName or SourceFileColumnName)
+                continue;
+
+            var key = $"{rowView.Row.GetHashCode()}::{columnName}";
+            if (!seen.Add(key))
+                continue;
+
+            targets.Add(new DataTableCellTarget(rowView.Row, columnName));
+        }
+
+        return targets;
+    }
+
+    private List<DataTableCellTarget> GetSelectedEditableCellTargetsSorted()
+    {
+        var rowOrder = BuildViewRowOrderMap();
+        return GetSelectedEditableCellTargets()
+            .OrderBy(target => target.ColumnName, StringComparer.Ordinal)
+            .ThenBy(target => rowOrder.TryGetValue(target.Row, out var index) ? index : int.MaxValue)
+            .ToList();
+    }
+
+    private Dictionary<DataRow, int> BuildViewRowOrderMap()
+    {
+        var result = new Dictionary<DataRow, int>();
+        if (_dataView == null)
+            return result;
+
+        for (int i = 0; i < _dataView.Count; i++)
+            result[_dataView[i].Row] = i;
+
+        return result;
+    }
+
+    private bool TryGetCurrentCellContext(out CurrentCellContext context)
+    {
+        context = default;
+
+        var currentCell = DataGrid.CurrentCell;
+        if (_savedSelectedCells != null && _savedSelectedCells.Count > 0)
+            currentCell = _savedSelectedCells[0];
+
+        if (currentCell.Item is not DataRowView rowView)
+            return false;
+
+        var columnName = GetBoundColumnName(currentCell.Column);
+        if (string.IsNullOrWhiteSpace(columnName) || columnName is RowNumberColumnName or SourceFileColumnName)
+            return false;
+
+        var rawValue = rowView[columnName];
+        var isBlank = rawValue == DBNull.Value || string.IsNullOrWhiteSpace(rawValue?.ToString());
+        var displayValue = isBlank ? BlankDisplayValue : rawValue?.ToString() ?? string.Empty;
+        context = new CurrentCellContext(rowView.Row, columnName, rawValue, displayValue, isBlank);
+        return true;
+    }
+
+    private static string? GetBoundColumnName(DataGridColumn? column)
+    {
+        if (column is not DataGridBoundColumn boundColumn)
+            return column?.SortMemberPath;
+
+        var binding = (boundColumn as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
+        return binding?.Path?.Path.Trim('[', ']') ?? column.SortMemberPath;
+    }
+
+    private HashSet<string> GetLoadedDistinctFilterValues(string columnName)
+    {
+        var values = new HashSet<string>(StringComparer.Ordinal);
+        if (_originalData == null || !_originalData.Columns.Contains(columnName))
+            return values;
+
+        foreach (DataRow row in _originalData.Rows)
+        {
+            var rawValue = row[columnName];
+            var displayValue = rawValue == DBNull.Value || string.IsNullOrWhiteSpace(rawValue?.ToString())
+                ? BlankDisplayValue
+                : rawValue.ToString() ?? string.Empty;
+            values.Add(displayValue);
+        }
+
+        return values;
+    }
+
+    private void ApplyCurrentCellFilter(CurrentCellFilterAction action)
+    {
+        if (!TryGetCurrentCellContext(out var context))
+        {
+            StatusText.Text = "Select a data cell first";
+            return;
+        }
+
+        if (!_columnFilters.TryGetValue(context.ColumnName, out var filterState))
+        {
+            StatusText.Text = $"Filtering is unavailable for {context.ColumnName}";
+            return;
+        }
+
+        var allValues = GetLoadedDistinctFilterValues(context.ColumnName);
+        if (allValues.Count == 0)
+        {
+            StatusText.Text = $"No values available in {context.ColumnName}";
+            return;
+        }
+
+        HashSet<string> selectedValues;
+        string statusMessage;
+        switch (action)
+        {
+            case CurrentCellFilterAction.IncludeValue:
+                selectedValues = [context.IsBlank ? BlankDisplayValue : context.DisplayValue];
+                statusMessage = context.IsBlank
+                    ? $"Filtered {context.ColumnName} to blank values"
+                    : $"Filtered {context.ColumnName} to \"{context.DisplayValue}\"";
+                break;
+            case CurrentCellFilterAction.ExcludeValue:
+                selectedValues = allValues
+                    .Where(value => value != (context.IsBlank ? BlankDisplayValue : context.DisplayValue))
+                    .ToHashSet(StringComparer.Ordinal);
+                statusMessage = context.IsBlank
+                    ? $"Excluded blank values from {context.ColumnName}"
+                    : $"Excluded \"{context.DisplayValue}\" from {context.ColumnName}";
+                break;
+            case CurrentCellFilterAction.OnlyBlanks:
+                if (!allValues.Contains(BlankDisplayValue))
+                {
+                    StatusText.Text = $"No blank values found in {context.ColumnName}";
+                    return;
+                }
+
+                selectedValues = [BlankDisplayValue];
+                statusMessage = $"Showing blank values in {context.ColumnName}";
+                break;
+            default:
+                return;
+        }
+
+        filterState.AllValues = [.. allValues.OrderBy(value => value == BlankDisplayValue ? string.Empty : value)];
+        filterState.SelectedValues = selectedValues;
+        filterState.IsActive = selectedValues.Count != filterState.AllValues.Count;
+        UpdateFilterIndicator(context.ColumnName);
+        ApplyAllFilters();
+        StatusText.Text = statusMessage;
+    }
+
+    private void SetSelectedCellsToNull()
+    {
+        var targets = GetSelectedEditableCellTargets();
+        if (targets.Count == 0)
+        {
+            StatusText.Text = "No editable cells selected";
+            return;
+        }
+
+        ExecuteUndoableMutation(
+            actionDescription: targets.Count == 1 ? "Set 1 cell to null" : $"Set {targets.Count:N0} cells to null",
+            mutation: () => DataTableEditHelper.SetCellsToNull(targets),
+            successMessageFactory: count => count == 1 ? "Set 1 cell to null" : $"Set {count:N0} cells to null",
+            structuralChange: false,
+            clearSelection: false);
+    }
+
+    private void FillDownSelectedCells()
+    {
+        var targets = GetSelectedEditableCellTargetsSorted();
+        if (targets.Count < 2)
+        {
+            StatusText.Text = "Select at least two cells in the same column to fill down";
+            return;
+        }
+
+        ExecuteUndoableMutation(
+            actionDescription: "Filled down selected cells",
+            mutation: () => DataTableEditHelper.FillDown(targets, BuildViewRowOrderMap()),
+            successMessageFactory: count => count == 1 ? "Filled down 1 cell" : $"Filled down {count:N0} cells",
+            structuralChange: false,
+            clearSelection: false);
+    }
+
+    private void TrimWhitespaceInSelection()
+    {
+        var targets = GetSelectedEditableCellTargets();
+        if (targets.Count == 0)
+        {
+            StatusText.Text = "No editable cells selected";
+            return;
+        }
+
+        ExecuteUndoableMutation(
+            actionDescription: "Trimmed whitespace in selection",
+            mutation: () => DataTableEditHelper.TrimWhitespace(targets),
+            successMessageFactory: count => count == 1 ? "Trimmed whitespace in 1 cell" : $"Trimmed whitespace in {count:N0} cells",
+            structuralChange: false,
+            clearSelection: false);
+    }
+
+    private void ReplaceInSelection()
+    {
+        var targets = GetSelectedEditableCellTargets();
+        if (targets.Count == 0)
+        {
+            StatusText.Text = "No editable cells selected";
+            return;
+        }
+
+        var options = GridActionDialogs.ShowReplaceSelectionDialog(this);
+        if (options == null)
+            return;
+
+        ExecuteUndoableMutation(
+            actionDescription: "Replaced text in selection",
+            mutation: () => DataTableEditHelper.ReplaceInCells(targets, options.FindText, options.ReplaceText, options.MatchCase),
+            successMessageFactory: count => count == 1 ? "Replaced text in 1 cell" : $"Replaced text in {count:N0} cells",
+            structuralChange: false,
+            clearSelection: false);
+    }
+
+    private void CopyRowsToClipboard(string delimiter, bool includeHeaders)
     {
         try
         {
-            var selectedItems = _savedSelectedItems ?? DataGrid.SelectedItems.Cast<object>().ToList();
-            if (selectedItems.Count == 0)
+            var selectedRows = GetSelectedRowViews();
+            if (selectedRows.Count == 0)
             {
                 StatusText.Text = "No rows selected to copy";
                 return;
             }
-            
+
             var output = new System.Text.StringBuilder();
-            
-            // Add headers if requested
-            if (includeHeaders && DataGrid.Columns.Count > 0)
+            var columnNames = GetVisibleDataColumnNames();
+
+            if (includeHeaders)
+                output.AppendLine(string.Join(delimiter, columnNames));
+
+            foreach (var rowView in selectedRows)
             {
-                var headers = DataGrid.Columns
-                    .Where(col => col.Visibility == Visibility.Visible)
-                    .OrderBy(col => col.DisplayIndex)
-                    .Select(col => GetColumnHeaderText(col))
+                var values = columnNames
+                    .Select(columnName => FormatDelimitedValue(rowView[columnName], delimiter))
                     .ToList();
-                output.AppendLine(string.Join("\t", headers));
+                output.AppendLine(string.Join(delimiter, values));
             }
-            
-            // Copy all columns for selected rows
-            foreach (var item in selectedItems)
-            {
-                if (item is DataRowView rowView)
-                {
-                    var values = new List<string>();
-                    foreach (var column in DataGrid.Columns.Where(col => col.Visibility == Visibility.Visible).OrderBy(col => col.DisplayIndex))
-                    {
-                        if (column is DataGridBoundColumn boundColumn)
-                        {
-                            var binding = (boundColumn as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
-                            if (binding != null)
-                            {
-                                var columnName = binding.Path.Path.Trim('[', ']');
-                                var value = rowView[columnName];
-                                values.Add(value?.ToString() ?? "");
-                            }
-                        }
-                    }
-                    output.AppendLine(string.Join("\t", values));
-                }
-            }
-            
+
             Clipboard.SetText(output.ToString());
-            StatusText.Text = $"Copied {selectedItems.Count} row(s) to clipboard" + (includeHeaders ? " with headers" : "");
+            StatusText.Text = $"Copied {selectedRows.Count:N0} row{(selectedRows.Count == 1 ? string.Empty : "s")} to clipboard";
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Error copying rows: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Copy failed";
         }
+    }
+
+    private void CopyRowsAsJsonToClipboard()
+    {
+        try
+        {
+            var selectedRows = GetSelectedRowViews();
+            if (selectedRows.Count == 0)
+            {
+                StatusText.Text = "No rows selected to copy";
+                return;
+            }
+
+            var columnNames = GetVisibleDataColumnNames();
+            var payload = selectedRows
+                .Select(rowView => columnNames.ToDictionary(
+                    columnName => columnName,
+                    columnName =>
+                    {
+                        var value = rowView[columnName];
+                        return value == DBNull.Value ? null : value;
+                    }))
+                .ToList();
+
+            object payloadObject = selectedRows.Count == 1 ? payload[0] : payload;
+            var json = JsonSerializer.Serialize(payloadObject, payloadObject.GetType(), new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            Clipboard.SetText(json);
+            StatusText.Text = selectedRows.Count == 1 ? "Copied 1 row as JSON" : $"Copied {selectedRows.Count:N0} rows as JSON";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error copying rows as JSON: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Copy failed";
+        }
+    }
+
+    private static string FormatDelimitedValue(object? value, string delimiter)
+    {
+        if (value == null || value == DBNull.Value)
+            return string.Empty;
+
+        var text = value.ToString() ?? string.Empty;
+        var shouldQuote = delimiter == "," && (text.Contains('"') || text.Contains(',') || text.Contains('\r') || text.Contains('\n'));
+        return shouldQuote ? $"\"{text.Replace("\"", "\"\"")}\"" : text;
+    }
+    
+    private void CopyRows(bool includeHeaders)
+    {
+        CopyRowsToClipboard("\t", includeHeaders);
     }
     
     private void CopyColumns(bool includeHeaders)
@@ -971,6 +2771,28 @@ public partial class MainWindow : Window
         {
             // copy as CSV
             CopySelectionToClipboard(",", false);
+            e.Handled = true;
+        }
+        else if (mods == System.Windows.Input.ModifierKeys.Control && e.Key == System.Windows.Input.Key.Z)
+        {
+            if (CanEditCurrentWorkingSet())
+                UndoLastEdit();
+            else
+                StatusText.Text = "Undo is only available for editable working sets";
+            e.Handled = true;
+        }
+        else if (mods == System.Windows.Input.ModifierKeys.None && e.Key == System.Windows.Input.Key.Delete && DataGrid.SelectedItems.Count > 0)
+        {
+            if (CanEditCurrentWorkingSet())
+            {
+                CaptureCurrentSelection();
+                DeleteSelectedRows();
+                ClearCapturedSelection();
+            }
+            else
+            {
+                StatusText.Text = "Row deletion is only available for editable working sets";
+            }
             e.Handled = true;
         }
     }
@@ -1114,31 +2936,12 @@ public partial class MainWindow : Window
         _parquetService?.Dispose();
         _parquetService = new ParquetService(logger);
         
-        // Load file info and data (with row limit)
+        // Load file info and register the source with the Query Hub.
         var fileInfo = await _parquetService.GetFileInfoAsync(filePath, csvOptions, jsonOptions);
         _totalRowCount = fileInfo.RowCount;
-
-        ShowLoading($"Loading rows (limit: {effectiveLimit:N0})...");
-        var dataTable = await _parquetService.LoadFileAsync(filePath, csvOptions, 
-            _totalRowCount > effectiveLimit ? effectiveLimit : (int?)null, jsonOptions);
-
-        // Compute row-number column on a background thread (avoids stalling the UI for large files).
-        ShowLoading("Indexing rows...");
-        await Task.Run(() => EnsureRowMetadataColumns(dataTable, [filePath]));
         
         // Update schema panel
         UpdateSchemaPanel(filePath, fileInfo);
-        
-        // Setup data grid (row-number column already present)
-        ShowLoading("Building grid...");
-        SetupDataGrid(dataTable, fileInfo.Columns);
-        
-        // Switch UI
-        EmptyStatePanel.Visibility = Visibility.Collapsed;
-        DataGridContainer.Visibility = Visibility.Visible;
-
-        // Update load-more banner
-        UpdateLoadMoreBanner(dataTable.Rows.Count);
         
         // Add to recent files
         AddToRecentFiles(filePath);
@@ -1148,6 +2951,7 @@ public partial class MainWindow : Window
         _currentFilePaths = new[] { filePath };
         _hasUnsavedChanges = false;
         _pendingEditCount = 0;
+        ResetUndoHistory();
         UpdateWindowTitle();
         UpdatePendingChangesTray();
         EnableSaveMenuItems();
@@ -1158,15 +2962,11 @@ public partial class MainWindow : Window
         SetupFileWatcher(filePath);
 
         // Notify Quality panel of new file
-        _qualityViewModel?.SetFilePath(filePath, csvOptions, jsonOptions, fileInfo.SourceFileSummaries);
-        if (_totalRowCount <= AutoProfileRowThreshold)
-            _qualityViewModel?.StartAutoAnalyze();
+        var notebookSource = await RegisterNotebookFileSourceAsync([filePath], fileInfo);
+        await ActivateNotebookSourceAsync(notebookSource, fileInfo.SourceFileSummaries, parquetPartsSuffix, unknownExt);
+        StatusText.Text = $"Loaded {Path.GetFileName(filePath)} into the notebook workspace";
         
-        StatusText.Text = $"Loaded {System.IO.Path.GetFileName(filePath)}{parquetPartsSuffix} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows, {fileInfo.Columns.Count} columns";
 
-        // Append unknown-extension notice after the main status message
-        if (unknownExt != null)
-            StatusText.Text += $" — unknown extension '{unknownExt}' treated as CSV";
     }
     private void UpdateWindowTitle()
     {
@@ -1177,8 +2977,8 @@ public partial class MainWindow : Window
     
     private void EnableSaveMenuItems()
     {
-        bool hasData = _originalData != null;
-        bool hasSingleSourcePath = !string.IsNullOrEmpty(_currentFilePath) && _originalData != null;
+        bool hasData = _originalData != null && !_isPreviewMode;
+        bool hasSingleSourcePath = !string.IsNullOrEmpty(_currentFilePath) && hasData;
 
         SaveMenuItem.IsEnabled = hasSingleSourcePath;
         SaveAsMenuItem.IsEnabled = hasData;
@@ -1288,6 +3088,7 @@ public partial class MainWindow : Window
             _pendingEditCount++;
             UpdateWindowTitle();
             UpdatePendingChangesTray();
+            MarkQualityReviewStale();
         }
     }
 
@@ -1423,7 +3224,7 @@ public partial class MainWindow : Window
             {
                 SchemaPanel.Children.Add(new TextBlock
                 {
-                    Text = $"   • {Path.GetFileName(sourceFile)}",
+                    Text = $"   \u2022 {Path.GetFileName(sourceFile)}",
                     Margin = new Thickness(10, 0, 0, 1),
                     Foreground = Brushes.DimGray,
                     FontSize = 11
@@ -1434,7 +3235,7 @@ public partial class MainWindow : Window
             {
                 SchemaPanel.Children.Add(new TextBlock
                 {
-                    Text = $"   • ... and {sourceFileCount - 8:N0} more",
+                    Text = $"   \u2022 ... and {sourceFileCount - 8:N0} more",
                     Margin = new Thickness(10, 0, 0, 1),
                     Foreground = Brushes.DimGray,
                     FontSize = 11
@@ -2043,6 +3844,31 @@ public partial class MainWindow : Window
     {
         if (state.IsLoaded) return;
 
+        if (!string.IsNullOrWhiteSpace(_activeNotebookSourceAlias))
+        {
+            try
+            {
+                var (values, totalDistinct, truncated) = await GetNotebookSession().GetDistinctValuesAsync(
+                    _activeNotebookSourceAlias,
+                    columnName,
+                    MaxDistinctValues);
+
+                state.AllValues = values;
+                state.IsTruncated = truncated;
+                state.TotalDistinctCount = totalDistinct;
+
+                if (state.SelectedValues.Count == 0)
+                    state.SelectedValues = new HashSet<string>(values);
+
+                state.IsLoaded = true;
+                return;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load filter values: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         if (!string.IsNullOrEmpty(_currentFilePath))
         {
             try
@@ -2343,9 +4169,30 @@ public partial class MainWindow : Window
     
     private void ApplySort(string sortMemberPath, ListSortDirection direction)
     {
+        var sortValue = $"{sortMemberPath} {(direction == ListSortDirection.Ascending ? "ASC" : "DESC")}";
+        _savedSort = sortValue;
+
+        if (_isPreviewMode)
+        {
+            foreach (var col in DataGrid.Columns)
+            {
+                if (col.SortMemberPath == sortMemberPath)
+                    col.SortDirection = direction;
+                else
+                    col.SortDirection = null;
+            }
+
+            var previewDisplayName = sortMemberPath == "__RowNumber" ? "#" : sortMemberPath;
+            StatusText.Text = $"Sorted preview by {previewDisplayName} ({(direction == ListSortDirection.Ascending ? "ascending" : "descending")})";
+            _ = TryGetActiveNotebookSource(out var source)
+                ? LoadNotebookPreviewAsync(source, resetPaging: true)
+                : Task.CompletedTask;
+            return;
+        }
+
         if (_dataView == null) return;
 
-        _dataView.Sort = $"{sortMemberPath} {(direction == ListSortDirection.Ascending ? "ASC" : "DESC")}";
+        _dataView.Sort = sortValue;
 
         // Update the DataGrid column header sort indicator
         foreach (var col in DataGrid.Columns)
@@ -2435,6 +4282,24 @@ public partial class MainWindow : Window
 
     private void ApplyAllFilters()
     {
+        if (_suppressFilterApply)
+        {
+            UpdateFilterBadge();
+            UpdateRowCount();
+            return;
+        }
+
+        if (_isPreviewMode)
+        {
+            UpdateFilterBadge();
+            _previewRowOffset = 0;
+
+            if (TryGetActiveNotebookSource(out var activeSource))
+                _ = LoadNotebookPreviewAsync(activeSource, resetPaging: true);
+
+            return;
+        }
+
         if (_dataView == null) return;
         
         var filters = new List<string>();
@@ -2611,6 +4476,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_isPreviewMode)
+        {
+            var pageCount = _originalData.Rows.Count;
+            var firstRow = pageCount > 0 ? _previewRowOffset + 1 : 0;
+            var lastRow = _previewRowOffset + pageCount;
+            RowCountText.Text = pageCount == 0
+                ? $"0 of {_previewFilteredRowCount:N0} rows"
+                : $"{firstRow:N0}-{lastRow:N0} of {_previewFilteredRowCount:N0} rows";
+            return;
+        }
+
         var filtered = _dataView.Count;
         var total = _originalData.Rows.Count;
         RowCountText.Text = filtered < total
@@ -2647,7 +4523,7 @@ public partial class MainWindow : Window
             JsonOptions = _activeJsonOptions,
             ColumnFilters = columnFilters,
             GlobalSearch = (GlobalSearchBox?.Text ?? string.Empty).Trim(),
-            Sort = _dataView?.Sort ?? string.Empty,
+            Sort = _isPreviewMode ? _savedSort : (_dataView?.Sort ?? _savedSort ?? string.Empty),
             RowLimit = _currentRowLimit,
             RowOffset = 0,
             AvailableColumns = availableColumns,
@@ -2661,6 +4537,22 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task<long> GetFilteredRowCountAsync(CancellationToken cancellationToken = default)
     {
+        if (!string.IsNullOrWhiteSpace(_activeNotebookSourceAlias))
+        {
+            try
+            {
+                if (!TryGetActiveNotebookSource(out var source))
+                    return _totalRowCount;
+
+                var queryState = CreateQueryStateForSource(source, _currentRowLimit, 0);
+                return await GetNotebookSession().GetFilteredRowCountAsync(source.Alias, queryState, cancellationToken);
+            }
+            catch
+            {
+                return _previewFilteredRowCount > 0 ? _previewFilteredRowCount : (_dataView?.Count ?? 0);
+            }
+        }
+
         if (string.IsNullOrEmpty(_currentFilePath))
             return _totalRowCount;
 
@@ -2697,7 +4589,7 @@ public partial class MainWindow : Window
             var t when t.Contains("int") || t.Contains("double") || t.Contains("float") => "🔢",
             var t when t.Contains("string") || t.Contains("varchar") => "📝",
             var t when t.Contains("date") || t.Contains("timestamp") => "📅",
-            var t when t.Contains("bool") => "✅",
+            var t when t.Contains("bool") => "\u2705",
             _ => "🏷️"
         };
     }
@@ -3299,7 +5191,12 @@ public partial class MainWindow : Window
             });
 
             SetupDataGrid(dataTable, null);
+            _isPreviewMode = false;
+            DataGrid.IsReadOnly = false;
+            ResetUndoHistory();
             UpdateLoadMoreBanner(dataTable.Rows.Count);
+            EnableSaveMenuItems();
+            UpdateNotebookUiState();
 
             var sourceLabel = GetCurrentSourceStatusLabel();
             StatusText.Text = $"Loaded {sourceLabel}{parquetPartsSuffix} — {dataTable.Rows.Count:N0}{(_totalRowCount > dataTable.Rows.Count ? $" of {_totalRowCount:N0}" : "")} rows";
@@ -3450,7 +5347,12 @@ public partial class MainWindow : Window
                 .ToList();
 
             SetupDataGrid(dataTable, columns);
+            _isPreviewMode = false;
+            DataGrid.IsReadOnly = false;
+            ResetUndoHistory();
             UpdateLoadMoreBanner(dataTable.Rows.Count);
+            EnableSaveMenuItems();
+            UpdateNotebookUiState();
 
             StatusText.Text = $"Flattened JSON — {dataTable.Rows.Count:N0} rows, {dataTable.Columns.Count} columns";
         }
@@ -3767,6 +5669,28 @@ public partial class MainWindow : Window
                     _fileWatcher.EnableRaisingEvents = true;
             }
         });
+    }
+
+    private sealed record EditUndoSnapshot(
+        string ActionDescription,
+        DataTable Snapshot,
+        bool WasUnsaved,
+        int PendingEditCount,
+        long TotalRowCount,
+        bool WasQualityReviewStale);
+
+    private readonly record struct CurrentCellContext(
+        DataRow Row,
+        string ColumnName,
+        object? RawValue,
+        string DisplayValue,
+        bool IsBlank);
+
+    private enum CurrentCellFilterAction
+    {
+        IncludeValue,
+        ExcludeValue,
+        OnlyBlanks
     }
 }
 

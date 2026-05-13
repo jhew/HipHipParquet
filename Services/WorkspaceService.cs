@@ -19,10 +19,24 @@ public class WorkspaceService
         "HipHipParquet",
         "recipes.json");
 
+    private static readonly string NotebookQueriesPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "HipHipParquet",
+        "notebook-queries.json");
+
+    private static readonly string SchemaTemplatesPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "HipHipParquet",
+        "schema-templates.json");
+
     private List<SavedView> _savedViews = [];
     private List<CleaningRecipe> _savedRecipes = [];
+    private List<NotebookQueryDocument> _savedNotebookQueries = [];
+    private List<SchemaTemplate> _savedSchemaTemplates = [];
     private bool _viewsLoaded;
     private bool _recipesLoaded;
+    private bool _queriesLoaded;
+    private bool _schemaTemplatesLoaded;
 
     public WorkspaceService() { }
 
@@ -84,6 +98,63 @@ public class WorkspaceService
         await PersistRecipesAsync();
     }
 
+    public IReadOnlyList<NotebookQueryDocument> GetNotebookQueries()
+    {
+        if (!_queriesLoaded) LoadNotebookQueries();
+        return _savedNotebookQueries.AsReadOnly();
+    }
+
+    public async Task SaveNotebookQueryAsync(NotebookQueryDocument query)
+    {
+        if (!_queriesLoaded) LoadNotebookQueries();
+
+        var existing = _savedNotebookQueries.FirstOrDefault(item => item.Name == query.Name);
+        if (existing != null)
+            _savedNotebookQueries.Remove(existing);
+
+        query.UpdatedAtUtc = DateTime.UtcNow;
+        if (query.CreatedAtUtc == default)
+            query.CreatedAtUtc = query.UpdatedAtUtc;
+
+        _savedNotebookQueries.Add(query);
+        await PersistNotebookQueriesAsync();
+    }
+
+    public async Task DeleteNotebookQueryAsync(string queryName)
+    {
+        if (!_queriesLoaded) LoadNotebookQueries();
+        _savedNotebookQueries.RemoveAll(item => item.Name == queryName);
+        await PersistNotebookQueriesAsync();
+    }
+
+    public IReadOnlyList<SchemaTemplate> GetSchemaTemplates()
+    {
+        if (!_schemaTemplatesLoaded) LoadSchemaTemplates();
+        return _savedSchemaTemplates.AsReadOnly();
+    }
+
+    public async Task SaveSchemaTemplateAsync(SchemaTemplate template)
+    {
+        if (!_schemaTemplatesLoaded) LoadSchemaTemplates();
+
+        var existing = _savedSchemaTemplates.FirstOrDefault(item => item.Name == template.Name);
+        if (existing != null)
+            _savedSchemaTemplates.Remove(existing);
+
+        if (template.CreatedAtUtc == default)
+            template.CreatedAtUtc = DateTime.UtcNow;
+
+        _savedSchemaTemplates.Add(template);
+        await PersistSchemaTemplatesAsync();
+    }
+
+    public async Task DeleteSchemaTemplateAsync(string templateName)
+    {
+        if (!_schemaTemplatesLoaded) LoadSchemaTemplates();
+        _savedSchemaTemplates.RemoveAll(item => item.Name == templateName);
+        await PersistSchemaTemplatesAsync();
+    }
+
     private void LoadSavedViews()
     {
         _viewsLoaded = true;
@@ -120,6 +191,42 @@ public class WorkspaceService
         }
     }
 
+    private void LoadNotebookQueries()
+    {
+        _queriesLoaded = true;
+        try
+        {
+            if (!File.Exists(NotebookQueriesPath))
+                return;
+
+            var json = File.ReadAllText(NotebookQueriesPath);
+            _savedNotebookQueries = JsonSerializer.Deserialize<List<NotebookQueryDocument>>(json) ?? [];
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading notebook queries: {ex.Message}");
+            _savedNotebookQueries = [];
+        }
+    }
+
+    private void LoadSchemaTemplates()
+    {
+        _schemaTemplatesLoaded = true;
+        try
+        {
+            if (!File.Exists(SchemaTemplatesPath))
+                return;
+
+            var json = File.ReadAllText(SchemaTemplatesPath);
+            _savedSchemaTemplates = JsonSerializer.Deserialize<List<SchemaTemplate>>(json) ?? [];
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading schema templates: {ex.Message}");
+            _savedSchemaTemplates = [];
+        }
+    }
+
     private async Task PersistViewsAsync()
     {
         try
@@ -151,6 +258,48 @@ public class WorkspaceService
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error persisting recipes: {ex.Message}");
+        }
+    }
+
+    private async Task PersistNotebookQueriesAsync()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(NotebookQueriesPath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            var orderedQueries = _savedNotebookQueries
+                .OrderByDescending(item => item.UpdatedAtUtc)
+                .ToList();
+
+            var json = JsonSerializer.Serialize(orderedQueries);
+            await File.WriteAllTextAsync(NotebookQueriesPath, json);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error persisting notebook queries: {ex.Message}");
+        }
+    }
+
+    private async Task PersistSchemaTemplatesAsync()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(SchemaTemplatesPath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            var orderedTemplates = _savedSchemaTemplates
+                .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var json = JsonSerializer.Serialize(orderedTemplates);
+            await File.WriteAllTextAsync(SchemaTemplatesPath, json);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error persisting schema templates: {ex.Message}");
         }
     }
 }
