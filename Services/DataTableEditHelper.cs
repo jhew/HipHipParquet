@@ -1,4 +1,5 @@
 using System.Data;
+using System.Runtime.CompilerServices;
 
 namespace HipHipParquet.Services;
 
@@ -271,13 +272,26 @@ public static class DataTableEditHelper
 
     private static IEnumerable<DataTableCellTarget> DeduplicateTargets(IEnumerable<DataTableCellTarget> targets)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<(DataRow Row, string ColumnName)>(DataRowColumnTargetComparer.Instance);
         foreach (var target in targets)
         {
-            var key = $"{target.Row.GetHashCode()}::{target.ColumnName}";
-            if (seen.Add(key))
+            if (seen.Add((target.Row, target.ColumnName)))
                 yield return target;
         }
+    }
+
+    private sealed class DataRowColumnTargetComparer : IEqualityComparer<(DataRow Row, string ColumnName)>
+    {
+        public static readonly DataRowColumnTargetComparer Instance = new();
+
+        public bool Equals((DataRow Row, string ColumnName) x, (DataRow Row, string ColumnName) y)
+            => ReferenceEquals(x.Row, y.Row)
+               && string.Equals(x.ColumnName, y.ColumnName, StringComparison.Ordinal);
+
+        public int GetHashCode((DataRow Row, string ColumnName) obj)
+            => HashCode.Combine(
+                RuntimeHelpers.GetHashCode(obj.Row),
+                StringComparer.Ordinal.GetHashCode(obj.ColumnName));
     }
 
     private static void RemoveRows(DataTable dataTable, IEnumerable<DataRow> rows)

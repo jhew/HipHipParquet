@@ -16,6 +16,7 @@ using System.Threading.Tasks;
 using System.Text.Json;
 using System.Windows.Input;
 using System.Windows.Shell;
+using System.Runtime.CompilerServices;
 
 namespace HipHipParquet.Views;
 
@@ -86,6 +87,7 @@ public partial class MainWindow : Window
     private bool _suppressFilterApply;
     private string? _lastSuggestedNotebookQuery;
     private bool _queryHubVisible = true;
+    private static readonly IEqualityComparer<(DataRow Row, string ColumnName)> DataRowColumnNameComparer = new DataRowColumnNameReferenceComparer();
 
     // ── Search debounce ───────────────────────────────────────────────────
     private readonly System.Windows.Threading.DispatcherTimer _filterDebounceTimer;
@@ -463,6 +465,12 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
+            return;
+        }
+        catch (Exception ex)
+        {
+            PreviewPageStatusText.Text = "Preview failed.";
+            StatusText.Text = $"Failed to preview {source.DisplayName}: {ex.Message}";
             return;
         }
         finally
@@ -2324,7 +2332,7 @@ public partial class MainWindow : Window
     private List<DataTableCellTarget> GetSelectedEditableCellTargets()
     {
         var selectedCells = _savedSelectedCells ?? DataGrid.SelectedCells.ToList();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<(DataRow Row, string ColumnName)>(DataRowColumnNameComparer);
         var targets = new List<DataTableCellTarget>();
 
         foreach (var cell in selectedCells)
@@ -2336,14 +2344,25 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(columnName) || columnName is RowNumberColumnName or SourceFileColumnName)
                 continue;
 
-            var key = $"{rowView.Row.GetHashCode()}::{columnName}";
-            if (!seen.Add(key))
+            if (!seen.Add((rowView.Row, columnName)))
                 continue;
 
             targets.Add(new DataTableCellTarget(rowView.Row, columnName));
         }
 
         return targets;
+    }
+
+    private sealed class DataRowColumnNameReferenceComparer : IEqualityComparer<(DataRow Row, string ColumnName)>
+    {
+        public bool Equals((DataRow Row, string ColumnName) x, (DataRow Row, string ColumnName) y)
+            => ReferenceEquals(x.Row, y.Row)
+               && string.Equals(x.ColumnName, y.ColumnName, StringComparison.Ordinal);
+
+        public int GetHashCode((DataRow Row, string ColumnName) obj)
+            => HashCode.Combine(
+                RuntimeHelpers.GetHashCode(obj.Row),
+                StringComparer.Ordinal.GetHashCode(obj.ColumnName));
     }
 
     private List<DataTableCellTarget> GetSelectedEditableCellTargetsSorted()

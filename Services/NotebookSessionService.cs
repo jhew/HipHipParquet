@@ -204,7 +204,8 @@ public sealed class NotebookSessionService : IDisposable
         if (hasNulls)
             values.Insert(0, "(Blank)");
 
-        var totalDistinct = Convert.ToInt32(nonNullDistinct + (hasNulls ? 1 : 0));
+        var totalDistinctLong = nonNullDistinct + (hasNulls ? 1L : 0L);
+        var totalDistinct = totalDistinctLong > int.MaxValue ? int.MaxValue : (int)totalDistinctLong;
         var truncated = values.Count >= maxValues && totalDistinct > maxValues;
         return (values, totalDistinct, truncated);
     }
