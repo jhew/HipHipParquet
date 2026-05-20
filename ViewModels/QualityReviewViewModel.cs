@@ -36,6 +36,9 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     private bool _hasComparison;
 
     [ObservableProperty]
+    private bool _isProfileStale;
+
+    [ObservableProperty]
     private string _statusMessage = "Open a file and click Analyze to begin.";
 
     [ObservableProperty]
@@ -238,6 +241,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         AnalysisProgress = 0;
         TaskbarProgressValue = 0;
         TaskbarProgressVisible = true;
+        IsProfileStale = false;
         StatusMessage = "Analyzing file...";
 
         try
@@ -674,6 +678,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         HasFile = true;
         HasProfile = false;
         HasComparison = false;
+        IsProfileStale = false;
         Comparison = null;
         FormatDisplay = "";
         AnalyzedAtDisplay = "";
@@ -721,6 +726,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         HasFile = false;
         HasProfile = false;
         HasComparison = false;
+        IsProfileStale = false;
         Comparison = null;
         FormatDisplay = "";
         AnalyzedAtDisplay = "";
@@ -746,6 +752,28 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         StatusMessage = "Open a file and click Analyze to begin.";
         AnalyzeCommand.NotifyCanExecuteChanged();
         ExportHtmlReportCommand.NotifyCanExecuteChanged();
+    }
+
+    public void MarkProfileStale(string? statusMessage = null)
+    {
+        if (!HasProfile)
+            return;
+
+        IsProfileStale = true;
+        StatusMessage = statusMessage ?? "Data changed since the last analysis. Refresh recommended.";
+    }
+
+    public void RestoreProfileStaleState(bool isStale)
+    {
+        if (!HasProfile)
+        {
+            IsProfileStale = false;
+            return;
+        }
+
+        IsProfileStale = isStale;
+        if (isStale)
+            StatusMessage = "Data changed since the last analysis. Refresh recommended.";
     }
 
     private void UpdateSourceManifest(IReadOnlyList<SourceFileSummary>? sourceFiles)
