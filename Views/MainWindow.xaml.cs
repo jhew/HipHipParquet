@@ -86,7 +86,8 @@ public partial class MainWindow : Window
     private bool _suppressNotebookBlockSelectionChanged;
     private bool _suppressFilterApply;
     private string? _lastSuggestedNotebookQuery;
-    private bool _queryHubVisible = true;
+    private bool _queryHubEnabled = true;
+    private bool _queryHubExpanded = true;
     private static readonly IEqualityComparer<(DataRow Row, string ColumnName)> DataRowColumnNameComparer = new DataRowColumnNameReferenceComparer();
 
     // ── Search debounce ───────────────────────────────────────────────────
@@ -184,7 +185,9 @@ public partial class MainWindow : Window
         var hasSources = _notebookSources.Count > 0;
         var hasActiveSource = hasSources && !string.IsNullOrWhiteSpace(_activeNotebookSourceAlias);
 
-        NotebookHub.Visibility = hasSources && _queryHubVisible ? Visibility.Visible : Visibility.Collapsed;
+        NotebookHub.Visibility = hasSources && _queryHubEnabled && _queryHubExpanded ? Visibility.Visible : Visibility.Collapsed;
+        NotebookHubCollapsedBar.Visibility = hasSources && _queryHubEnabled && !_queryHubExpanded ? Visibility.Visible : Visibility.Collapsed;
+        ToggleQueryHubMenuItem.IsChecked = _queryHubEnabled;
         RunNotebookQueryButton.IsEnabled = hasSources && !string.IsNullOrWhiteSpace(NotebookQueryTextBox.Text);
         SaveNotebookQueryButton.IsEnabled = !string.IsNullOrWhiteSpace(NotebookQueryTextBox.Text);
         LoadSavedNotebookQueryButton.IsEnabled = SavedNotebookQueriesComboBox.SelectedItem is NotebookQueryDocument;
@@ -196,6 +199,7 @@ public partial class MainWindow : Window
         RegexCheckButton.IsEnabled = hasActiveSource;
         SaveSchemaTemplateButton.IsEnabled = hasActiveSource;
         ValidateSchemaTemplateButton.IsEnabled = hasActiveSource && SchemaTemplatesComboBox.SelectedItem is SchemaTemplate;
+        ClearNotebookBlocksButton.IsEnabled = _notebookBlocks.Count > 0;
 
         PreviewPreviousPageButton.IsEnabled = hasActiveSource && _isPreviewMode && _previewRowOffset > 0;
         PreviewNextPageButton.IsEnabled = hasActiveSource && _isPreviewMode && (_previewRowOffset + _currentRowLimit) < _previewFilteredRowCount;
@@ -651,6 +655,27 @@ public partial class MainWindow : Window
             NotebookBlocksList.SelectedItem = null;
             _suppressNotebookBlockSelectionChanged = false;
         }
+    }
+
+    private void OnRemoveNotebookBlockClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not NotebookBlock block)
+            return;
+
+        _notebookBlocks.Remove(block);
+        UpdateNotebookUiState();
+        StatusText.Text = "Removed notebook block";
+        e.Handled = true;
+    }
+
+    private void OnClearNotebookBlocksClick(object sender, RoutedEventArgs e)
+    {
+        if (_notebookBlocks.Count == 0)
+            return;
+
+        _notebookBlocks.Clear();
+        UpdateNotebookUiState();
+        StatusText.Text = "Cleared notebook blocks";
     }
 
     private async void OnRunNotebookQueryClick(object sender, RoutedEventArgs e)
@@ -1444,6 +1469,7 @@ public partial class MainWindow : Window
             if (menuItem.IsChecked)
             {
                 // Show Quality panel
+                QualityPanelShell.Visibility = Visibility.Visible;
                 QualityReviewPanel.Visibility = Visibility.Visible;
                 QualitySplitter.Visibility = Visibility.Visible;
                 QualitySplitterColumn.Width = new GridLength(5);
@@ -1454,6 +1480,7 @@ public partial class MainWindow : Window
             else
             {
                 // Hide Quality panel
+                QualityPanelShell.Visibility = Visibility.Collapsed;
                 QualityReviewPanel.Visibility = Visibility.Collapsed;
                 QualitySplitter.Visibility = Visibility.Collapsed;
                 QualitySplitterColumn.Width = new GridLength(0);
@@ -1466,10 +1493,24 @@ public partial class MainWindow : Window
     private void OnToggleQueryHubClick(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem menuItem)
-        {
-            _queryHubVisible = menuItem.IsChecked;
-            UpdateNotebookUiState();
-        }
+            _queryHubEnabled = menuItem.IsChecked;
+
+        UpdateNotebookUiState();
+    }
+
+    private void OnCollapseQueryHubClick(object sender, RoutedEventArgs e)
+    {
+        _queryHubExpanded = false;
+
+        UpdateNotebookUiState();
+    }
+
+    private void OnExpandQueryHubClick(object sender, RoutedEventArgs e)
+    {
+        _queryHubEnabled = true;
+        _queryHubExpanded = true;
+
+        UpdateNotebookUiState();
     }
 
     private void OnQualitySplitterDragCompleted(object sender, DragCompletedEventArgs e)
@@ -1479,7 +1520,7 @@ public partial class MainWindow : Window
 
     private void ClampQualityPaneWidth()
     {
-        if (QualityReviewPanel.Visibility != Visibility.Visible)
+        if (QualityPanelShell.Visibility != Visibility.Visible)
             return;
 
         var available = MainContentGrid.ActualWidth
@@ -4667,7 +4708,7 @@ public partial class MainWindow : Window
                 Sort = _dataView?.Sort ?? string.Empty,
                 SchemaSearch = SchemaSearchBox.Text ?? string.Empty,
                 IsSchemaPaneVisible = SchemaPane.Visibility == Visibility.Visible,
-                IsQualityPaneVisible = QualityReviewPanel.Visibility == Visibility.Visible,
+                IsQualityPaneVisible = QualityPanelShell.Visibility == Visibility.Visible,
                 SchemaPaneWidth = SchemaPaneColumn.Width.Value,
                 QualityPaneWidth = QualityPaneColumn.Width.Value,
                 ColumnFilters = columnFilters,
@@ -4772,6 +4813,7 @@ public partial class MainWindow : Window
 
         if (state.IsQualityPaneVisible)
         {
+            QualityPanelShell.Visibility = Visibility.Visible;
             QualityReviewPanel.Visibility = Visibility.Visible;
             QualitySplitter.Visibility = Visibility.Visible;
             QualitySplitterColumn.Width = new GridLength(5);
@@ -4781,6 +4823,7 @@ public partial class MainWindow : Window
         }
         else
         {
+            QualityPanelShell.Visibility = Visibility.Collapsed;
             QualityReviewPanel.Visibility = Visibility.Collapsed;
             QualitySplitter.Visibility = Visibility.Collapsed;
             QualitySplitterColumn.Width = new GridLength(0);
