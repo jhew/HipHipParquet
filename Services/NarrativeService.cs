@@ -142,6 +142,32 @@ public class NarrativeService
 
     private void GenerateFileLevelFindings(FileProfile profile, List<NarrativeItem> findings)
     {
+        if (profile.RowCount == 0)
+        {
+            var zeroRowTypeGroups = profile.Columns.GroupBy(c => c.Category)
+                .Select(g => $"{g.Count()} {g.Key}")
+                .ToList();
+            var schemaSummary = zeroRowTypeGroups.Count > 0
+                ? string.Join(", ", zeroRowTypeGroups)
+                : "no profiled columns";
+
+            findings.Add(new NarrativeItem
+            {
+                Severity = NarrativeSeverity.Info,
+                Title = "File overview",
+                Description = $"0 rows × {profile.ColumnCount} columns ({schemaSummary}). Quality scoring is unavailable because the current set is empty."
+            });
+
+            findings.Add(new NarrativeItem
+            {
+                Severity = NarrativeSeverity.Critical,
+                Title = "Empty file",
+                Description = $"The {FileFormatDetector.GetFormatDisplayName(profile.SourceFormat)} file contains 0 rows. Load data or broaden the current filters before analyzing quality."
+            });
+
+            return;
+        }
+
         // ── Always-on summary findings ──────────────────────────────────
 
         // File overview
@@ -258,18 +284,6 @@ public class NarrativeService
                 Description = $"Overall data quality score is {profile.OverallScore.Total:F1}/100 ({profile.OverallScore.Grade}). Some columns may need attention."
             });
         }
-
-        // Zero rows
-        if (profile.RowCount == 0)
-        {
-            findings.Add(new NarrativeItem
-            {
-                Severity = NarrativeSeverity.Critical,
-                Title = "Empty file",
-                Description = $"The {FileFormatDetector.GetFormatDisplayName(profile.SourceFormat)} file contains 0 rows."
-            });
-        }
-
         // Columns with high null rates
         var highNullCols = profile.Columns.Where(c => c.NullPercentage > CriticalNullPct).ToList();
         if (highNullCols.Count > 0)

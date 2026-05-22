@@ -108,6 +108,16 @@
             <MenuItem Header="_Edit" SubmenuOpened="OnEditMenuOpened" SubmenuClosed="OnEditMenuClosed">
                 <MenuItem x:Name="UndoMenuItem" Header="_Undo" Click="OnUndoLastActionClick" InputGestureText="Ctrl+Z"/>
                 <MenuItem x:Name="EditDeleteRowsMenuItem" Header="_Delete Row(s)" Click="OnContextDeleteRowsClick" InputGestureText="Del"/>
+                <MenuItem Header="Row _Actions">
+                    <MenuItem x:Name="EditKeepSelectedRowsMenuItem" Header="Keep Only Selected Rows" Click="OnContextKeepSelectedRowsClick"/>
+                    <MenuItem x:Name="EditDeleteUnselectedRowsMenuItem" Header="Delete Unselected Rows" Click="OnContextDeleteUnselectedRowsClick"/>
+                    <MenuItem x:Name="EditDuplicateRowsMenuItem" Header="Duplicate Row(s)" Click="OnContextDuplicateRowsClick"/>
+                    <MenuItem x:Name="EditInsertBlankAboveMenuItem" Header="Insert Blank Row Above" Click="OnContextInsertBlankRowAboveClick"/>
+                    <MenuItem x:Name="EditInsertBlankBelowMenuItem" Header="Insert Blank Row Below" Click="OnContextInsertBlankRowBelowClick"/>
+                    <MenuItem x:Name="EditDeleteDuplicateRowsMenuItem" Header="Delete Duplicate Rows..." Click="OnContextDeleteDuplicateRowsClick"/>
+                    <Separator/>
+                    <MenuItem Header="Tip: right-click the grid for row and cell actions" IsEnabled="False"/>
+                </MenuItem>
                 <Separator/>
                 <MenuItem Header="_Copy" Click="OnCopyClick" InputGestureText="Ctrl+C">
                     <MenuItem.Icon>

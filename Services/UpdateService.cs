@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
 
@@ -124,13 +125,20 @@ public static class UpdateService
         string downloadUrl,
         IProgress<int>? progress = null,
         CancellationToken cancellationToken = default)
+        => (await DownloadInstallerWithDiagnosticsAsync(downloadUrl, progress, cancellationToken)).InstallerPath;
+
+    public static async Task<UpdateDownloadResult> DownloadInstallerWithDiagnosticsAsync(
+        string downloadUrl,
+        IProgress<int>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            // Safety: only download from trusted GitHub domains
-            if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri) ||
-                !IsTrustedGithubDownloadUrl(downloadUrl))
-                return null;
+            if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out _))
+                return UpdateDownloadResult.Fail(UpdateFailureKind.InvalidUrl, "The installer URL is invalid.");
+
+            if (!IsTrustedGithubDownloadUrl(downloadUrl))
+                return UpdateDownloadResult.Fail(UpdateFailureKind.UntrustedSource, "The installer URL is not a trusted GitHub download source.");
 
             using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
             client.DefaultRequestHeaders.UserAgent.Add(
@@ -144,7 +152,7 @@ public static class UpdateService
 
             var finalUri = response.RequestMessage?.RequestUri;
             if (finalUri == null || !IsTrustedGithubDownloadUri(finalUri))
-                return null;
+                return UpdateDownloadResult.Fail(UpdateFailureKind.UntrustedSource, "The installer download redirected to an untrusted host.");
 
             var tempPath   = CreateUniqueInstallerTempPath(finalUri);
             var totalBytes = response.Content.Headers.ContentLength ?? -1L;
@@ -164,9 +172,32 @@ public static class UpdateService
                     progress?.Report((int)(downloaded * 100 / totalBytes));
             }
 
-            return tempPath;
+            return UpdateDownloadResult.Success(tempPath);
         }
-        catch { return null; }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return UpdateDownloadResult.Fail(UpdateFailureKind.Cancelled, "The update download was cancelled.");
+        }
+        catch (TaskCanceledException ex)
+        {
+            return UpdateDownloadResult.Fail(UpdateFailureKind.Timeout, $"The update download timed out: {ex.Message}");
+        }
+        catch (HttpRequestException ex)
+        {
+            return UpdateDownloadResult.Fail(UpdateFailureKind.Network, $"The update download failed due to a network error: {ex.Message}");
+        }
+        catch (IOException ex)
+        {
+            return UpdateDownloadResult.Fail(UpdateFailureKind.Io, $"The installer could not be saved locally: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return UpdateDownloadResult.Fail(UpdateFailureKind.Io, $"The installer could not be written because access was denied: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            return UpdateDownloadResult.Fail(UpdateFailureKind.Unknown, $"The update download failed unexpectedly: {ex.Message}");
+        }
     }
 
     /// <summary>Returns the current assembly version.</summary>
@@ -181,9 +212,15 @@ public static class UpdateService
     /// Returns true if the file is signed with a valid certificate chain; false otherwise.
     /// </summary>
     public static bool VerifyAuthenticodeSignature(string filePath)
+        => VerifyAuthenticodeSignatureWithDiagnostics(filePath).Succeeded;
+
+    public static UpdateVerificationResult VerifyAuthenticodeSignatureWithDiagnostics(string filePath)
     {
         try
         {
+            if (!File.Exists(filePath))
+                return UpdateVerificationResult.Fail(UpdateFailureKind.FileNotFound, "The installer file could not be found for signature verification.");
+
             using var cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(filePath));
             using var chain = new X509Chain();
             chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
@@ -199,14 +236,22 @@ public static class UpdateService
                     s.Status == X509ChainStatusFlags.RevocationStatusUnknown ||
                     s.Status == X509ChainStatusFlags.OfflineRevocation);
                 if (onlyRevocationUnknown)
-                    return true;
+                    return UpdateVerificationResult.Success();
+
+                return UpdateVerificationResult.Fail(UpdateFailureKind.SecurityValidation,
+                    $"The installer signature chain could not be validated: {string.Join(", ", chain.ChainStatus.Select(status => status.StatusInformation.Trim()).Where(text => !string.IsNullOrWhiteSpace(text)))}");
             }
-            return valid;
+            return valid
+                ? UpdateVerificationResult.Success()
+                : UpdateVerificationResult.Fail(UpdateFailureKind.SecurityValidation, "The installer signature is invalid.");
+        }
+        catch (CryptographicException ex)
+        {
+            return UpdateVerificationResult.Fail(UpdateFailureKind.SecurityValidation, $"The installer is not Authenticode signed or the signature is unreadable: {ex.Message}");
         }
         catch
         {
-            // File is not signed or certificate is invalid
-            return false;
+            return UpdateVerificationResult.Fail(UpdateFailureKind.Unknown, "The installer signature could not be verified.");
         }
     }
 
@@ -218,11 +263,20 @@ public static class UpdateService
         string installerPath,
         string checksumsUrl,
         CancellationToken cancellationToken = default)
+        => (await VerifyChecksumWithDiagnosticsAsync(installerPath, checksumsUrl, cancellationToken)).Succeeded;
+
+    public static async Task<UpdateVerificationResult> VerifyChecksumWithDiagnosticsAsync(
+        string installerPath,
+        string checksumsUrl,
+        CancellationToken cancellationToken = default)
     {
         try
         {
             if (!IsTrustedGithubDownloadUrl(checksumsUrl))
-                return false;
+                return UpdateVerificationResult.Fail(UpdateFailureKind.UntrustedSource, "The checksum file URL is not a trusted GitHub download source.");
+
+            if (!File.Exists(installerPath))
+                return UpdateVerificationResult.Fail(UpdateFailureKind.FileNotFound, "The installer file could not be found for checksum verification.");
 
             var checksumsText = await SharedClient.GetStringAsync(checksumsUrl, cancellationToken);
             var installerFileName = Path.GetFileName(installerPath);
@@ -255,14 +309,32 @@ public static class UpdateService
             }
 
             if (string.IsNullOrEmpty(expectedHash))
-                return false;
+                return UpdateVerificationResult.Fail(UpdateFailureKind.MissingChecksumEntry, "No matching checksum entry was found for the downloaded installer.");
 
             var actualHash = await ComputeFileSha256Async(installerPath, cancellationToken);
-            return string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase)
+                ? UpdateVerificationResult.Success()
+                : UpdateVerificationResult.Fail(UpdateFailureKind.SecurityValidation, "The downloaded installer checksum did not match the published SHA256 value.");
         }
-        catch
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return false;
+            return UpdateVerificationResult.Fail(UpdateFailureKind.Cancelled, "Checksum verification was cancelled.");
+        }
+        catch (TaskCanceledException ex)
+        {
+            return UpdateVerificationResult.Fail(UpdateFailureKind.Timeout, $"Checksum verification timed out: {ex.Message}");
+        }
+        catch (HttpRequestException ex)
+        {
+            return UpdateVerificationResult.Fail(UpdateFailureKind.Network, $"The checksum file could not be downloaded: {ex.Message}");
+        }
+        catch (IOException ex)
+        {
+            return UpdateVerificationResult.Fail(UpdateFailureKind.Io, $"The checksum could not be computed: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            return UpdateVerificationResult.Fail(UpdateFailureKind.Unknown, $"Checksum verification failed unexpectedly: {ex.Message}");
         }
     }
 
@@ -281,3 +353,43 @@ public static class UpdateService
 /// <param name="ChecksumsUrl">Direct download URL for the SHA256SUMS file (may be null).</param>
 /// <param name="ReleasePageUrl">Fallback: the GitHub releases page URL.</param>
 public record UpdateInfo(Version LatestVersion, string? InstallerUrl, string? ChecksumsUrl, string ReleasePageUrl);
+
+public enum UpdateFailureKind
+{
+    None,
+    InvalidUrl,
+    UntrustedSource,
+    FileNotFound,
+    MissingChecksumEntry,
+    Network,
+    Timeout,
+    Io,
+    SecurityValidation,
+    Cancelled,
+    Unknown
+}
+
+public readonly record struct UpdateDownloadResult(
+    bool Succeeded,
+    string? InstallerPath,
+    UpdateFailureKind FailureKind,
+    string Message)
+{
+    public static UpdateDownloadResult Success(string installerPath)
+        => new(true, installerPath, UpdateFailureKind.None, string.Empty);
+
+    public static UpdateDownloadResult Fail(UpdateFailureKind failureKind, string message)
+        => new(false, null, failureKind, message);
+}
+
+public readonly record struct UpdateVerificationResult(
+    bool Succeeded,
+    UpdateFailureKind FailureKind,
+    string Message)
+{
+    public static UpdateVerificationResult Success()
+        => new(true, UpdateFailureKind.None, string.Empty);
+
+    public static UpdateVerificationResult Fail(UpdateFailureKind failureKind, string message)
+        => new(false, failureKind, message);
+}

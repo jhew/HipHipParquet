@@ -184,7 +184,7 @@
                                    HorizontalAlignment="Center" Margin="0,8,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="No file loaded"/>
+                                    <Setter Property="Text" Value="No data set loaded"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding HasFile}" Value="True">
                                             <Setter Property="Text" Value="Ready to analyze"/>
@@ -197,10 +197,10 @@
                                    HorizontalAlignment="Center" Margin="0,4,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="Open a data file to begin"/>
+                                    <Setter Property="Text" Value="Open a data set to begin"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding HasFile}" Value="True">
-                                            <Setter Property="Text" Value="Click Analyze to profile this file"/>
+                                            <Setter Property="Text" Value="Click Analyze to profile the current set"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -211,7 +211,7 @@
                 
                 <!-- File Summary Section -->
                 <Border Style="{StaticResource SectionCard}"
-                        Visibility="{Binding HasProfile, Converter={StaticResource BoolToVis}}">
+                    Visibility="{Binding HasProfile, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
                         <TextBlock Text="File Summary" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
 
@@ -335,9 +335,42 @@
                     </StackPanel>
                 </Border>
 
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource SectionCard}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding HasProfile}" Value="True"/>
+                                        <Condition Binding="{Binding IsEmptyProfile}" Value="True"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="No Data To Score" FontWeight="Bold" FontSize="13" Margin="0,0,0,6"/>
+                        <TextBlock Text="{Binding EmptyProfileMessage}" TextWrapping="Wrap" Foreground="#5C6F82" FontSize="11"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- Quality Score Gauge Section -->
-                <Border Style="{StaticResource SectionCard}"
-                        Visibility="{Binding HasProfile, Converter={StaticResource BoolToVis}}">
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource SectionCard}">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasProfile}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsEmptyProfile}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
                         <TextBlock Text="Data Quality Score" FontWeight="Bold" FontSize="13" Margin="0,0,0,6"/>
                         
@@ -1067,6 +1100,9 @@
                         </StackPanel>
                         
                         <!-- Grouped Results (always visible when available, even when collapsed) -->
+                        <TextBlock Text="{Binding GroupedResultsSummary}" FontSize="10" Foreground="#666" Margin="0,8,0,0"
+                                   TextWrapping="Wrap"
+                                   Visibility="{Binding HasGroupedResults, Converter={StaticResource BoolToVis}}"/>
                         <ItemsControl ItemsSource="{Binding GroupedResults}" Margin="0,8,0,0"
                                       Visibility="{Binding HasGroupedResults, Converter={StaticResource BoolToVis}}">
                             <ItemsControl.ItemTemplate>
@@ -1101,6 +1137,14 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+
+                        <Button Content="Load More Groups"
+                                Command="{Binding LoadMoreGroupedResultsCommand}"
+                                Padding="10,4" FontSize="11" Margin="0,8,0,0"
+                                HorizontalAlignment="Left"
+                                Background="Transparent" Foreground="#2B4C7E"
+                                BorderBrush="#C7D5E3" BorderThickness="1" Cursor="Hand"
+                                Visibility="{Binding CanLoadMoreGroupedResults, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
                 </Border>
                 
