@@ -63,6 +63,9 @@
         
         <!-- MVVM and UI helpers -->
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+
+        <!-- Markdown rendering for helper preview profiles -->
+        <PackageReference Include="Markdig" Version="0.37.0" />
         
         <!-- Dependency injection and configuration -->
         <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />

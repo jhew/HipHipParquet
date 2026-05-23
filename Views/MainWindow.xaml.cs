@@ -88,6 +88,7 @@ public partial class MainWindow : Window
     private string? _lastSuggestedNotebookQuery;
     private bool _queryHubEnabled = true;
     private bool _queryHubExpanded = true;
+    private MarkdownEditorWindow? _markdownEditorWindow;
     private static readonly IEqualityComparer<(DataRow Row, string ColumnName)> DataRowColumnNameComparer = new DataRowColumnNameReferenceComparer();
 
     // ── Search debounce ───────────────────────────────────────────────────
@@ -1294,8 +1295,8 @@ public partial class MainWindow : Window
     {
         var openFileDialog = new OpenFileDialog
         {
-            Filter = Services.FileFormatDetector.GetOpenFileDialogFilter(),
-            Title = "Select Data File",
+            Filter = Services.FileFormatDetector.GetOpenFileDialogFilter() + "|Markdown files (*.md;*.markdown;*.mdown;*.mkd)|*.md;*.markdown;*.mdown;*.mkd",
+            Title = "Select File",
             Multiselect = true
         };
 
@@ -1430,6 +1431,12 @@ public partial class MainWindow : Window
 
     private async Task OpenWithRecommendedSettingsAsync(string filePath, bool forceImportDialog = false)
     {
+        if (IsMarkdownPath(filePath))
+        {
+            await OpenMarkdownHelperForFileAsync(filePath);
+            return;
+        }
+
         if (!ConfirmUnknownExtension(filePath))
             return;
 
@@ -1475,7 +1482,20 @@ public partial class MainWindow : Window
             || string.Equals(ext, ".json", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ext, ".jsonl", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".markdown", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".mdown", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".mkd", StringComparison.OrdinalIgnoreCase)
             || Path.GetFileName(path).EndsWith(".snappy.parquet", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsMarkdownPath(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return string.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".markdown", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".mdown", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".mkd", StringComparison.OrdinalIgnoreCase);
     }
 
     private static List<string> ResolveDroppedFiles(IEnumerable<string> droppedPaths)
@@ -5619,6 +5639,35 @@ public partial class MainWindow : Window
         {
             // Silently ignore if watcher can't be set up (e.g. network paths)
         }
+    }
+
+    private void OnOpenMarkdownHelperClick(object sender, RoutedEventArgs e)
+        => _ = OpenMarkdownHelperForFileAsync(null);
+
+    private async Task OpenMarkdownHelperForFileAsync(string? filePath)
+    {
+        if (_markdownEditorWindow is { IsLoaded: true })
+        {
+            if (!string.IsNullOrWhiteSpace(filePath))
+                await _markdownEditorWindow.OpenFileAsync(filePath);
+
+            _markdownEditorWindow.Activate();
+            _markdownEditorWindow.Focus();
+            return;
+        }
+
+        var markdownService = App.Current.Services.GetService<MarkdownService>() ?? new MarkdownService();
+        _markdownEditorWindow = new MarkdownEditorWindow(markdownService, _workspaceService)
+        {
+            Owner = this
+        };
+        _markdownEditorWindow.Closed += (_, _) => _markdownEditorWindow = null;
+        _markdownEditorWindow.Show();
+
+        if (!string.IsNullOrWhiteSpace(filePath))
+            await _markdownEditorWindow.OpenFileAsync(filePath);
+
+        StatusText.Text = "Opened Markdown Helper.";
     }
 
     // ── Help Menu ────────────────────────────────────────────────────
