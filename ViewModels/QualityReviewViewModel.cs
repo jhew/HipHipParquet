@@ -15,11 +15,14 @@ namespace HipHipParquet.ViewModels;
 /// </summary>
 public partial class QualityReviewViewModel : ObservableObject, IDisposable
 {
+    private const int GroupedResultsBatchSize = 25;
     private bool _disposed;
     private readonly ILogger<QualityReviewViewModel> _logger;
     private readonly QualityScoreService _qualityScoreService;
     private readonly NarrativeService _narrativeService;
     private readonly ReportService _reportService;
+    private Func<CancellationToken, IProgress<(int Current, int Total)>?, Task<FileProfile>>? _analysisProvider;
+    private Func<IReadOnlyList<string>, CancellationToken, IProgress<(int Current, int Total)>?, Task<Dictionary<string, FileProfile>>>? _groupedStatisticsProvider;
 
     // ── Observable Properties ────────────────────────────────────────────
 
@@ -36,10 +39,16 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     private bool _hasComparison;
 
     [ObservableProperty]
+    private bool _isEmptyProfile;
+
+    [ObservableProperty]
     private bool _isProfileStale;
 
     [ObservableProperty]
     private string _statusMessage = "Open a file and click Analyze to begin.";
+
+    [ObservableProperty]
+    private string _emptyProfileMessage = string.Empty;
 
     [ObservableProperty]
     private double _analysisProgress;
@@ -108,6 +117,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
 
     // All findings (before severity filtering)
     private List<NarrativeItem> _allFindings = [];
+    private List<KeyValuePair<string, FileProfile>> _allGroupedProfiles = [];
 
     // Findings severity filtering
     [ObservableProperty]
@@ -140,6 +150,9 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     private bool _hasGroupedResults;
 
     [ObservableProperty]
+    private bool _canLoadMoreGroupedResults;
+
+    [ObservableProperty]
     private bool _isGroupByExpanded;
 
     [ObservableProperty]
@@ -147,6 +160,9 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _groupByStatusMessage = "";
+
+    [ObservableProperty]
+    private string _groupedResultsSummary = "";
 
     // Filter/query builder
     [ObservableProperty]
@@ -227,7 +243,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanAnalyze))]
     private async Task AnalyzeAsync()
     {
-        if (string.IsNullOrEmpty(CurrentFilePath))
+        if (!CanAnalyze())
             return;
 
         // Cancel any running analysis and start fresh.
@@ -257,18 +273,14 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
                 StatusMessage = $"Profiling column {p.Current} of {p.Total}...";
             });
 
-            // Run all DuckDB work on the thread-pool so the WPF dispatcher stays free.
-            using var parquetService = new ParquetService(ParquetServiceLogger);
             AnalysisProgress = 10;
-            var profile = await Task.Run(
-                () => parquetService.GetFileProfileAsync(
-                    CurrentFilePath, ActiveCsvOptions, ActiveJsonOptions,
-                    cts.Token, columnProgress),
-                cts.Token);
+            var profile = await BuildProfileAsync(cts.Token, columnProgress);
             AnalysisProgress = 60;
 
-            // Score the profile
-            _qualityScoreService.ScoreFileProfile(profile);
+            if (profile.RowCount > 0)
+                _qualityScoreService.ScoreFileProfile(profile);
+            else
+                profile.OverallScore = new QualityScore();
             AnalysisProgress = 80;
 
             // Generate narrative
@@ -280,18 +292,22 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             ProfileDisplayName = SourceManifest.Count > 1
                 ? $"Parquet file set ({SourceManifest.Count} files)"
                 : profile.FileName;
+            IsEmptyProfile = profile.RowCount == 0;
+            EmptyProfileMessage = IsEmptyProfile
+                ? "No rows are available in the current set. Adjust filters or load more data to compute a quality score."
+                : string.Empty;
             _allColumns = [.. profile.Columns];
             DisplayedColumns = new ObservableCollection<ColumnProfile>(profile.Columns);
 
-            OverallScore = profile.OverallScore.Total;
-            OverallGrade = profile.OverallScore.Grade;
-            OverallScoreColor = profile.OverallScore.Color;
+            OverallScore = IsEmptyProfile ? 0 : profile.OverallScore.Total;
+            OverallGrade = IsEmptyProfile ? string.Empty : profile.OverallScore.Grade;
+            OverallScoreColor = IsEmptyProfile ? "#9E9E9E" : profile.OverallScore.Color;
             FormatDisplay = Services.FileFormatDetector.GetFormatDisplayName(profile.SourceFormat);
             AnalyzedAtDisplay = profile.AnalyzedAt.ToString("MMM d, yyyy h:mm tt", System.Globalization.CultureInfo.CurrentCulture);
-            CompletenessScore = profile.OverallScore.Completeness;
-            UniquenessScore = profile.OverallScore.Uniqueness;
-            ValidityScore = profile.OverallScore.Validity;
-            DistributionScore = profile.OverallScore.Distribution;
+            CompletenessScore = IsEmptyProfile ? 0 : profile.OverallScore.Completeness;
+            UniquenessScore = IsEmptyProfile ? 0 : profile.OverallScore.Uniqueness;
+            ValidityScore = IsEmptyProfile ? 0 : profile.OverallScore.Validity;
+            DistributionScore = IsEmptyProfile ? 0 : profile.OverallScore.Distribution;
 
             _allFindings = findings;
             Findings = new ObservableCollection<NarrativeItem>(findings);
@@ -311,7 +327,9 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             var sourceSummary = HasSourceManifest
                 ? $"{SourceManifest.Count} source file{(SourceManifest.Count == 1 ? "" : "s")}"
                 : "single source";
-            StatusMessage = $"Analysis complete — {profile.ColumnCount} columns, {profile.RowCount:N0} rows, {sourceSummary}, score: {profile.OverallScore.Total:F0}/100";
+            StatusMessage = IsEmptyProfile
+                ? $"Analysis complete — 0 rows in the current set across {profile.ColumnCount} columns. Adjust filters or load more data to compute a quality score."
+                : $"Analysis complete — {profile.ColumnCount} columns, {profile.RowCount:N0} rows, {sourceSummary}, score: {profile.OverallScore.Total:F0}/100";
         }
         catch (OperationCanceledException)
         {
@@ -333,7 +351,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         }
     }
 
-    private bool CanAnalyze() => !string.IsNullOrEmpty(CurrentFilePath) && !IsAnalyzing;
+    private bool CanAnalyze() => HasFile && !IsAnalyzing && (!string.IsNullOrEmpty(CurrentFilePath) || _analysisProvider != null);
 
     [RelayCommand]
     private void CancelAnalysis()
@@ -361,7 +379,16 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         if (FileProfile == null || string.IsNullOrWhiteSpace(comparisonFilePath))
             return;
 
+        _analysisCts?.Cancel();
+        _analysisCts?.Dispose();
+        _analysisCts = new CancellationTokenSource();
+        var cts = _analysisCts;
+
         IsAnalyzing = true;
+        CanCancel = true;
+        AnalysisProgress = 0;
+        TaskbarProgressValue = 0;
+        TaskbarProgressVisible = true;
         StatusMessage = "Comparing files...";
 
         try
@@ -369,13 +396,33 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             var compPath = comparisonFilePath;
             ComparisonFileName = System.IO.Path.GetFileName(compPath);
 
+            var compareProgress = new Progress<(int Current, int Total)>(p =>
+            {
+                var progress = p.Total > 0
+                    ? 10.0 + (double)p.Current / p.Total * 55.0
+                    : 10.0;
+                AnalysisProgress = progress;
+                TaskbarProgressValue = progress / 100.0;
+                StatusMessage = $"Profiling comparison column {p.Current} of {p.Total}...";
+            });
+
             using var parquetService = new ParquetService(ParquetServiceLogger);
-            var compProfile = await parquetService.GetFileProfileAsync(compPath);
+            AnalysisProgress = 10;
+            var compProfile = await parquetService.GetFileProfileAsync(compPath, cancellationToken: cts.Token, progress: compareProgress);
+            AnalysisProgress = 70;
+            TaskbarProgressValue = 0.7;
+            StatusMessage = "Scoring comparison profile...";
             _qualityScoreService.ScoreFileProfile(compProfile);
 
+            AnalysisProgress = 80;
+            TaskbarProgressValue = 0.8;
+            StatusMessage = "Calculating drift and schema changes...";
             var comparison = BuildComparison(FileProfile, compProfile);
             comparison.DriftScore = _qualityScoreService.ComputeDriftScore(FileProfile, compProfile);
 
+            AnalysisProgress = 90;
+            TaskbarProgressValue = 0.9;
+            StatusMessage = "Generating comparison findings...";
             var compFindings = _narrativeService.GenerateComparisonFindings(comparison);
 
             Comparison = comparison;
@@ -392,7 +439,15 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             }
             RebuildGroupedFindings();
 
+            AnalysisProgress = 100;
+            TaskbarProgressValue = 1.0;
             StatusMessage = $"Comparison complete with {ComparisonFileName} — drift score: {comparison.DriftScore:F1}/100";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Comparison cancelled.";
+            AnalysisProgress = 0;
+            TaskbarProgressValue = 0;
         }
         catch (Exception ex)
         {
@@ -401,6 +456,8 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         finally
         {
             IsAnalyzing = false;
+            CanCancel = false;
+            TaskbarProgressVisible = false;
         }
     }
 
@@ -461,7 +518,7 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (string.IsNullOrEmpty(CurrentFilePath))
+        if (string.IsNullOrEmpty(CurrentFilePath) && _groupedStatisticsProvider == null)
             return;
 
         // Cancel any running analysis and start fresh.
@@ -473,62 +530,99 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         IsAnalyzing = true;
         CanCancel = true;
         GroupByStatusMessage = "";
+        GroupedResultsSummary = "";
         StatusMessage = "Computing grouped statistics...";
         AnalysisProgress = 0;
+        TaskbarProgressValue = 0;
+        TaskbarProgressVisible = true;
 
         try
         {
             var groupProgress = new Progress<(int Current, int Total)>(p =>
             {
-                AnalysisProgress = p.Total > 0 ? (double)p.Current / p.Total * 100.0 : 0;
+                AnalysisProgress = p.Total > 0 ? (double)p.Current / p.Total * 80.0 : 0;
+                TaskbarProgressValue = AnalysisProgress / 100.0;
                 StatusMessage = $"Processing group {p.Current} of {p.Total}...";
             });
 
-            // Run all DuckDB work on the thread-pool so the WPF dispatcher stays free.
-            using var parquetService = new ParquetService(ParquetServiceLogger);
-            var grouped = await Task.Run(
-                () => parquetService.GetGroupedStatisticsAsync(
-                    CurrentFilePath, selectedDimensions, ActiveCsvOptions, ActiveJsonOptions,
-                    cts.Token, groupProgress),
-                cts.Token);
+            var grouped = await BuildGroupedStatisticsAsync(selectedDimensions, cts.Token, groupProgress);
 
+            _allGroupedProfiles = grouped
+                .OrderByDescending(g => g.Value.RowCount)
+                .ToList();
             GroupedResults.Clear();
-            foreach (var kvp in grouped.OrderByDescending(g => g.Value.RowCount))
-            {
-                _qualityScoreService.ScoreFileProfile(kvp.Value);
-                GroupedResults.Add(new GroupedResult
-                {
-                    GroupKey = kvp.Key,
-                    RowCount = kvp.Value.RowCount,
-                    QualityScore = kvp.Value.OverallScore.Total,
-                    ScoreColor = kvp.Value.OverallScore.Color,
-                    Profile = kvp.Value
-                });
-            }
+            AnalysisProgress = 85;
+            TaskbarProgressValue = 0.85;
+            StatusMessage = "Preparing grouped results...";
+            LoadMoreGroupedResults();
 
             HasGroupedResults = GroupedResults.Count > 0;
             GroupByStatusMessage = HasGroupedResults
-                ? $"{GroupedResults.Count} groups found"
+                ? BuildGroupedResultsStatusMessage()
                 : "No groups found for selected dimensions.";
-            StatusMessage = $"Grouped by {string.Join(", ", selectedDimensions)} — {GroupedResults.Count} groups";
+            StatusMessage = HasGroupedResults
+                ? $"Grouped by {string.Join(", ", selectedDimensions)} — showing {GroupedResults.Count:N0} of {_allGroupedProfiles.Count:N0} groups"
+                : $"Grouped by {string.Join(", ", selectedDimensions)} — 0 groups";
             AnalysisProgress = 100;
+            TaskbarProgressValue = 1.0;
         }
         catch (OperationCanceledException)
         {
             GroupByStatusMessage = "Cancelled.";
+            GroupedResultsSummary = string.Empty;
             StatusMessage = "Group-by cancelled.";
             AnalysisProgress = 0;
+            TaskbarProgressValue = 0;
         }
         catch (Exception ex)
         {
             GroupByStatusMessage = $"Error: {ex.Message}";
+            GroupedResultsSummary = string.Empty;
             StatusMessage = $"Group-by failed: {ex.Message}";
         }
         finally
         {
             IsAnalyzing = false;
             CanCancel = false;
+            TaskbarProgressVisible = false;
         }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLoadMoreGroupedResults))]
+    private void LoadMoreGroupedResults()
+    {
+        var loadedCount = GroupedResults.Count;
+        if (loadedCount >= _allGroupedProfiles.Count)
+        {
+            CanLoadMoreGroupedResults = false;
+            GroupedResultsSummary = _allGroupedProfiles.Count == 0
+                ? string.Empty
+                : $"Showing all {_allGroupedProfiles.Count:N0} groups.";
+            LoadMoreGroupedResultsCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
+        var nextCount = Math.Min(GroupedResultsBatchSize, _allGroupedProfiles.Count - loadedCount);
+        for (int i = 0; i < nextCount; i++)
+        {
+            var entry = _allGroupedProfiles[loadedCount + i];
+            if (entry.Value.RowCount > 0)
+                _qualityScoreService.ScoreFileProfile(entry.Value);
+
+            GroupedResults.Add(new GroupedResult
+            {
+                GroupKey = entry.Key,
+                RowCount = entry.Value.RowCount,
+                QualityScore = entry.Value.OverallScore.Total,
+                ScoreColor = entry.Value.RowCount == 0 ? "#9E9E9E" : entry.Value.OverallScore.Color,
+                Profile = entry.Value
+            });
+        }
+
+        CanLoadMoreGroupedResults = GroupedResults.Count < _allGroupedProfiles.Count;
+        GroupedResultsSummary = BuildGroupedResultsSummary();
+        GroupByStatusMessage = BuildGroupedResultsStatusMessage();
+        LoadMoreGroupedResultsCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -536,9 +630,13 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     {
         foreach (var dim in AvailableDimensions)
             dim.IsSelected = false;
+        _allGroupedProfiles.Clear();
         GroupedResults.Clear();
         HasGroupedResults = false;
+        CanLoadMoreGroupedResults = false;
         GroupByStatusMessage = "";
+        GroupedResultsSummary = string.Empty;
+        LoadMoreGroupedResultsCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -672,16 +770,20 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         JsonImportOptions? jsonOptions = null,
         IReadOnlyList<SourceFileSummary>? sourceFiles = null)
     {
+        _analysisProvider = null;
+        _groupedStatisticsProvider = null;
         CurrentFilePath = filePath;
         ActiveCsvOptions = csvOptions;
         ActiveJsonOptions = jsonOptions;
         HasFile = true;
         HasProfile = false;
         HasComparison = false;
+        IsEmptyProfile = false;
         IsProfileStale = false;
         Comparison = null;
         FormatDisplay = "";
         AnalyzedAtDisplay = "";
+        EmptyProfileMessage = string.Empty;
         Findings.Clear();
         _allFindings.Clear();
         GroupedFindings.Clear();
@@ -692,11 +794,14 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         DisplayedColumns.Clear();
         _allColumns.Clear();
         ColumnSortBy = "Name ↑";
+        _allGroupedProfiles.Clear();
         GroupedResults.Clear();
         HasGroupedResults = false;
+        CanLoadMoreGroupedResults = false;
         IsGroupByExpanded = false;
         IsColumnProfilesExpanded = true;
         GroupByStatusMessage = "";
+        GroupedResultsSummary = string.Empty;
         ProfileDisplayName = "";
         UpdateSourceManifest(sourceFiles);
         StatusMessage = SourceManifest.Count > 1
@@ -704,6 +809,56 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
             : "File loaded. Profiling can start automatically.";
         AnalyzeCommand.NotifyCanExecuteChanged();
         ExportHtmlReportCommand.NotifyCanExecuteChanged();
+        LoadMoreGroupedResultsCommand.NotifyCanExecuteChanged();
+    }
+
+    public void SetAnalysisContext(
+        string displayPath,
+        Func<CancellationToken, IProgress<(int Current, int Total)>?, Task<FileProfile>> analysisProvider,
+        Func<IReadOnlyList<string>, CancellationToken, IProgress<(int Current, int Total)>?, Task<Dictionary<string, FileProfile>>>? groupedStatisticsProvider = null,
+        CsvImportOptions? csvOptions = null,
+        JsonImportOptions? jsonOptions = null,
+        IReadOnlyList<SourceFileSummary>? sourceFiles = null,
+        string? readyMessage = null)
+    {
+        _analysisProvider = analysisProvider;
+        _groupedStatisticsProvider = groupedStatisticsProvider;
+        CurrentFilePath = displayPath;
+        ActiveCsvOptions = csvOptions;
+        ActiveJsonOptions = jsonOptions;
+        HasFile = true;
+        HasProfile = false;
+        HasComparison = false;
+        IsEmptyProfile = false;
+        IsProfileStale = false;
+        Comparison = null;
+        FormatDisplay = "";
+        AnalyzedAtDisplay = "";
+        EmptyProfileMessage = string.Empty;
+        Findings.Clear();
+        _allFindings.Clear();
+        GroupedFindings.Clear();
+        FindingsCriticalCount = 0;
+        FindingsWarningCount = 0;
+        FindingsInfoCount = 0;
+        SelectedFindingFilter = "All";
+        DisplayedColumns.Clear();
+        _allColumns.Clear();
+        ColumnSortBy = "Name ↑";
+        _allGroupedProfiles.Clear();
+        GroupedResults.Clear();
+        HasGroupedResults = false;
+        CanLoadMoreGroupedResults = false;
+        IsGroupByExpanded = false;
+        IsColumnProfilesExpanded = true;
+        GroupByStatusMessage = "";
+        GroupedResultsSummary = string.Empty;
+        ProfileDisplayName = "";
+        UpdateSourceManifest(sourceFiles);
+        StatusMessage = readyMessage ?? "Data set loaded. Profiling can start automatically.";
+        AnalyzeCommand.NotifyCanExecuteChanged();
+        ExportHtmlReportCommand.NotifyCanExecuteChanged();
+        LoadMoreGroupedResultsCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -722,14 +877,18 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
     /// </summary>
     public void ClearFile()
     {
+        _analysisProvider = null;
+        _groupedStatisticsProvider = null;
         CurrentFilePath = string.Empty;
         HasFile = false;
         HasProfile = false;
         HasComparison = false;
+        IsEmptyProfile = false;
         IsProfileStale = false;
         Comparison = null;
         FormatDisplay = "";
         AnalyzedAtDisplay = "";
+        EmptyProfileMessage = string.Empty;
         Findings.Clear();
         _allFindings.Clear();
         GroupedFindings.Clear();
@@ -740,11 +899,14 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         DisplayedColumns.Clear();
         _allColumns.Clear();
         ColumnSortBy = "Name ↑";
+        _allGroupedProfiles.Clear();
         GroupedResults.Clear();
         HasGroupedResults = false;
+        CanLoadMoreGroupedResults = false;
         IsGroupByExpanded = false;
         IsColumnProfilesExpanded = true;
         GroupByStatusMessage = "";
+        GroupedResultsSummary = string.Empty;
         ProfileDisplayName = "";
         SourceSetSummary = "";
         HasSourceManifest = false;
@@ -752,6 +914,59 @@ public partial class QualityReviewViewModel : ObservableObject, IDisposable
         StatusMessage = "Open a file and click Analyze to begin.";
         AnalyzeCommand.NotifyCanExecuteChanged();
         ExportHtmlReportCommand.NotifyCanExecuteChanged();
+        LoadMoreGroupedResultsCommand.NotifyCanExecuteChanged();
+    }
+
+    private string BuildGroupedResultsStatusMessage()
+        => CanLoadMoreGroupedResults
+            ? $"Showing {GroupedResults.Count:N0} of {_allGroupedProfiles.Count:N0} groups. Load more to continue."
+            : _allGroupedProfiles.Count == 0
+                ? "No groups found for selected dimensions."
+                : $"Showing all {_allGroupedProfiles.Count:N0} groups.";
+
+    private string BuildGroupedResultsSummary()
+        => _allGroupedProfiles.Count == 0
+            ? string.Empty
+            : CanLoadMoreGroupedResults
+                ? $"Showing top {GroupedResults.Count:N0} of {_allGroupedProfiles.Count:N0} groups by row count."
+                : $"Showing all {_allGroupedProfiles.Count:N0} groups by row count.";
+
+    private async Task<FileProfile> BuildProfileAsync(
+        CancellationToken cancellationToken,
+        IProgress<(int Current, int Total)>? progress)
+    {
+        if (_analysisProvider != null)
+            return await _analysisProvider(cancellationToken, progress);
+
+        using var parquetService = new ParquetService(ParquetServiceLogger);
+        return await Task.Run(
+            () => parquetService.GetFileProfileAsync(
+                CurrentFilePath,
+                ActiveCsvOptions,
+                ActiveJsonOptions,
+                cancellationToken,
+                progress),
+            cancellationToken);
+    }
+
+    private async Task<Dictionary<string, FileProfile>> BuildGroupedStatisticsAsync(
+        IReadOnlyList<string> selectedDimensions,
+        CancellationToken cancellationToken,
+        IProgress<(int Current, int Total)>? progress)
+    {
+        if (_groupedStatisticsProvider != null)
+            return await _groupedStatisticsProvider(selectedDimensions, cancellationToken, progress);
+
+        using var parquetService = new ParquetService(ParquetServiceLogger);
+        return await Task.Run(
+            () => parquetService.GetGroupedStatisticsAsync(
+                CurrentFilePath,
+                selectedDimensions.ToList(),
+                ActiveCsvOptions,
+                ActiveJsonOptions,
+                cancellationToken,
+                progress),
+            cancellationToken);
     }
 
     public void MarkProfileStale(string? statusMessage = null)

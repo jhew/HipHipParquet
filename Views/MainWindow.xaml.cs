@@ -383,26 +383,122 @@ public partial class MainWindow : Window
         IReadOnlyList<SourceFileSummary>? sourceFiles,
         bool autoAnalyze)
     {
-        if (source.Kind != NotebookSourceKind.File)
-        {
-            DisposeFileWatcher();
-            _qualityViewModel?.ClearFile();
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(source.FilePath))
+        if (source.Kind == NotebookSourceKind.File && !string.IsNullOrWhiteSpace(source.FilePath))
         {
             SetupFileWatcher(source.FilePath);
-            _qualityViewModel?.SetFilePath(source.FilePath, source.CsvOptions, source.JsonOptions, sourceFiles);
         }
-        else if (source.FilePaths.Count > 0)
+        else
         {
             DisposeFileWatcher();
-            _qualityViewModel?.SetFilePath(source.FilePaths[0], sourceFiles: sourceFiles);
         }
+
+        var qualitySourcePath = !string.IsNullOrWhiteSpace(source.FilePath)
+            ? source.FilePath
+            : source.FilePaths.FirstOrDefault() ?? source.DisplayName;
+
+        _qualityViewModel?.SetAnalysisContext(
+            qualitySourcePath,
+            (cancellationToken, progress) => BuildQualityProfileForSourceAsync(source, cancellationToken, progress),
+            (selectedDimensions, cancellationToken, progress) => BuildQualityGroupedStatisticsForSourceAsync(source, selectedDimensions, cancellationToken, progress),
+            source.CsvOptions,
+            source.JsonOptions,
+            sourceFiles,
+            GetQualityReadyMessage(source, sourceFiles));
 
         if (autoAnalyze && source.RowCount <= AutoProfileRowThreshold)
             _qualityViewModel?.StartAutoAnalyze();
+    }
+
+    private string GetQualityReadyMessage(NotebookSource source, IReadOnlyList<SourceFileSummary>? sourceFiles)
+    {
+        if (source.Kind != NotebookSourceKind.File)
+            return $"{source.DisplayName} is active in Query Hub. Profiling will analyze the current set.";
+
+        if (sourceFiles != null && sourceFiles.Count > 1)
+            return $"{sourceFiles.Count} parquet files loaded as one logical table. Profiling will analyze the current set.";
+
+        return "File loaded. Profiling will analyze the current set.";
+    }
+
+    private async Task<FileProfile> BuildQualityProfileForSourceAsync(
+        NotebookSource source,
+        CancellationToken cancellationToken,
+        IProgress<(int Current, int Total)>? progress)
+    {
+        var tempPath = CreateQualityTempFilePath();
+
+        try
+        {
+            var queryState = CreateQueryStateForSource(source, _currentRowLimit, 0);
+            await GetNotebookSession().ExportSourceAsync(source.Alias, tempPath, queryState, cancellationToken);
+
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+            using var parquetService = new ParquetService(logger);
+            var profile = await parquetService.GetFileProfileAsync(tempPath, cancellationToken: cancellationToken, progress: progress);
+
+            profile.FilePath = source.FilePath ?? source.DisplayName;
+            profile.FileName = queryState.HasActiveFilters
+                ? $"{source.DisplayName} (current set)"
+                : source.DisplayName;
+
+            if (source.Format.HasValue)
+                profile.SourceFormat = source.Format.Value;
+
+            return profile;
+        }
+        finally
+        {
+            TryDeleteTempQualityFile(tempPath);
+        }
+    }
+
+    private async Task<Dictionary<string, FileProfile>> BuildQualityGroupedStatisticsForSourceAsync(
+        NotebookSource source,
+        IReadOnlyList<string> selectedDimensions,
+        CancellationToken cancellationToken,
+        IProgress<(int Current, int Total)>? progress)
+    {
+        var tempPath = CreateQualityTempFilePath();
+
+        try
+        {
+            var queryState = CreateQueryStateForSource(source, _currentRowLimit, 0);
+            await GetNotebookSession().ExportSourceAsync(source.Alias, tempPath, queryState, cancellationToken);
+
+            var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ParquetService>.Instance;
+            using var parquetService = new ParquetService(logger);
+            return await parquetService.GetGroupedStatisticsAsync(
+                tempPath,
+                selectedDimensions.ToList(),
+                cancellationToken: cancellationToken,
+                progress: progress);
+        }
+        finally
+        {
+            TryDeleteTempQualityFile(tempPath);
+        }
+    }
+
+    private static string CreateQualityTempFilePath()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "HipHipParquet", "quality-cache");
+        Directory.CreateDirectory(tempDir);
+        return Path.Combine(tempDir, $"quality-{Guid.NewGuid():N}.parquet");
+    }
+
+    private static void TryDeleteTempQualityFile(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+        }
+        catch
+        {
+            // Best-effort cleanup for transient quality review exports.
+        }
     }
 
     private async Task LoadNotebookPreviewAsync(
@@ -531,7 +627,8 @@ public partial class MainWindow : Window
                 _currentFilePath = null;
                 _currentFilePaths = null;
                 DisposeFileWatcher();
-                _qualityViewModel?.ClearFile();
+                if (source.Kind == NotebookSourceKind.File)
+                    _qualityViewModel?.ClearFile();
             }
 
             EnableSaveMenuItems();
@@ -788,7 +885,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var scopeState = CreateQueryStateForSource(source, RowLimitBatch, 0);
+        var scopeState = CreateQueryStateForSource(source, _currentRowLimit, 0);
         var scopeCount = _previewFilteredRowCount > 0 ? _previewFilteredRowCount : source.RowCount;
         if (scopeCount > 250_000)
         {
@@ -848,7 +945,7 @@ public partial class MainWindow : Window
         try
         {
             ShowLoading("Exporting notebook scope...");
-            var scopeState = CreateQueryStateForSource(source, RowLimitBatch, 0);
+            var scopeState = CreateQueryStateForSource(source, _currentRowLimit, 0);
             await GetNotebookSession().ExportSourceAsync(source.Alias, saveFileDialog.FileName, scopeState);
             AddNotebookBlock(
                 NotebookBlockKind.Export,
@@ -2276,8 +2373,31 @@ public partial class MainWindow : Window
     {
         var canEdit = CanEditCurrentWorkingSet();
         var selectedRowCount = GetSelectedRowViews().Count;
+        var visibleRowCount = _dataView?.Count ?? 0;
+        var currentCellAvailable = TryGetCurrentCellContext(out _);
+        var editKeepSelectedRowsMenuItem = FindName("EditKeepSelectedRowsMenuItem") as MenuItem;
+        var editDeleteUnselectedRowsMenuItem = FindName("EditDeleteUnselectedRowsMenuItem") as MenuItem;
+        var editDuplicateRowsMenuItem = FindName("EditDuplicateRowsMenuItem") as MenuItem;
+        var editInsertBlankAboveMenuItem = FindName("EditInsertBlankAboveMenuItem") as MenuItem;
+        var editInsertBlankBelowMenuItem = FindName("EditInsertBlankBelowMenuItem") as MenuItem;
+        var editDeleteDuplicateRowsMenuItem = FindName("EditDeleteDuplicateRowsMenuItem") as MenuItem;
         EditDeleteRowsMenuItem.Header = selectedRowCount == 1 ? "_Delete Row" : "_Delete Row(s)";
         EditDeleteRowsMenuItem.IsEnabled = canEdit && selectedRowCount > 0;
+        if (editKeepSelectedRowsMenuItem != null)
+            editKeepSelectedRowsMenuItem.IsEnabled = canEdit && selectedRowCount > 0 && visibleRowCount > selectedRowCount;
+        if (editDeleteUnselectedRowsMenuItem != null)
+            editDeleteUnselectedRowsMenuItem.IsEnabled = canEdit && selectedRowCount > 0 && visibleRowCount > selectedRowCount;
+        if (editDuplicateRowsMenuItem != null)
+        {
+            editDuplicateRowsMenuItem.Header = selectedRowCount == 1 ? "Duplicate Row" : selectedRowCount > 1 ? $"Duplicate {selectedRowCount:N0} Rows" : "Duplicate Row(s)";
+            editDuplicateRowsMenuItem.IsEnabled = canEdit && selectedRowCount > 0;
+        }
+        if (editInsertBlankAboveMenuItem != null)
+            editInsertBlankAboveMenuItem.IsEnabled = canEdit && (selectedRowCount > 0 || currentCellAvailable);
+        if (editInsertBlankBelowMenuItem != null)
+            editInsertBlankBelowMenuItem.IsEnabled = canEdit && (selectedRowCount > 0 || currentCellAvailable);
+        if (editDeleteDuplicateRowsMenuItem != null)
+            editDeleteDuplicateRowsMenuItem.IsEnabled = canEdit && GetVisibleDataColumnNames().Count > 0;
         UpdateUndoUi();
     }
 
@@ -5602,15 +5722,17 @@ public partial class MainWindow : Window
                 LoadingText.Text = $"Downloading update ({pct}%)…");
 
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
-            var installerPath = await Services.UpdateService.DownloadInstallerAsync(
+            var downloadResult = await Services.UpdateService.DownloadInstallerWithDiagnosticsAsync(
                 update.InstallerUrl!, progress, cts.Token);
+            var installerPath = downloadResult.InstallerPath;
 
             HideLoading();
 
-            if (installerPath == null || !File.Exists(installerPath))
+            if (!downloadResult.Succeeded || installerPath == null || !File.Exists(installerPath))
             {
                 MessageBox.Show(
-                    "Download failed. Opening the releases page so you can install manually.",
+                    "Download failed. Opening the releases page so you can install manually.\n\n" +
+                    (string.IsNullOrWhiteSpace(downloadResult.Message) ? "No additional diagnostics were available." : downloadResult.Message),
                     "Download Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
                 OpenUrl(update.ReleasePageUrl);
                 return;
@@ -5618,10 +5740,14 @@ public partial class MainWindow : Window
 
             // Verify installer integrity: checksum first, then Authenticode signature
             var verified = false;
+            string? verificationMessage = null;
             if (!string.IsNullOrEmpty(update.ChecksumsUrl))
             {
                 ShowLoading("Verifying checksum…");
-                verified = await Services.UpdateService.VerifyChecksumAsync(installerPath, update.ChecksumsUrl, cts.Token);
+                var checksumResult = await Services.UpdateService.VerifyChecksumWithDiagnosticsAsync(installerPath, update.ChecksumsUrl, cts.Token);
+                verified = checksumResult.Succeeded;
+                if (!verified)
+                    verificationMessage = checksumResult.Message;
                 HideLoading();
             }
 
@@ -5630,8 +5756,15 @@ public partial class MainWindow : Window
                 ShowLoading("Verifying signature\u2026");
                 try
                 {
-                    verified = await Task.Run(() =>
-                        Services.UpdateService.VerifyAuthenticodeSignature(installerPath));
+                    var signatureResult = await Task.Run(() =>
+                        Services.UpdateService.VerifyAuthenticodeSignatureWithDiagnostics(installerPath));
+                    verified = signatureResult.Succeeded;
+                    if (!verified)
+                    {
+                        verificationMessage = string.IsNullOrWhiteSpace(verificationMessage)
+                            ? signatureResult.Message
+                            : $"{verificationMessage}\n{signatureResult.Message}";
+                    }
                 }
                 finally
                 {
@@ -5644,6 +5777,7 @@ public partial class MainWindow : Window
                 try { File.Delete(installerPath); } catch { /* best-effort cleanup */ }
                 MessageBox.Show(
                     "The downloaded installer could not be verified (no valid checksum or Authenticode signature).\n\n" +
+                    (string.IsNullOrWhiteSpace(verificationMessage) ? string.Empty : $"Details: {verificationMessage}\n\n") +
                     "Opening the releases page so you can download and verify manually.",
                     "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
                 OpenUrl(update.ReleasePageUrl);

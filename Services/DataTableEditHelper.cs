@@ -14,8 +14,12 @@ public static class DataTableEditHelper
         ArgumentException.ThrowIfNullOrWhiteSpace(rowNumberColumnName);
 
         var rowsToDelete = GetDistinctRows(dataTable, selectedRows);
+        if (rowsToDelete.Count == 0)
+            return 0;
+
+        var firstChangedIndex = GetFirstRowIndex(dataTable, rowsToDelete);
         RemoveRows(dataTable, rowsToDelete);
-        ResequenceRowNumbers(dataTable, rowNumberColumnName);
+        ResequenceRowNumbers(dataTable, rowNumberColumnName, firstChangedIndex);
         return rowsToDelete.Count;
     }
 
@@ -27,8 +31,12 @@ public static class DataTableEditHelper
 
         var rowsToKeep = GetDistinctRows(dataTable, selectedRows).ToHashSet();
         var rowsToDelete = dataTable.Rows.Cast<DataRow>().Where(row => !rowsToKeep.Contains(row)).ToList();
+        if (rowsToDelete.Count == 0)
+            return 0;
+
+        var firstChangedIndex = GetFirstRowIndex(dataTable, rowsToDelete);
         RemoveRows(dataTable, rowsToDelete);
-        ResequenceRowNumbers(dataTable, rowNumberColumnName);
+        ResequenceRowNumbers(dataTable, rowNumberColumnName, firstChangedIndex);
         return rowsToDelete.Count;
     }
 
@@ -41,11 +49,13 @@ public static class DataTableEditHelper
         ArgumentNullException.ThrowIfNull(selectedRows);
         ArgumentException.ThrowIfNullOrWhiteSpace(rowNumberColumnName);
 
+        var rowIndexMap = BuildRowIndexMap(dataTable);
+
         var rowsToDuplicate = GetDistinctRows(dataTable, selectedRows)
             .Select(row => new
             {
                 Row = row,
-                Index = dataTable.Rows.IndexOf(row),
+                Index = rowIndexMap.TryGetValue(row, out var index) ? index : -1,
                 Values = row.ItemArray.ToArray()
             })
             .Where(item => item.Index >= 0)
@@ -53,6 +63,13 @@ public static class DataTableEditHelper
             .ToList();
 
         var insertedCount = 0;
+        var firstChangedIndex = rowsToDuplicate.Count > 0
+            ? rowsToDuplicate[0].Index + 1
+            : 0;
+
+        if (rowsToDuplicate.Count == 0)
+            return 0;
+
         foreach (var item in rowsToDuplicate)
         {
             var newRow = dataTable.NewRow();
@@ -61,7 +78,7 @@ public static class DataTableEditHelper
             insertedCount++;
         }
 
-        ResequenceRowNumbers(dataTable, rowNumberColumnName);
+        ResequenceRowNumbers(dataTable, rowNumberColumnName, firstChangedIndex);
         return insertedCount;
     }
 
@@ -84,7 +101,7 @@ public static class DataTableEditHelper
         }
 
         dataTable.Rows.InsertAt(newRow, insertBelow ? index + 1 : index);
-        ResequenceRowNumbers(dataTable, rowNumberColumnName);
+        ResequenceRowNumbers(dataTable, rowNumberColumnName, index);
         return 1;
     }
 
@@ -140,8 +157,12 @@ public static class DataTableEditHelper
                 duplicates.Add(row);
         }
 
+        if (duplicates.Count == 0)
+            return 0;
+
+        var firstChangedIndex = GetFirstRowIndex(dataTable, duplicates);
         RemoveRows(dataTable, duplicates);
-        ResequenceRowNumbers(dataTable, rowNumberColumnName);
+        ResequenceRowNumbers(dataTable, rowNumberColumnName, firstChangedIndex);
         return duplicates.Count;
     }
 
@@ -251,7 +272,7 @@ public static class DataTableEditHelper
         return updated;
     }
 
-    public static void ResequenceRowNumbers(DataTable dataTable, string rowNumberColumnName)
+    public static void ResequenceRowNumbers(DataTable dataTable, string rowNumberColumnName, int startingRowIndex = 0)
     {
         ArgumentNullException.ThrowIfNull(dataTable);
         ArgumentException.ThrowIfNullOrWhiteSpace(rowNumberColumnName);
@@ -259,8 +280,24 @@ public static class DataTableEditHelper
         if (!dataTable.Columns.Contains(rowNumberColumnName))
             return;
 
-        for (int i = 0; i < dataTable.Rows.Count; i++)
+        var start = Math.Max(0, Math.Min(startingRowIndex, dataTable.Rows.Count));
+        for (int i = start; i < dataTable.Rows.Count; i++)
             dataTable.Rows[i][rowNumberColumnName] = i + 1;
+    }
+
+    private static int GetFirstRowIndex(DataTable dataTable, IEnumerable<DataRow> rows)
+    {
+        var rowSet = rows.ToHashSet();
+        if (rowSet.Count == 0)
+            return 0;
+
+        for (int i = 0; i < dataTable.Rows.Count; i++)
+        {
+            if (rowSet.Contains(dataTable.Rows[i]))
+                return i;
+        }
+
+        return 0;
     }
 
     private static List<DataRow> GetDistinctRows(DataTable dataTable, IEnumerable<DataRowView> selectedRows)
@@ -269,6 +306,23 @@ public static class DataTableEditHelper
             .Where(row => row.Table == dataTable)
             .Distinct()
             .ToList();
+
+    private static Dictionary<DataRow, int> BuildRowIndexMap(DataTable dataTable)
+    {
+        var map = new Dictionary<DataRow, int>(DataRowReferenceComparer.Instance);
+        for (int i = 0; i < dataTable.Rows.Count; i++)
+            map[dataTable.Rows[i]] = i;
+        return map;
+    }
+
+    private sealed class DataRowReferenceComparer : IEqualityComparer<DataRow>
+    {
+        public static readonly DataRowReferenceComparer Instance = new();
+
+        public bool Equals(DataRow? x, DataRow? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(DataRow obj) => RuntimeHelpers.GetHashCode(obj);
+    }
 
     private static IEnumerable<DataTableCellTarget> DeduplicateTargets(IEnumerable<DataTableCellTarget> targets)
     {
