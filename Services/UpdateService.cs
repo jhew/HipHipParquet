@@ -132,6 +132,8 @@ public static class UpdateService
         IProgress<int>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        string? tempPath = null;
+
         try
         {
             if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out _))
@@ -154,7 +156,7 @@ public static class UpdateService
             if (finalUri == null || !IsTrustedGithubDownloadUri(finalUri))
                 return UpdateDownloadResult.Fail(UpdateFailureKind.UntrustedSource, "The installer download redirected to an untrusted host.");
 
-            var tempPath   = CreateUniqueInstallerTempPath(finalUri);
+            tempPath = CreateUniqueInstallerTempPath(finalUri);
             var totalBytes = response.Content.Headers.ContentLength ?? -1L;
             var downloaded = 0L;
 
@@ -176,26 +178,32 @@ public static class UpdateService
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            TryDeleteFile(tempPath);
             return UpdateDownloadResult.Fail(UpdateFailureKind.Cancelled, "The update download was cancelled.");
         }
         catch (TaskCanceledException ex)
         {
+            TryDeleteFile(tempPath);
             return UpdateDownloadResult.Fail(UpdateFailureKind.Timeout, $"The update download timed out: {ex.Message}");
         }
         catch (HttpRequestException ex)
         {
+            TryDeleteFile(tempPath);
             return UpdateDownloadResult.Fail(UpdateFailureKind.Network, $"The update download failed due to a network error: {ex.Message}");
         }
         catch (IOException ex)
         {
+            TryDeleteFile(tempPath);
             return UpdateDownloadResult.Fail(UpdateFailureKind.Io, $"The installer could not be saved locally: {ex.Message}");
         }
         catch (UnauthorizedAccessException ex)
         {
+            TryDeleteFile(tempPath);
             return UpdateDownloadResult.Fail(UpdateFailureKind.Io, $"The installer could not be written because access was denied: {ex.Message}");
         }
         catch (Exception ex)
         {
+            TryDeleteFile(tempPath);
             return UpdateDownloadResult.Fail(UpdateFailureKind.Unknown, $"The update download failed unexpectedly: {ex.Message}");
         }
     }
@@ -344,6 +352,22 @@ public static class UpdateService
         await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, true);
         var hash = await sha256.ComputeHashAsync(stream, cancellationToken);
         return Convert.ToHexString(hash);
+    }
+
+    private static void TryDeleteFile(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return;
+
+        try
+        {
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+        }
+        catch
+        {
+            // Best-effort cleanup for partially downloaded installers.
+        }
     }
 }
 

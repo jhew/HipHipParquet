@@ -429,7 +429,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var queryState = CreateQueryStateForSource(source, RowLimitBatch, 0);
+            var queryState = CreateQueryStateForSource(source, _currentRowLimit, 0);
             await GetNotebookSession().ExportSourceAsync(source.Alias, tempPath, queryState, cancellationToken);
 
             var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
@@ -463,7 +463,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var queryState = CreateQueryStateForSource(source, RowLimitBatch, 0);
+            var queryState = CreateQueryStateForSource(source, _currentRowLimit, 0);
             await GetNotebookSession().ExportSourceAsync(source.Alias, tempPath, queryState, cancellationToken);
 
             var logger = App.Current.Services.GetService<ILogger<ParquetService>>()
@@ -885,7 +885,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var scopeState = CreateQueryStateForSource(source, RowLimitBatch, 0);
+        var scopeState = CreateQueryStateForSource(source, _currentRowLimit, 0);
         var scopeCount = _previewFilteredRowCount > 0 ? _previewFilteredRowCount : source.RowCount;
         if (scopeCount > 250_000)
         {
@@ -945,7 +945,7 @@ public partial class MainWindow : Window
         try
         {
             ShowLoading("Exporting notebook scope...");
-            var scopeState = CreateQueryStateForSource(source, RowLimitBatch, 0);
+            var scopeState = CreateQueryStateForSource(source, _currentRowLimit, 0);
             await GetNotebookSession().ExportSourceAsync(source.Alias, saveFileDialog.FileName, scopeState);
             AddNotebookBlock(
                 NotebookBlockKind.Export,

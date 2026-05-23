@@ -136,40 +136,40 @@ public class UpdateServiceTests
         Assert.Equal("https://release-assets.githubusercontent.com/repos/123/456/HipHipParquet-3.2.0-Setup.exe", result!.InstallerUrl);
     }
 
-      [Fact]
-      public async Task DownloadInstallerWithDiagnosticsAsync_InvalidUrl_ReturnsFailureKind()
-      {
+    [Fact]
+    public async Task DownloadInstallerWithDiagnosticsAsync_InvalidUrl_ReturnsFailureKind()
+    {
         var result = await UpdateService.DownloadInstallerWithDiagnosticsAsync("not-a-url");
 
         Assert.False(result.Succeeded);
         Assert.Equal(UpdateFailureKind.InvalidUrl, result.FailureKind);
-      }
+    }
 
-      [Fact]
-      public async Task VerifyChecksumWithDiagnosticsAsync_UntrustedUrl_ReturnsFailureKind()
-      {
+    [Fact]
+    public async Task VerifyChecksumWithDiagnosticsAsync_UntrustedUrl_ReturnsFailureKind()
+    {
         var tempFile = Path.GetTempFileName();
         try
         {
-          await File.WriteAllTextAsync(tempFile, "installer-bytes");
+            await File.WriteAllTextAsync(tempFile, "installer-bytes");
 
-          var result = await UpdateService.VerifyChecksumWithDiagnosticsAsync(tempFile, "https://example.com/SHA256SUMS.txt");
+            var result = await UpdateService.VerifyChecksumWithDiagnosticsAsync(tempFile, "https://example.com/SHA256SUMS.txt");
 
-          Assert.False(result.Succeeded);
-          Assert.Equal(UpdateFailureKind.UntrustedSource, result.FailureKind);
+            Assert.False(result.Succeeded);
+            Assert.Equal(UpdateFailureKind.UntrustedSource, result.FailureKind);
         }
         finally
         {
-          File.Delete(tempFile);
+            File.Delete(tempFile);
         }
-      }
+    }
 
-      [Fact]
-      public void VerifyAuthenticodeSignatureWithDiagnostics_MissingFile_ReturnsFileNotFound()
-      {
+    [Fact]
+    public void VerifyAuthenticodeSignatureWithDiagnostics_MissingFile_ReturnsFileNotFound()
+    {
         var result = UpdateService.VerifyAuthenticodeSignatureWithDiagnostics(@"C:\nonexistent-file-12345.exe");
 
         Assert.False(result.Succeeded);
         Assert.Equal(UpdateFailureKind.FileNotFound, result.FailureKind);
-      }
+    }
 }
