@@ -47,6 +47,17 @@ public class MarkdownServiceTests
     }
 
     [Fact]
+    public void RenderHtmlDocument_DisablesRawHtml()
+    {
+        var service = new MarkdownService();
+
+        var html = service.RenderHtmlDocument("<script>alert('x')</script>", MarkdownFlavorProfile.ExtendedBestEffort);
+
+        Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("&lt;script&gt;alert('x')&lt;/script&gt;", html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SaveToFileAsync_ThenLoadFromFileAsync_RoundTripsContent()
     {
         var service = new MarkdownService();

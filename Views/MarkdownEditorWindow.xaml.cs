@@ -35,24 +35,17 @@ public partial class MarkdownEditorWindow : Window
         {
             Interval = TimeSpan.FromMilliseconds(250)
         };
-        _previewDebounceTimer.Tick += (_, _) =>
-        {
-            _previewDebounceTimer.Stop();
-            RefreshPreviewIfVisible();
-        };
+        _previewDebounceTimer.Tick += PreviewDebounceTimerOnTick;
 
         _persistDebounceTimer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(800)
         };
-        _persistDebounceTimer.Tick += async (_, _) =>
-        {
-            _persistDebounceTimer.Stop();
-            await PersistStateAsync();
-        };
+        _persistDebounceTimer.Tick += PersistDebounceTimerOnTick;
 
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
+        Closed += OnWindowClosed;
         PreviewBrowser.Navigating += OnPreviewBrowserNavigating;
         EditorTextBox.TextChanged += OnEditorTextChanged;
     }
@@ -68,7 +61,7 @@ public partial class MarkdownEditorWindow : Window
             await OpenFileAsync(pendingFile);
         }
 
-        RefreshPreviewIfVisible(force: true);
+        RefreshPreviewIfVisible();
         EditorTextBox.Focus();
         EditorTextBox.CaretIndex = EditorTextBox.Text.Length;
     }
@@ -154,8 +147,17 @@ public partial class MarkdownEditorWindow : Window
         if (e.Uri == null || e.Uri.Scheme.Equals("about", StringComparison.OrdinalIgnoreCase))
             return;
 
+        if (e.Uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+            e.Uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            e.Uri.Scheme.Equals(Uri.UriSchemeMailto, StringComparison.OrdinalIgnoreCase))
+        {
+            e.Cancel = true;
+            Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+            return;
+        }
+
         e.Cancel = true;
-        Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+        ViewModel.StatusMessage = $"Blocked opening {e.Uri.Scheme} links from the preview.";
     }
 
     private async void OnWindowClosing(object? sender, CancelEventArgs e)
@@ -173,6 +175,14 @@ public partial class MarkdownEditorWindow : Window
         _ = Dispatcher.BeginInvoke(new Action(Close));
     }
 
+    private void OnWindowClosed(object? sender, EventArgs e)
+    {
+        _previewDebounceTimer.Stop();
+        _previewDebounceTimer.Tick -= PreviewDebounceTimerOnTick;
+        _persistDebounceTimer.Stop();
+        _persistDebounceTimer.Tick -= PersistDebounceTimerOnTick;
+    }
+
     private void LoadDocument(string? filePath, string content, bool isDirty)
     {
         _suppressDocumentEvents = true;
@@ -182,7 +192,7 @@ public partial class MarkdownEditorWindow : Window
         ViewModel.IsDirty = isDirty;
         _suppressDocumentEvents = false;
         _previewDirty = true;
-        RefreshPreviewIfVisible(force: true);
+        RefreshPreviewIfVisible();
     }
 
     private async Task RestoreStateAsync()
@@ -310,6 +320,18 @@ public partial class MarkdownEditorWindow : Window
     {
         _persistDebounceTimer.Stop();
         _persistDebounceTimer.Start();
+    }
+
+    private void PreviewDebounceTimerOnTick(object? sender, EventArgs e)
+    {
+        _previewDebounceTimer.Stop();
+        RefreshPreviewIfVisible();
+    }
+
+    private async void PersistDebounceTimerOnTick(object? sender, EventArgs e)
+    {
+        _persistDebounceTimer.Stop();
+        await PersistStateAsync();
     }
 
     private async Task PersistStateAsync()

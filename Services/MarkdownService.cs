@@ -176,10 +176,13 @@ public sealed class MarkdownService
     }
 
     private static MarkdownPipeline BuildCommonMarkPipeline()
-        => new MarkdownPipelineBuilder().Build();
+        => new MarkdownPipelineBuilder()
+            .DisableHtml()
+            .Build();
 
     private static MarkdownPipeline BuildGitHubStylePipeline()
         => new MarkdownPipelineBuilder()
+            .DisableHtml()
             .UsePipeTables()
             .UseTaskLists()
             .UseAutoLinks()
@@ -189,6 +192,7 @@ public sealed class MarkdownService
 
     private static MarkdownPipeline BuildExtendedPipeline()
         => new MarkdownPipelineBuilder()
+            .DisableHtml()
             .UseAdvancedExtensions()
             .UseAutoIdentifiers()
             .Build();

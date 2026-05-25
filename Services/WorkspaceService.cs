@@ -1,6 +1,7 @@
 using HipHipParquet.Models;
 using System.Text.Json;
 using System.IO;
+using System.Threading;
 
 namespace HipHipParquet.Services;
 
@@ -20,6 +21,7 @@ public class WorkspaceService
     private List<NotebookQueryDocument> _savedNotebookQueries = [];
     private List<SchemaTemplate> _savedSchemaTemplates = [];
     private MarkdownEditorState? _markdownEditorState;
+    private readonly SemaphoreSlim _markdownEditorStateGate = new(1, 1);
     private bool _viewsLoaded;
     private bool _recipesLoaded;
     private bool _queriesLoaded;
@@ -335,6 +337,7 @@ public class WorkspaceService
 
     private async Task PersistMarkdownEditorStateAsync()
     {
+        await _markdownEditorStateGate.WaitAsync();
         try
         {
             var dir = Path.GetDirectoryName(_markdownEditorStatePath);
@@ -347,6 +350,10 @@ public class WorkspaceService
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error persisting markdown editor state: {ex.Message}");
+        }
+        finally
+        {
+            _markdownEditorStateGate.Release();
         }
     }
 }

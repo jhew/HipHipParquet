@@ -1295,7 +1295,7 @@ public partial class MainWindow : Window
     {
         var openFileDialog = new OpenFileDialog
         {
-            Filter = Services.FileFormatDetector.GetOpenFileDialogFilter() + "|Markdown files (*.md;*.markdown;*.mdown;*.mkd)|*.md;*.markdown;*.mdown;*.mkd",
+            Filter = Services.FileFormatDetector.GetOpenFileDialogFilter(),
             Title = "Select File",
             Multiselect = true
         };
