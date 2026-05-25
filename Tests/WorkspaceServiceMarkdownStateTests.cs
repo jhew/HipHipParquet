@@ -26,7 +26,7 @@ public class WorkspaceServiceMarkdownStateTests
             await service.SaveMarkdownEditorStateAsync(expected);
 
             var reloadedService = new WorkspaceService(tempRoot);
-            var actual = reloadedService.GetMarkdownEditorState();
+            var actual = await reloadedService.GetMarkdownEditorStateAsync();
 
             Assert.NotNull(actual);
             Assert.Equal(expected.FilePath, actual!.FilePath);

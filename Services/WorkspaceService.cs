@@ -156,9 +156,9 @@ public class WorkspaceService
         await PersistSchemaTemplatesAsync();
     }
 
-    public MarkdownEditorState? GetMarkdownEditorState()
+    public async Task<MarkdownEditorState?> GetMarkdownEditorStateAsync()
     {
-        if (!_markdownEditorStateLoaded) LoadMarkdownEditorState();
+        if (!_markdownEditorStateLoaded) await LoadMarkdownEditorStateAsync();
         return _markdownEditorState;
     }
 
@@ -241,16 +241,16 @@ public class WorkspaceService
         }
     }
 
-    private void LoadMarkdownEditorState()
+    private async Task LoadMarkdownEditorStateAsync()
     {
         _markdownEditorStateLoaded = true;
-        _markdownEditorStateGate.Wait();
+        await _markdownEditorStateGate.WaitAsync().ConfigureAwait(false);
         try
         {
             if (!File.Exists(_markdownEditorStatePath))
                 return;
 
-            var json = File.ReadAllText(_markdownEditorStatePath);
+            var json = await File.ReadAllTextAsync(_markdownEditorStatePath).ConfigureAwait(false);
             _markdownEditorState = JsonSerializer.Deserialize<MarkdownEditorState>(json);
         }
         catch (Exception ex)
@@ -342,7 +342,7 @@ public class WorkspaceService
 
     private async Task PersistMarkdownEditorStateAsync()
     {
-        await _markdownEditorStateGate.WaitAsync();
+        await _markdownEditorStateGate.WaitAsync().ConfigureAwait(false);
         string? tempPath = null;
         try
         {
@@ -352,7 +352,7 @@ public class WorkspaceService
 
             var json = JsonSerializer.Serialize(_markdownEditorState);
             tempPath = _markdownEditorStatePath + ".tmp";
-            await File.WriteAllTextAsync(tempPath, json);
+            await File.WriteAllTextAsync(tempPath, json).ConfigureAwait(false);
             File.Move(tempPath, _markdownEditorStatePath, overwrite: true);
         }
         catch (Exception ex)

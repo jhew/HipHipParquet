@@ -152,7 +152,15 @@ public partial class MarkdownEditorWindow : Window
             e.Uri.Scheme.Equals(Uri.UriSchemeMailto, StringComparison.OrdinalIgnoreCase))
         {
             e.Cancel = true;
-            Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+            try
+            {
+                Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+            }
+            catch (Exception)
+            {
+                ViewModel.StatusMessage = $"Unable to open link: {e.Uri.AbsoluteUri}";
+            }
+
             return;
         }
 
@@ -197,7 +205,7 @@ public partial class MarkdownEditorWindow : Window
 
     private async Task RestoreStateAsync()
     {
-        var state = _workspaceService.GetMarkdownEditorState();
+        var state = await _workspaceService.GetMarkdownEditorStateAsync();
         if (state == null)
         {
             ViewModel.StatusMessage = "Open or create a Markdown document.";
@@ -238,8 +246,12 @@ public partial class MarkdownEditorWindow : Window
         if (!ViewModel.IsDirty)
             return true;
 
+        var keepDraftNote = actionLabel.Equals("closing", StringComparison.OrdinalIgnoreCase)
+            ? "\n\nSelecting No closes the window and keeps this draft for next time."
+            : string.Empty;
+
         var result = MessageBox.Show(
-            $"You have unsaved markdown changes. Save before {actionLabel}?",
+            $"You have unsaved markdown changes. Save before {actionLabel}?{keepDraftNote}",
             "Unsaved Markdown Changes",
             MessageBoxButton.YesNoCancel,
             MessageBoxImage.Warning);
