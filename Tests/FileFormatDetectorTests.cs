@@ -296,8 +296,10 @@ public class FileFormatDetectorTests
         Assert.Contains("*.tsv", filter);
         Assert.Contains("*.json", filter);
         Assert.Contains("*.xlsx", filter);
+        Assert.Contains("*.md", filter);
         Assert.Contains("All supported files (*.parquet;*.snappy.parquet;", filter);
         Assert.Contains("Parquet files (*.parquet;*.snappy.parquet)", filter);
+        Assert.Contains("Markdown files (*.md;*.markdown;*.mdown;*.mkd)", filter);
     }
 
     [Fact]

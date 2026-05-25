@@ -1,6 +1,7 @@
 using HipHipParquet.Models;
 using System.Text.Json;
 using System.IO;
+using System.Threading;
 
 namespace HipHipParquet.Services;
 
@@ -9,36 +10,36 @@ namespace HipHipParquet.Services;
 /// </summary>
 public class WorkspaceService
 {
-    private static readonly string SavedViewsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "HipHipParquet",
-        "saved-views.json");
-
-    private static readonly string RecipesPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "HipHipParquet",
-        "recipes.json");
-
-    private static readonly string NotebookQueriesPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "HipHipParquet",
-        "notebook-queries.json");
-
-    private static readonly string SchemaTemplatesPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "HipHipParquet",
-        "schema-templates.json");
+    private readonly string _savedViewsPath;
+    private readonly string _recipesPath;
+    private readonly string _notebookQueriesPath;
+    private readonly string _schemaTemplatesPath;
+    private readonly string _markdownEditorStatePath;
 
     private List<SavedView> _savedViews = [];
     private List<CleaningRecipe> _savedRecipes = [];
     private List<NotebookQueryDocument> _savedNotebookQueries = [];
     private List<SchemaTemplate> _savedSchemaTemplates = [];
+    private MarkdownEditorState? _markdownEditorState;
+    private readonly SemaphoreSlim _markdownEditorStateGate = new(1, 1);
     private bool _viewsLoaded;
     private bool _recipesLoaded;
     private bool _queriesLoaded;
     private bool _schemaTemplatesLoaded;
+    private bool _markdownEditorStateLoaded;
 
-    public WorkspaceService() { }
+    public WorkspaceService(string? storageRoot = null)
+    {
+        var root = storageRoot ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "HipHipParquet");
+
+        _savedViewsPath = Path.Combine(root, "saved-views.json");
+        _recipesPath = Path.Combine(root, "recipes.json");
+        _notebookQueriesPath = Path.Combine(root, "notebook-queries.json");
+        _schemaTemplatesPath = Path.Combine(root, "schema-templates.json");
+        _markdownEditorStatePath = Path.Combine(root, "markdown-editor-state.json");
+    }
 
     /// <summary>
     /// Gets all saved views.
@@ -155,15 +156,28 @@ public class WorkspaceService
         await PersistSchemaTemplatesAsync();
     }
 
+    public async Task<MarkdownEditorState?> GetMarkdownEditorStateAsync()
+    {
+        if (!_markdownEditorStateLoaded) await LoadMarkdownEditorStateAsync();
+        return _markdownEditorState;
+    }
+
+    public async Task SaveMarkdownEditorStateAsync(MarkdownEditorState state)
+    {
+        _markdownEditorStateLoaded = true;
+        _markdownEditorState = state;
+        await PersistMarkdownEditorStateAsync();
+    }
+
     private void LoadSavedViews()
     {
         _viewsLoaded = true;
         try
         {
-            if (!File.Exists(SavedViewsPath))
+            if (!File.Exists(_savedViewsPath))
                 return;
 
-            var json = File.ReadAllText(SavedViewsPath);
+            var json = File.ReadAllText(_savedViewsPath);
             _savedViews = JsonSerializer.Deserialize<List<SavedView>>(json) ?? [];
         }
         catch (Exception ex)
@@ -178,10 +192,10 @@ public class WorkspaceService
         _recipesLoaded = true;
         try
         {
-            if (!File.Exists(RecipesPath))
+            if (!File.Exists(_recipesPath))
                 return;
 
-            var json = File.ReadAllText(RecipesPath);
+            var json = File.ReadAllText(_recipesPath);
             _savedRecipes = JsonSerializer.Deserialize<List<CleaningRecipe>>(json) ?? [];
         }
         catch (Exception ex)
@@ -196,10 +210,10 @@ public class WorkspaceService
         _queriesLoaded = true;
         try
         {
-            if (!File.Exists(NotebookQueriesPath))
+            if (!File.Exists(_notebookQueriesPath))
                 return;
 
-            var json = File.ReadAllText(NotebookQueriesPath);
+            var json = File.ReadAllText(_notebookQueriesPath);
             _savedNotebookQueries = JsonSerializer.Deserialize<List<NotebookQueryDocument>>(json) ?? [];
         }
         catch (Exception ex)
@@ -214,10 +228,10 @@ public class WorkspaceService
         _schemaTemplatesLoaded = true;
         try
         {
-            if (!File.Exists(SchemaTemplatesPath))
+            if (!File.Exists(_schemaTemplatesPath))
                 return;
 
-            var json = File.ReadAllText(SchemaTemplatesPath);
+            var json = File.ReadAllText(_schemaTemplatesPath);
             _savedSchemaTemplates = JsonSerializer.Deserialize<List<SchemaTemplate>>(json) ?? [];
         }
         catch (Exception ex)
@@ -227,16 +241,39 @@ public class WorkspaceService
         }
     }
 
+    private async Task LoadMarkdownEditorStateAsync()
+    {
+        _markdownEditorStateLoaded = true;
+        await _markdownEditorStateGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!File.Exists(_markdownEditorStatePath))
+                return;
+
+            var json = await File.ReadAllTextAsync(_markdownEditorStatePath).ConfigureAwait(false);
+            _markdownEditorState = JsonSerializer.Deserialize<MarkdownEditorState>(json);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading markdown editor state: {ex.Message}");
+            _markdownEditorState = null;
+        }
+        finally
+        {
+            _markdownEditorStateGate.Release();
+        }
+    }
+
     private async Task PersistViewsAsync()
     {
         try
         {
-            var dir = Path.GetDirectoryName(SavedViewsPath);
+            var dir = Path.GetDirectoryName(_savedViewsPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
             var json = JsonSerializer.Serialize(_savedViews);
-            await File.WriteAllTextAsync(SavedViewsPath, json);
+            await File.WriteAllTextAsync(_savedViewsPath, json);
         }
         catch (Exception ex)
         {
@@ -248,12 +285,12 @@ public class WorkspaceService
     {
         try
         {
-            var dir = Path.GetDirectoryName(RecipesPath);
+            var dir = Path.GetDirectoryName(_recipesPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
             var json = JsonSerializer.Serialize(_savedRecipes);
-            await File.WriteAllTextAsync(RecipesPath, json);
+            await File.WriteAllTextAsync(_recipesPath, json);
         }
         catch (Exception ex)
         {
@@ -265,7 +302,7 @@ public class WorkspaceService
     {
         try
         {
-            var dir = Path.GetDirectoryName(NotebookQueriesPath);
+            var dir = Path.GetDirectoryName(_notebookQueriesPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
@@ -274,7 +311,7 @@ public class WorkspaceService
                 .ToList();
 
             var json = JsonSerializer.Serialize(orderedQueries);
-            await File.WriteAllTextAsync(NotebookQueriesPath, json);
+            await File.WriteAllTextAsync(_notebookQueriesPath, json);
         }
         catch (Exception ex)
         {
@@ -286,7 +323,7 @@ public class WorkspaceService
     {
         try
         {
-            var dir = Path.GetDirectoryName(SchemaTemplatesPath);
+            var dir = Path.GetDirectoryName(_schemaTemplatesPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
@@ -295,11 +332,39 @@ public class WorkspaceService
                 .ToList();
 
             var json = JsonSerializer.Serialize(orderedTemplates);
-            await File.WriteAllTextAsync(SchemaTemplatesPath, json);
+            await File.WriteAllTextAsync(_schemaTemplatesPath, json);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error persisting schema templates: {ex.Message}");
+        }
+    }
+
+    private async Task PersistMarkdownEditorStateAsync()
+    {
+        await _markdownEditorStateGate.WaitAsync().ConfigureAwait(false);
+        string? tempPath = null;
+        try
+        {
+            var dir = Path.GetDirectoryName(_markdownEditorStatePath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            var json = JsonSerializer.Serialize(_markdownEditorState);
+            tempPath = _markdownEditorStatePath + ".tmp";
+            await File.WriteAllTextAsync(tempPath, json).ConfigureAwait(false);
+            File.Move(tempPath, _markdownEditorStatePath, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            if (!string.IsNullOrWhiteSpace(tempPath) && File.Exists(tempPath))
+                File.Delete(tempPath);
+
+            System.Diagnostics.Debug.WriteLine($"Error persisting markdown editor state: {ex.Message}");
+        }
+        finally
+        {
+            _markdownEditorStateGate.Release();
         }
     }
 }

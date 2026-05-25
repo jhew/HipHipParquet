@@ -29,6 +29,7 @@ public partial class App : Application
                     services.AddSingleton<QualityScoreService>();
                     services.AddSingleton<NarrativeService>();
                     services.AddSingleton<ReportService>();
+                    services.AddSingleton<MarkdownService>();
                 })
                 .Build();
         }
