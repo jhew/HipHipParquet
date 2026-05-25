@@ -89,6 +89,13 @@ public partial class MainWindow : Window
     private bool _queryHubEnabled = true;
     private bool _queryHubExpanded = true;
     private MarkdownEditorWindow? _markdownEditorWindow;
+    private static readonly HashSet<string> MarkdownExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".md",
+        ".markdown",
+        ".mdown",
+        ".mkd"
+    };
     private static readonly IEqualityComparer<(DataRow Row, string ColumnName)> DataRowColumnNameComparer = new DataRowColumnNameReferenceComparer();
 
     // ── Search debounce ───────────────────────────────────────────────────
@@ -1482,20 +1489,14 @@ public partial class MainWindow : Window
             || string.Equals(ext, ".json", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ext, ".jsonl", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ext, ".markdown", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ext, ".mdown", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ext, ".mkd", StringComparison.OrdinalIgnoreCase)
+            || MarkdownExtensions.Contains(ext)
             || Path.GetFileName(path).EndsWith(".snappy.parquet", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsMarkdownPath(string path)
     {
         var ext = Path.GetExtension(path);
-        return string.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ext, ".markdown", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ext, ".mdown", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ext, ".mkd", StringComparison.OrdinalIgnoreCase);
+        return MarkdownExtensions.Contains(ext);
     }
 
     private static List<string> ResolveDroppedFiles(IEnumerable<string> droppedPaths)

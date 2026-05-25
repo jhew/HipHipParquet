@@ -244,6 +244,7 @@ public class WorkspaceService
     private void LoadMarkdownEditorState()
     {
         _markdownEditorStateLoaded = true;
+        _markdownEditorStateGate.Wait();
         try
         {
             if (!File.Exists(_markdownEditorStatePath))
@@ -256,6 +257,10 @@ public class WorkspaceService
         {
             System.Diagnostics.Debug.WriteLine($"Error loading markdown editor state: {ex.Message}");
             _markdownEditorState = null;
+        }
+        finally
+        {
+            _markdownEditorStateGate.Release();
         }
     }
 
@@ -338,6 +343,7 @@ public class WorkspaceService
     private async Task PersistMarkdownEditorStateAsync()
     {
         await _markdownEditorStateGate.WaitAsync();
+        string? tempPath = null;
         try
         {
             var dir = Path.GetDirectoryName(_markdownEditorStatePath);
@@ -345,10 +351,15 @@ public class WorkspaceService
                 Directory.CreateDirectory(dir);
 
             var json = JsonSerializer.Serialize(_markdownEditorState);
-            await File.WriteAllTextAsync(_markdownEditorStatePath, json);
+            tempPath = _markdownEditorStatePath + ".tmp";
+            await File.WriteAllTextAsync(tempPath, json);
+            File.Move(tempPath, _markdownEditorStatePath, overwrite: true);
         }
         catch (Exception ex)
         {
+            if (!string.IsNullOrWhiteSpace(tempPath) && File.Exists(tempPath))
+                File.Delete(tempPath);
+
             System.Diagnostics.Debug.WriteLine($"Error persisting markdown editor state: {ex.Message}");
         }
         finally

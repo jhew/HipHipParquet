@@ -139,7 +139,7 @@ public partial class MarkdownEditorWindow : Window
             return;
 
         if (IsPreviewTabActive())
-            RefreshPreviewIfVisible(force: _previewDirty);
+            RefreshPreviewIfVisible(force: true);
     }
 
     private void OnPreviewBrowserNavigating(object? sender, NavigatingCancelEventArgs e)
