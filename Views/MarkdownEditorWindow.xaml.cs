@@ -18,6 +18,7 @@ public partial class MarkdownEditorWindow : Window
     private bool _suppressDocumentEvents;
     private bool _closingConfirmed;
     private string? _pendingOpenFilePath;
+    private MarkdownEditorState? _pendingDraftState;
     private bool _previewDirty;
 
     public MarkdownEditorViewModel ViewModel { get; }
@@ -52,7 +53,15 @@ public partial class MarkdownEditorWindow : Window
 
     private async void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
-        await RestoreStateAsync();
+        if (_pendingDraftState != null)
+        {
+            await ApplyDraftStateAsync(_pendingDraftState);
+            _pendingDraftState = null;
+        }
+        else
+        {
+            await RestoreStateAsync();
+        }
 
         if (!string.IsNullOrWhiteSpace(_pendingOpenFilePath))
         {
@@ -64,6 +73,17 @@ public partial class MarkdownEditorWindow : Window
         RefreshPreviewIfVisible();
         EditorTextBox.Focus();
         EditorTextBox.CaretIndex = EditorTextBox.Text.Length;
+    }
+
+    public async Task LoadDraftStateAsync(MarkdownEditorState state)
+    {
+        if (!IsLoaded)
+        {
+            _pendingDraftState = state;
+            return;
+        }
+
+        await ApplyDraftStateAsync(state);
     }
 
     public async Task OpenFileAsync(string filePath)
@@ -239,6 +259,21 @@ public partial class MarkdownEditorWindow : Window
         ViewModel.StatusMessage = string.IsNullOrWhiteSpace(state.FilePath)
             ? "Restored markdown draft."
             : $"Restored {System.IO.Path.GetFileName(state.FilePath)} draft.";
+    }
+
+    private async Task ApplyDraftStateAsync(MarkdownEditorState state)
+    {
+        _suppressDocumentEvents = true;
+        ViewModel.CurrentFilePath = state.FilePath ?? string.Empty;
+        ViewModel.SelectedProfile = state.SelectedProfile;
+        ViewModel.DocumentText = state.DraftContent ?? string.Empty;
+        EditorTextBox.Text = ViewModel.DocumentText;
+        ViewModel.IsDirty = state.IsDirty;
+        _suppressDocumentEvents = false;
+        _previewDirty = true;
+        RefreshPreviewIfVisible();
+        ViewModel.StatusMessage = "Loaded markdown draft from embedded helper.";
+        await PersistStateAsync();
     }
 
     private async Task<bool> EnsureDocumentCanChangeAsync(string actionLabel)

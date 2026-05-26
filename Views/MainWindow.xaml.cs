@@ -5699,8 +5699,26 @@ public partial class MainWindow : Window
 
     private async void OnMarkdownHelperPopOutRequested(object sender, EventArgs e)
     {
+        var state = EmbeddedMarkdownHelper.CreateEditorStateSnapshot();
         ToggleMarkdownHelperEmbedded(false);
-        await OpenMarkdownHelperForFileAsync(EmbeddedMarkdownHelper.ViewModel.CurrentFilePath);
+
+        if (_markdownEditorWindow is { IsLoaded: true })
+        {
+            await _markdownEditorWindow.LoadDraftStateAsync(state);
+            _markdownEditorWindow.Activate();
+            _markdownEditorWindow.Focus();
+            return;
+        }
+
+        var markdownService = App.Current.Services.GetService<MarkdownService>() ?? new MarkdownService();
+        _markdownEditorWindow = new MarkdownEditorWindow(markdownService, _workspaceService)
+        {
+            Owner = this
+        };
+        _markdownEditorWindow.Closed += (_, _) => _markdownEditorWindow = null;
+        _markdownEditorWindow.Show();
+        await _markdownEditorWindow.LoadDraftStateAsync(state);
+        StatusText.Text = "Opened Markdown Helper window.";
     }
 
     // ── Help Menu ────────────────────────────────────────────────────
