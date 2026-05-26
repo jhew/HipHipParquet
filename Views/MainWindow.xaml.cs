@@ -89,6 +89,7 @@ public partial class MainWindow : Window
     private bool _queryHubEnabled = true;
     private bool _queryHubExpanded = true;
     private MarkdownEditorWindow? _markdownEditorWindow;
+    private bool _markdownHelperEmbedded;
     private static readonly HashSet<string> MarkdownExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".md",
@@ -5643,7 +5644,9 @@ public partial class MainWindow : Window
     }
 
     private void OnOpenMarkdownHelperClick(object sender, RoutedEventArgs e)
-        => _ = OpenMarkdownHelperForFileAsync(null);
+    {
+        ToggleMarkdownHelperEmbedded(true);
+    }
 
     private async Task OpenMarkdownHelperForFileAsync(string? filePath)
     {
@@ -5654,6 +5657,15 @@ public partial class MainWindow : Window
 
             _markdownEditorWindow.Activate();
             _markdownEditorWindow.Focus();
+            return;
+        }
+
+        if (_markdownHelperEmbedded)
+        {
+            if (!string.IsNullOrWhiteSpace(filePath))
+                await EmbeddedMarkdownHelper.OpenFileAsync(filePath);
+            ToggleMarkdownHelperEmbedded(true);
+            StatusText.Text = "Opened Markdown Helper in workspace.";
             return;
         }
 
@@ -5668,7 +5680,27 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(filePath))
             await _markdownEditorWindow.OpenFileAsync(filePath);
 
-        StatusText.Text = "Opened Markdown Helper.";
+        StatusText.Text = "Opened Markdown Helper window.";
+    }
+
+    private void OnToggleMarkdownHelperClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem mi)
+            ToggleMarkdownHelperEmbedded(mi.IsChecked);
+    }
+
+    private void ToggleMarkdownHelperEmbedded(bool visible)
+    {
+        _markdownHelperEmbedded = visible;
+        MarkdownHelperHost.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        MarkdownHelperSplitter.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (ToggleMarkdownHelperMenuItem != null) ToggleMarkdownHelperMenuItem.IsChecked = visible;
+    }
+
+    private async void OnMarkdownHelperPopOutRequested(object sender, EventArgs e)
+    {
+        ToggleMarkdownHelperEmbedded(false);
+        await OpenMarkdownHelperForFileAsync(EmbeddedMarkdownHelper.ViewModel.CurrentFilePath);
     }
 
     // ── Help Menu ────────────────────────────────────────────────────
