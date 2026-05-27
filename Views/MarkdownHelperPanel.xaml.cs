@@ -49,8 +49,8 @@ public partial class MarkdownHelperPanel : UserControl
 
     public Task LoadDraftStateAsync(MarkdownEditorState state)
     {
-        LoadDocument(state.FilePath, state.DraftContent ?? string.Empty, state.IsDirty);
         ViewModel.SelectedProfile = state.SelectedProfile;
+        LoadDocument(state.FilePath, state.DraftContent ?? string.Empty, state.IsDirty);
         ViewModel.StatusMessage = "Loaded markdown draft from window helper.";
         return Task.CompletedTask;
     }
@@ -102,7 +102,7 @@ public partial class MarkdownHelperPanel : UserControl
             if (sfd.ShowDialog() != true) return;
             path = sfd.FileName;
         }
-        await _markdownService.SaveToFileAsync(path!, ViewModel.DocumentText ?? string.Empty);
+        await _markdownService.SaveToFileAsync(path!, EditorTextBox.Text);
         ViewModel.CurrentFilePath = path!;
         ViewModel.IsDirty = false;
         ViewModel.StatusMessage = $"Saved {Path.GetFileName(path)}";
@@ -124,6 +124,7 @@ public partial class MarkdownHelperPanel : UserControl
         if (!ReferenceEquals(e.Source, EditorTabs))
             return;
 
+        ViewModel.IsPreviewActive = EditorTabs.SelectedIndex == 1;
         if (EditorTabs.SelectedIndex == 1)
             RefreshPreviewIfVisible(force: true);
     }
@@ -138,7 +139,7 @@ public partial class MarkdownHelperPanel : UserControl
 
         try
         {
-            var html = _markdownService.RenderHtmlDocument(ViewModel.DocumentText, ViewModel.SelectedProfile);
+            var html = _markdownService.RenderHtmlDocument(EditorTextBox.Text, ViewModel.SelectedProfile);
             PreviewBrowser.NavigateToString(html);
             _previewDirty = false;
         }

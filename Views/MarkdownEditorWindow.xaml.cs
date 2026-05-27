@@ -163,6 +163,12 @@ public partial class MarkdownEditorWindow : Window
     private void OnDockBackClick(object sender, RoutedEventArgs e)
         => DockBackRequested?.Invoke(this, EventArgs.Empty);
 
+    private void OnCopyPathClick(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(ViewModel.CurrentFilePath))
+            Clipboard.SetText(ViewModel.CurrentFilePath);
+    }
+
     private void OnEditorTextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
         if (_suppressDocumentEvents)
@@ -180,6 +186,7 @@ public partial class MarkdownEditorWindow : Window
         if (!ReferenceEquals(e.Source, EditorTabs))
             return;
 
+        ViewModel.IsPreviewActive = IsPreviewTabActive();
         if (IsPreviewTabActive())
             RefreshPreviewIfVisible(force: true);
     }

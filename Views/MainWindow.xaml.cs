@@ -5644,9 +5644,7 @@ public partial class MainWindow : Window
     }
 
     private void OnOpenMarkdownHelperClick(object sender, RoutedEventArgs e)
-    {
-        ToggleMarkdownHelperEmbedded(true);
-    }
+        => _ = OpenMarkdownHelperForFileAsync(null);
 
     private async Task OpenMarkdownHelperForFileAsync(string? filePath)
     {
@@ -5686,8 +5684,16 @@ public partial class MainWindow : Window
 
     private void OnToggleMarkdownHelperClick(object sender, RoutedEventArgs e)
     {
-        if (sender is MenuItem mi)
-            ToggleMarkdownHelperEmbedded(mi.IsChecked);
+        if (sender is not MenuItem mi)
+            return;
+
+        if (mi.IsChecked && _markdownEditorWindow is { IsLoaded: true })
+        {
+            OnMarkdownHelperDockBackRequested(_markdownEditorWindow, EventArgs.Empty);
+            return;
+        }
+
+        ToggleMarkdownHelperEmbedded(mi.IsChecked);
     }
 
     private void ToggleMarkdownHelperEmbedded(bool visible)
