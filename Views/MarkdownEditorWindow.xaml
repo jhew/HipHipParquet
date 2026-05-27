@@ -27,6 +27,7 @@
                     <Button Style="{StaticResource ToolButton}" Click="OnOpenClick" Content="Open..."/>
                     <Button Style="{StaticResource ToolButton}" Click="OnSaveClick" Content="Save"/>
                     <Button Style="{StaticResource ToolButton}" Click="OnSaveAsClick" Content="Save As..."/>
+                    <Button Style="{StaticResource ToolButton}" Click="OnDockBackClick" Content="Dock back"/>
                 </StackPanel>
                 <StackPanel>
                     <TextBlock Text="Markdown Helper" FontSize="18" FontWeight="Bold" Foreground="White"/>

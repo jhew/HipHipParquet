@@ -5675,6 +5675,7 @@ public partial class MainWindow : Window
             Owner = this
         };
         _markdownEditorWindow.Closed += (_, _) => _markdownEditorWindow = null;
+        _markdownEditorWindow.DockBackRequested += OnMarkdownHelperDockBackRequested;
         _markdownEditorWindow.Show();
 
         if (!string.IsNullOrWhiteSpace(filePath))
@@ -5716,9 +5717,22 @@ public partial class MainWindow : Window
             Owner = this
         };
         _markdownEditorWindow.Closed += (_, _) => _markdownEditorWindow = null;
+        _markdownEditorWindow.DockBackRequested += OnMarkdownHelperDockBackRequested;
         _markdownEditorWindow.Show();
         await _markdownEditorWindow.LoadDraftStateAsync(state);
         StatusText.Text = "Opened Markdown Helper window.";
+    }
+
+    private async void OnMarkdownHelperDockBackRequested(object? sender, EventArgs e)
+    {
+        if (sender is not MarkdownEditorWindow markdownWindow)
+            return;
+
+        var state = markdownWindow.CreateEditorStateSnapshot();
+        ToggleMarkdownHelperEmbedded(true);
+        await EmbeddedMarkdownHelper.LoadDraftStateAsync(state);
+        markdownWindow.CloseWithoutPrompt();
+        StatusText.Text = "Returned Markdown Helper to workspace.";
     }
 
     // ── Help Menu ────────────────────────────────────────────────────

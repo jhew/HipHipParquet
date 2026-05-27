@@ -47,10 +47,18 @@ public partial class MarkdownHelperPanel : UserControl
         };
     }
 
+    public Task LoadDraftStateAsync(MarkdownEditorState state)
+    {
+        LoadDocument(state.FilePath, state.DraftContent ?? string.Empty, state.IsDirty);
+        ViewModel.SelectedProfile = state.SelectedProfile;
+        ViewModel.StatusMessage = "Loaded markdown draft from window helper.";
+        return Task.CompletedTask;
+    }
+
     private void LoadDocument(string? filePath, string content, bool isDirty)
     {
         _suppressDocumentEvents = true;
-        ViewModel.CurrentFilePath = filePath;
+        ViewModel.CurrentFilePath = filePath ?? string.Empty;
         ViewModel.DocumentText = content;
         EditorTextBox.Text = content;
         ViewModel.IsDirty = isDirty;

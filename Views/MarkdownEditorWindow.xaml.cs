@@ -22,6 +22,7 @@ public partial class MarkdownEditorWindow : Window
     private bool _previewDirty;
 
     public MarkdownEditorViewModel ViewModel { get; }
+    public event EventHandler? DockBackRequested;
 
     public MarkdownEditorWindow(MarkdownService markdownService, WorkspaceService workspaceService)
     {
@@ -86,6 +87,24 @@ public partial class MarkdownEditorWindow : Window
         await ApplyDraftStateAsync(state);
     }
 
+    public MarkdownEditorState CreateEditorStateSnapshot()
+    {
+        return new MarkdownEditorState
+        {
+            FilePath = string.IsNullOrWhiteSpace(ViewModel.CurrentFilePath) ? null : ViewModel.CurrentFilePath,
+            DraftContent = EditorTextBox.Text,
+            SelectedProfile = ViewModel.SelectedProfile,
+            IsDirty = ViewModel.IsDirty,
+            SavedAtUtc = DateTime.UtcNow
+        };
+    }
+
+    public void CloseWithoutPrompt()
+    {
+        _closingConfirmed = true;
+        Close();
+    }
+
     public async Task OpenFileAsync(string filePath)
     {
         if (!IsLoaded)
@@ -140,6 +159,9 @@ public partial class MarkdownEditorWindow : Window
 
     private async void OnSaveAsClick(object sender, RoutedEventArgs e)
         => await SaveDocumentAsync(promptForPath: true);
+
+    private void OnDockBackClick(object sender, RoutedEventArgs e)
+        => DockBackRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnEditorTextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
