@@ -24,6 +24,14 @@ public partial class MarkdownEditorViewModel : ObservableObject
     [ObservableProperty]
     private string _previewHtml = string.Empty;
 
+    [ObservableProperty]
+    private bool _isPreviewActive;
+
+    public string PreviewProfileLabel => $"Preview profile: {SelectedProfile.GetDisplayName()}";
+
+    partial void OnSelectedProfileChanged(MarkdownFlavorProfile value)
+        => OnPropertyChanged(nameof(PreviewProfileLabel));
+
     public string WindowTitle
         => string.IsNullOrWhiteSpace(CurrentFilePath)
             ? $"Markdown Helper{(IsDirty ? " *" : string.Empty)}"

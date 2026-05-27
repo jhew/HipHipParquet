@@ -89,6 +89,7 @@ public partial class MainWindow : Window
     private bool _queryHubEnabled = true;
     private bool _queryHubExpanded = true;
     private MarkdownEditorWindow? _markdownEditorWindow;
+    private bool _markdownHelperEmbedded;
     private static readonly HashSet<string> MarkdownExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".md",
@@ -5657,18 +5658,87 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_markdownHelperEmbedded)
+        {
+            if (!string.IsNullOrWhiteSpace(filePath))
+                await EmbeddedMarkdownHelper.OpenFileAsync(filePath);
+            ToggleMarkdownHelperEmbedded(true);
+            StatusText.Text = "Opened Markdown Helper in workspace.";
+            return;
+        }
+
         var markdownService = App.Current.Services.GetService<MarkdownService>() ?? new MarkdownService();
         _markdownEditorWindow = new MarkdownEditorWindow(markdownService, _workspaceService)
         {
             Owner = this
         };
         _markdownEditorWindow.Closed += (_, _) => _markdownEditorWindow = null;
+        _markdownEditorWindow.DockBackRequested += OnMarkdownHelperDockBackRequested;
         _markdownEditorWindow.Show();
 
         if (!string.IsNullOrWhiteSpace(filePath))
             await _markdownEditorWindow.OpenFileAsync(filePath);
 
-        StatusText.Text = "Opened Markdown Helper.";
+        StatusText.Text = "Opened Markdown Helper window.";
+    }
+
+    private void OnToggleMarkdownHelperClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem mi)
+            return;
+
+        if (mi.IsChecked && _markdownEditorWindow is { IsLoaded: true })
+        {
+            OnMarkdownHelperDockBackRequested(_markdownEditorWindow, EventArgs.Empty);
+            return;
+        }
+
+        ToggleMarkdownHelperEmbedded(mi.IsChecked);
+    }
+
+    private void ToggleMarkdownHelperEmbedded(bool visible)
+    {
+        _markdownHelperEmbedded = visible;
+        MarkdownHelperHost.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        MarkdownHelperSplitter.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (ToggleMarkdownHelperMenuItem != null) ToggleMarkdownHelperMenuItem.IsChecked = visible;
+    }
+
+    private async void OnMarkdownHelperPopOutRequested(object sender, EventArgs e)
+    {
+        var state = EmbeddedMarkdownHelper.CreateEditorStateSnapshot();
+        ToggleMarkdownHelperEmbedded(false);
+
+        if (_markdownEditorWindow is { IsLoaded: true })
+        {
+            await _markdownEditorWindow.LoadDraftStateAsync(state);
+            _markdownEditorWindow.Activate();
+            _markdownEditorWindow.Focus();
+            return;
+        }
+
+        var markdownService = App.Current.Services.GetService<MarkdownService>() ?? new MarkdownService();
+        _markdownEditorWindow = new MarkdownEditorWindow(markdownService, _workspaceService)
+        {
+            Owner = this
+        };
+        _markdownEditorWindow.Closed += (_, _) => _markdownEditorWindow = null;
+        _markdownEditorWindow.DockBackRequested += OnMarkdownHelperDockBackRequested;
+        _markdownEditorWindow.Show();
+        await _markdownEditorWindow.LoadDraftStateAsync(state);
+        StatusText.Text = "Opened Markdown Helper window.";
+    }
+
+    private async void OnMarkdownHelperDockBackRequested(object? sender, EventArgs e)
+    {
+        if (sender is not MarkdownEditorWindow markdownWindow)
+            return;
+
+        var state = markdownWindow.CreateEditorStateSnapshot();
+        ToggleMarkdownHelperEmbedded(true);
+        await EmbeddedMarkdownHelper.LoadDraftStateAsync(state);
+        markdownWindow.CloseWithoutPrompt();
+        StatusText.Text = "Returned Markdown Helper to workspace.";
     }
 
     // ── Help Menu ────────────────────────────────────────────────────

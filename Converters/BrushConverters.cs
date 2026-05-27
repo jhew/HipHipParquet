@@ -6,6 +6,18 @@ using System.Windows.Media;
 namespace HipHipParquet.Converters;
 
 /// <summary>
+/// Converts a string to Visibility: Visible when non-null/non-empty, Collapsed otherwise.
+/// </summary>
+public class StringToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is string s && !string.IsNullOrWhiteSpace(s) ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// Converts a boolean to Visibility, returning Collapsed when true and Visible when false.
 /// </summary>
 public class InverseBooleanToVisibilityConverter : IValueConverter

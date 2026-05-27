@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:views="clr-namespace:HipHipParquet.Views"
+        xmlns:local="clr-namespace:HipHipParquet.Views"
         Title="HipHipParquet — Data Quality Viewer" Height="700" Width="1400"
         WindowStartupLocation="CenterScreen"
         Icon="/Assets/app.ico"
@@ -99,6 +100,7 @@
                 <MenuItem x:Name="ToggleSchemaPaneMenuItem" Header="Toggle _Schema Pane" Click="OnToggleSchemaPaneClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem x:Name="ToggleQualityPanelMenuItem" Header="Toggle _Quality Review Panel" Click="OnToggleQualityPanelClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem x:Name="ToggleQueryHubMenuItem" Header="Toggle _Query Hub" Click="OnToggleQueryHubClick" IsCheckable="True" IsChecked="True"/>
+                <MenuItem x:Name="ToggleMarkdownHelperMenuItem" Header="Toggle _Markdown Helper" Click="OnToggleMarkdownHelperClick" IsCheckable="True" IsChecked="False"/>
             </MenuItem>
             <MenuItem Header="_Workspace">
                 <MenuItem Header="_Save Current View" Click="OnSaveCurrentViewClick"/>
@@ -236,8 +238,13 @@
 
             <!-- Data Grid Area -->
             <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <!-- Empty State -->
-                <StackPanel x:Name="EmptyStatePanel" 
+                <StackPanel x:Name="EmptyStatePanel" Grid.Row="0" 
                            HorizontalAlignment="Center" 
                            VerticalAlignment="Center">
                     <TextBlock Text="📊" FontSize="48" HorizontalAlignment="Center" Foreground="Gray"/>
@@ -254,8 +261,13 @@
                            Click="OnOpenFileClick"/>
                 </StackPanel>
                 
+                <GridSplitter x:Name="MarkdownHelperSplitter" Grid.Row="1" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="#D5DFEA" Visibility="Collapsed"/>
+                <Border x:Name="MarkdownHelperHost" Grid.Row="2" Margin="12,4,12,10" Style="{StaticResource PaneChrome}" Visibility="Collapsed" MinHeight="220">
+                    <local:MarkdownHelperPanel x:Name="EmbeddedMarkdownHelper" PopOutRequested="OnMarkdownHelperPopOutRequested"/>
+                </Border>
+
                 <!-- Data Grid -->
-                <Grid x:Name="DataGridContainer" Visibility="Collapsed">
+                <Grid x:Name="DataGridContainer" Visibility="Collapsed" Grid.Row="0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
