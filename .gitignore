@@ -131,3 +131,6 @@ publish/
 # Local-only generated test data and helpers
 local-test-data/
 .dotnet-home/
+
+# Local instructions
+.github/

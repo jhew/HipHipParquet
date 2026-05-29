@@ -89,7 +89,7 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: v${{ steps.version.outputs.VER }}
           name: "Hip Hip Parquet v${{ steps.version.outputs.VER }}"
           body: |
             ## Hip Hip Parquet v${{ steps.version.outputs.VER }}
@@ -121,7 +121,7 @@ jobs:
 
             **Portable:** Download the zip, extract to any folder, and run `HipHipParquet.exe`.
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(steps.version.outputs.VER, '-') }}
           files: |
             installer-output/HipHipParquet-${{ steps.version.outputs.VER }}-Setup.exe
             HipHipParquet-${{ steps.version.outputs.VER }}-Portable.zip
