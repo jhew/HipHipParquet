@@ -366,10 +366,11 @@ public partial class MainWindow : Window
         SelectActiveNotebookSource(source.Alias);
         SuggestNotebookQuery(source);
         NotebookActiveSourceText.Text = $"{source.DisplayName} ({source.Alias})";
-        EmptyStatePanel.Visibility = Visibility.Collapsed;
-        DataGridContainer.Visibility = Visibility.Visible;
-        if (!_dataViewVisible)
-            SetDataViewVisible(true);
+        if (_dataViewVisible)
+        {
+            EmptyStatePanel.Visibility = Visibility.Collapsed;
+            DataGridContainer.Visibility = Visibility.Visible;
+        }
         _currentFilePath = source.FilePath;
         _currentFilePaths = source.FilePaths.Count > 0 ? source.FilePaths : null;
         _activeCsvOptions = source.CsvOptions;
@@ -5019,8 +5020,7 @@ public partial class MainWindow : Window
 
     private void ApplyPaneLayoutState(WorkspaceState state)
     {
-        if (!state.IsDataViewVisible)
-            SetDataViewVisible(false);
+        SetDataViewVisible(state.IsDataViewVisible);
 
         ToggleSchemaPaneMenuItem.IsChecked = state.IsSchemaPaneVisible;
         ToggleQualityPanelMenuItem.IsChecked = state.IsQualityPaneVisible;

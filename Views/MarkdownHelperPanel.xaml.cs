@@ -44,12 +44,18 @@ public partial class MarkdownHelperPanel : UserControl
         if (state == null) return;
 
         var content = state.DraftContent ?? string.Empty;
+        bool fileLoadFailed = false;
         if (string.IsNullOrEmpty(content) &&
             !string.IsNullOrWhiteSpace(state.FilePath) &&
             File.Exists(state.FilePath))
         {
             try { content = await _markdownService.LoadFromFileAsync(state.FilePath); }
-            catch { content = string.Empty; }
+            catch (Exception ex)
+            {
+                content = string.Empty;
+                fileLoadFailed = true;
+                Debug.WriteLine($"[RestoreDraftAsync] Failed to load {state.FilePath}: {ex.Message}");
+            }
         }
 
         _suppressDocumentEvents = true;
@@ -60,9 +66,11 @@ public partial class MarkdownHelperPanel : UserControl
         ViewModel.IsDirty = state.IsDirty;
         _suppressDocumentEvents = false;
         _previewDirty = true;
-        ViewModel.StatusMessage = string.IsNullOrWhiteSpace(state.FilePath)
-            ? "Restored markdown draft."
-            : $"Restored {Path.GetFileName(state.FilePath)} draft.";
+        ViewModel.StatusMessage = fileLoadFailed
+            ? $"Could not restore {Path.GetFileName(state.FilePath)}: file could not be read."
+            : string.IsNullOrWhiteSpace(state.FilePath)
+                ? "Restored markdown draft."
+                : $"Restored {Path.GetFileName(state.FilePath)} draft.";
     }
 
     public async Task PersistDraftAsync()
@@ -182,6 +190,7 @@ public partial class MarkdownHelperPanel : UserControl
         ViewModel.CurrentFilePath = path!;
         ViewModel.IsDirty = false;
         ViewModel.StatusMessage = $"Saved {Path.GetFileName(path)}";
+        await PersistDraftAsync();
         return true;
     }
 
