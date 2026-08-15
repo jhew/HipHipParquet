@@ -140,6 +140,7 @@
                 </MenuItem>
                 <MenuItem Header="Copy as _CSV" Click="OnCopyAsCsvClick" InputGestureText="Ctrl+Alt+C"/>
                 <MenuItem Header="Copy as _TSV" Click="OnCopyAsTsvClick" InputGestureText="Ctrl+Shift+C"/>
+                <MenuItem Header="Copy as _Markdown Table" Click="OnCopyAsMarkdownClick"/>
                 <Separator/>
                 <MenuItem Header="Clear All _Filters" Click="OnClearAllFiltersClick">
                     <MenuItem.Icon>
@@ -604,6 +605,11 @@
                                 <MenuItem Header="Copy as CSV with Headers" Click="OnContextCopyAsCsvWithHeadersClick">
                                     <MenuItem.Icon>
                                         <TextBlock Text="," FontSize="12"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Copy as Markdown Table" Click="OnCopyAsMarkdownClick">
+                                    <MenuItem.Icon>
+                                        <TextBlock Style="{StaticResource MenuIconGlyph}" FontSize="12" Text="&#xE70F;"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <Separator/>

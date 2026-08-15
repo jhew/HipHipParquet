@@ -54,7 +54,7 @@ Changes are saved back to the original file with Ctrl+S. The **Save As** and **E
 
 ### Copying Data
 
-Selection can be copied to the clipboard in multiple formats from the Edit menu and grid context menu: plain copy, copy with headers, CSV, CSV with headers, TSV, row-scoped JSON, and column-scoped variants. Ctrl+C, Ctrl+Alt+C, and Ctrl+Shift+C provide quick access to the most common copy formats.
+Selection can be copied to the clipboard in multiple formats from the Edit menu and grid context menu: plain copy, copy with headers, CSV, CSV with headers, TSV, Markdown table, row-scoped JSON, and column-scoped variants. Ctrl+C, Ctrl+Alt+C, and Ctrl+Shift+C provide quick access to the most common copy formats.
 
 ### Schema Explorer
 

@@ -1856,6 +1856,28 @@ public partial class MainWindow : Window
     {
         CopySelectionToClipboard("\t");
     }
+
+    private void OnCopyAsMarkdownClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var selectedCells = _savedSelectedCells ?? DataGrid.SelectedCells.ToList();
+            if (selectedCells.Count == 0)
+            {
+                StatusText.Text = "No cells selected to copy";
+                return;
+            }
+
+            var text = CopyHelper.FormatCellsAsMarkdown(DataGrid, selectedCells);
+            Clipboard.SetText(text);
+            StatusText.Text = $"Copied {selectedCells.Count} cell(s) as Markdown table";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error copying to clipboard: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Copy failed";
+        }
+    }
     
     private void CopySelectionToClipboard(string delimiter)
     {
