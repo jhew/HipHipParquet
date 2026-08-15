@@ -27,6 +27,12 @@ public partial class MarkdownEditorViewModel : ObservableObject
     [ObservableProperty]
     private bool _isPreviewActive;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FocusModeButtonLabel))]
+    private bool _isFocusModeActive;
+
+    public string FocusModeButtonLabel => IsFocusModeActive ? "Exit focus" : "Focus";
+
     public string PreviewProfileLabel => $"Preview profile: {SelectedProfile.GetDisplayName()}";
 
     partial void OnSelectedProfileChanged(MarkdownFlavorProfile value)

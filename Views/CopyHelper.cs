@@ -93,6 +93,16 @@ namespace HipHipParquet.Views
                     cellValue = value?.ToString() ?? string.Empty;
                 }
             }
+            else if (cell.Column is DataGridTemplateColumn templateColumn &&
+                     !string.IsNullOrEmpty(templateColumn.SortMemberPath) &&
+                     cell.Item is DataRowView templateRowView &&
+                     templateRowView.Row.Table.Columns.Contains(templateColumn.SortMemberPath))
+            {
+                // Template columns (used for horizontally scrollable cells) carry the
+                // source column name in SortMemberPath rather than a Binding.
+                var value = templateRowView[templateColumn.SortMemberPath];
+                cellValue = value == DBNull.Value ? string.Empty : value?.ToString() ?? string.Empty;
+            }
 
             // escape if needed for CSV (RFC 4180: quote if contains comma, double-quote, LF or CR)
             if (delimiter == "," && (cellValue.Contains(",") || cellValue.Contains("\"") || cellValue.Contains("\n") || cellValue.Contains("\r")))

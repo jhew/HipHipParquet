@@ -90,6 +90,13 @@ public partial class MainWindow : Window
     private bool _queryHubExpanded = true;
     private MarkdownEditorWindow? _markdownEditorWindow;
     private bool _markdownHelperEmbedded;
+    private bool _markdownFocusModeActive;
+    private bool _dataViewVisible = true;
+    private bool _preFocusSchemaPaneVisible;
+    private bool _preFocusQualityPaneVisible;
+    private bool _preFocusDataViewVisible;
+    private double _preFocusSchemaPaneWidth;
+    private double _preFocusQualityPaneWidth;
     private static readonly HashSet<string> MarkdownExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".md",
@@ -359,8 +366,11 @@ public partial class MainWindow : Window
         SelectActiveNotebookSource(source.Alias);
         SuggestNotebookQuery(source);
         NotebookActiveSourceText.Text = $"{source.DisplayName} ({source.Alias})";
-        EmptyStatePanel.Visibility = Visibility.Collapsed;
-        DataGridContainer.Visibility = Visibility.Visible;
+        if (_dataViewVisible)
+        {
+            EmptyStatePanel.Visibility = Visibility.Collapsed;
+            DataGridContainer.Visibility = Visibility.Visible;
+        }
         _currentFilePath = source.FilePath;
         _currentFilePaths = source.FilePaths.Count > 0 ? source.FilePaths : null;
         _activeCsvOptions = source.CsvOptions;
@@ -1178,6 +1188,7 @@ public partial class MainWindow : Window
         if (_closingConfirmed)
         {
             // Second pass — let the close proceed and clean up.
+            await EmbeddedMarkdownHelper.PersistDraftAsync();
             SaveWorkspaceState();
             _parquetService?.Dispose();
             _notebookSession?.Dispose();
@@ -1189,6 +1200,7 @@ public partial class MainWindow : Window
 
         if (!_hasUnsavedChanges)
         {
+            await EmbeddedMarkdownHelper.PersistDraftAsync();
             SaveWorkspaceState();
             _parquetService?.Dispose();
             _notebookSession?.Dispose();
@@ -1250,6 +1262,8 @@ public partial class MainWindow : Window
         UpdateJumpList();
         RefreshSavedViewsMenu();
 
+        EmbeddedMarkdownHelper.InitializeWorkspaceService(_workspaceService);
+
         // Background startup update check — shows a hint in the status bar if a new version is found.
         _ = CheckForUpdatesOnStartupAsync();
 
@@ -1270,6 +1284,8 @@ public partial class MainWindow : Window
         {
             await RestoreWorkspaceStateAsync();
         }
+
+        await EmbeddedMarkdownHelper.RestoreDraftAsync();
 
         await RunPendingStartupCommandAsync();
     }
@@ -1615,6 +1631,42 @@ public partial class MainWindow : Window
             _queryHubEnabled = menuItem.IsChecked;
 
         UpdateNotebookUiState();
+    }
+
+    private void OnToggleDataViewClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem)
+            SetDataViewVisible(menuItem.IsChecked);
+    }
+
+    private void SetDataViewVisible(bool visible)
+    {
+        _dataViewVisible = visible;
+        if (ToggleDataViewMenuItem != null)
+            ToggleDataViewMenuItem.IsChecked = visible;
+
+        if (visible)
+        {
+            // Restore data row to fill available space
+            CenterColumnGrid.RowDefinitions[0].Height = new GridLength(1, GridUnitType.Star);
+            var hasData = _originalData != null;
+            DataGridContainer.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+            EmptyStatePanel.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
+            // Markdown panel back to auto height
+            CenterColumnGrid.RowDefinitions[2].Height = GridLength.Auto;
+        }
+        else
+        {
+            // Collapse data row
+            CenterColumnGrid.RowDefinitions[0].Height = new GridLength(0);
+            DataGridContainer.Visibility = Visibility.Collapsed;
+            EmptyStatePanel.Visibility = Visibility.Collapsed;
+            // Expand markdown panel to fill if it is open
+            CenterColumnGrid.RowDefinitions[2].Height =
+                MarkdownHelperHost.Visibility == Visibility.Visible
+                    ? new GridLength(1, GridUnitType.Star)
+                    : GridLength.Auto;
+        }
     }
 
     private void OnCollapseQueryHubClick(object sender, RoutedEventArgs e)
@@ -3842,16 +3894,53 @@ public partial class MainWindow : Window
         GlobalSearchBox.SelectAll();
     }
 
-    private DataGridTextColumn CreateDataColumn(DataColumn column, ColumnInfo? columnInfo, int index)
+    private DataGridColumn CreateDataColumn(DataColumn column, ColumnInfo? columnInfo, int index)
     {
         var columnName = column.ColumnName;
         // Initialize filter state for this column
         _columnFilters[columnName] = new ColumnFilterState();
 
-        var gridColumn = new DataGridTextColumn
+        var isNumeric = IsNumericType(column.DataType);
+        var displayBinding = new System.Windows.Data.Binding($"[{columnName}]") { TargetNullValue = string.Empty };
+
+        // Display template: ScrollViewer wrapping a TextBlock so long values can be scrolled horizontally
+        var displayTemplate = new DataTemplate();
+        var svFactory = new FrameworkElementFactory(typeof(ScrollViewer));
+        svFactory.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+        svFactory.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+        svFactory.SetValue(ScrollViewer.FocusableProperty, false);
+        svFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+        var tbFactory = new FrameworkElementFactory(typeof(TextBlock));
+        tbFactory.SetBinding(TextBlock.TextProperty, displayBinding);
+        tbFactory.SetValue(TextBlock.TextWrappingProperty, TextWrapping.NoWrap);
+        tbFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        if (isNumeric)
+            tbFactory.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Right);
+
+        svFactory.AppendChild(tbFactory);
+        displayTemplate.VisualTree = svFactory;
+
+        // Editing template: TextBox with horizontal scroll
+        var editTemplate = new DataTemplate();
+        var txFactory = new FrameworkElementFactory(typeof(TextBox));
+        txFactory.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding($"[{columnName}]")
+        {
+            UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.LostFocus
+        });
+        txFactory.SetValue(TextBox.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+        txFactory.SetValue(TextBox.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+        txFactory.SetValue(TextBox.BorderThicknessProperty, new Thickness(0));
+        txFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Stretch);
+        if (isNumeric)
+            txFactory.SetValue(TextBox.TextAlignmentProperty, TextAlignment.Right);
+        editTemplate.VisualTree = txFactory;
+
+        var gridColumn = new DataGridTemplateColumn
         {
             Header = CreateColumnHeader(columnName, columnInfo?.Type ?? "unknown", index),
-            Binding = new System.Windows.Data.Binding($"[{columnName}]"),
+            CellTemplate = displayTemplate,
+            CellEditingTemplate = editTemplate,
             Width = DataGridLength.Auto,
             MinWidth = 100,
             CanUserSort = true,
@@ -3860,15 +3949,11 @@ public partial class MainWindow : Window
         };
 
         // Right-align numeric columns
-        if (IsNumericType(column.DataType))
+        if (isNumeric)
         {
             var cellStyle = new Style(typeof(DataGridCell));
             cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Right));
             gridColumn.CellStyle = cellStyle;
-
-            var elementStyle = new Style(typeof(TextBlock));
-            elementStyle.Setters.Add(new Setter(TextBlock.TextAlignmentProperty, TextAlignment.Right));
-            gridColumn.ElementStyle = elementStyle;
         }
 
         return gridColumn;
@@ -4233,6 +4318,7 @@ public partial class MainWindow : Window
         {
             MaxHeight = 300,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = checkboxPanel
         };
         mainPanel.Children.Add(scrollViewer);
@@ -4243,7 +4329,7 @@ public partial class MainWindow : Window
         {
             var cb = new CheckBox
             {
-                Content = value,
+                Content = new TextBlock { Text = value, TextWrapping = TextWrapping.NoWrap },
                 IsChecked = filterState.SelectedValues.Contains(value),
                 Margin = new Thickness(0, 1, 0, 1),
                 FontSize = 12,
@@ -4849,6 +4935,7 @@ public partial class MainWindow : Window
                 GlobalSearch = GlobalSearchBox.Text ?? string.Empty,
                 Sort = _dataView?.Sort ?? string.Empty,
                 SchemaSearch = SchemaSearchBox.Text ?? string.Empty,
+                IsDataViewVisible = _dataViewVisible,
                 IsSchemaPaneVisible = SchemaPane.Visibility == Visibility.Visible,
                 IsQualityPaneVisible = QualityPanelShell.Visibility == Visibility.Visible,
                 SchemaPaneWidth = SchemaPaneColumn.Width.Value,
@@ -4933,6 +5020,8 @@ public partial class MainWindow : Window
 
     private void ApplyPaneLayoutState(WorkspaceState state)
     {
+        SetDataViewVisible(state.IsDataViewVisible);
+
         ToggleSchemaPaneMenuItem.IsChecked = state.IsSchemaPaneVisible;
         ToggleQualityPanelMenuItem.IsChecked = state.IsQualityPaneVisible;
 
@@ -5595,6 +5684,7 @@ public partial class MainWindow : Window
         public string GlobalSearch { get; set; } = string.Empty;
         public string Sort { get; set; } = string.Empty;
         public string SchemaSearch { get; set; } = string.Empty;
+        public bool IsDataViewVisible { get; set; } = true;
         public bool IsSchemaPaneVisible { get; set; } = true;
         public bool IsQualityPaneVisible { get; set; } = true;
         public double SchemaPaneWidth { get; set; } = 250;
@@ -5702,6 +5792,17 @@ public partial class MainWindow : Window
         MarkdownHelperHost.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         MarkdownHelperSplitter.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         if (ToggleMarkdownHelperMenuItem != null) ToggleMarkdownHelperMenuItem.IsChecked = visible;
+
+        if (!visible && _markdownFocusModeActive)
+            ExitMarkdownFocusMode();
+
+        // When the data view is hidden the markdown row must expand/contract to use the space
+        if (!_dataViewVisible)
+        {
+            CenterColumnGrid.RowDefinitions[2].Height = visible
+                ? new GridLength(1, GridUnitType.Star)
+                : GridLength.Auto;
+        }
     }
 
     private async void OnMarkdownHelperPopOutRequested(object sender, EventArgs e)
@@ -5739,6 +5840,81 @@ public partial class MainWindow : Window
         await EmbeddedMarkdownHelper.LoadDraftStateAsync(state);
         markdownWindow.CloseWithoutPrompt();
         StatusText.Text = "Returned Markdown Helper to workspace.";
+    }
+
+    private void OnMarkdownHelperFocusModeToggleRequested(object sender, EventArgs e)
+    {
+        if (!_markdownFocusModeActive)
+        {
+            _preFocusSchemaPaneVisible = SchemaPane.Visibility == Visibility.Visible;
+            _preFocusQualityPaneVisible = QualityPanelShell.Visibility == Visibility.Visible;
+            _preFocusDataViewVisible = _dataViewVisible;
+            _preFocusSchemaPaneWidth = SchemaPaneColumn.ActualWidth;
+            _preFocusQualityPaneWidth = QualityPaneColumn.ActualWidth;
+
+            if (_preFocusSchemaPaneVisible)
+            {
+                SchemaPane.Visibility = Visibility.Collapsed;
+                SchemaSplitter.Visibility = Visibility.Collapsed;
+                SchemaPaneColumn.MinWidth = 0;
+                SchemaPaneColumn.Width = new GridLength(0);
+                SchemaSplitterColumn.Width = new GridLength(0);
+                ToggleSchemaPaneMenuItem.IsChecked = false;
+            }
+
+            if (_preFocusQualityPaneVisible)
+            {
+                QualityPanelShell.Visibility = Visibility.Collapsed;
+                QualityReviewPanel.Visibility = Visibility.Collapsed;
+                QualitySplitter.Visibility = Visibility.Collapsed;
+                QualitySplitterColumn.Width = new GridLength(0);
+                QualityPaneColumn.MinWidth = 0;
+                QualityPaneColumn.Width = new GridLength(0);
+                ToggleQualityPanelMenuItem.IsChecked = false;
+            }
+
+            if (_preFocusDataViewVisible)
+                SetDataViewVisible(false);
+
+            _markdownFocusModeActive = true;
+        }
+        else
+        {
+            ExitMarkdownFocusMode();
+        }
+
+        EmbeddedMarkdownHelper.ViewModel.IsFocusModeActive = _markdownFocusModeActive;
+    }
+
+    private void ExitMarkdownFocusMode()
+    {
+        if (_preFocusSchemaPaneVisible)
+        {
+            SchemaPane.Visibility = Visibility.Visible;
+            SchemaSplitter.Visibility = Visibility.Visible;
+            SchemaPaneColumn.MinWidth = 200;
+            SchemaPaneColumn.Width = new GridLength(Math.Max(200, _preFocusSchemaPaneWidth));
+            SchemaSplitterColumn.Width = new GridLength(5);
+            ToggleSchemaPaneMenuItem.IsChecked = true;
+        }
+
+        if (_preFocusQualityPaneVisible)
+        {
+            QualityPanelShell.Visibility = Visibility.Visible;
+            QualityReviewPanel.Visibility = Visibility.Visible;
+            QualitySplitter.Visibility = Visibility.Visible;
+            QualitySplitterColumn.Width = new GridLength(5);
+            QualityPaneColumn.MinWidth = 300;
+            QualityPaneColumn.Width = new GridLength(Math.Max(300, _preFocusQualityPaneWidth));
+            ClampQualityPaneWidth();
+            ToggleQualityPanelMenuItem.IsChecked = true;
+        }
+
+        if (_preFocusDataViewVisible)
+            SetDataViewVisible(true);
+
+        _markdownFocusModeActive = false;
+        EmbeddedMarkdownHelper.ViewModel.IsFocusModeActive = false;
     }
 
     // ── Help Menu ────────────────────────────────────────────────────
@@ -5894,14 +6070,19 @@ public partial class MainWindow : Window
 
             if (!verified)
             {
-                try { File.Delete(installerPath); } catch { /* best-effort cleanup */ }
-                MessageBox.Show(
-                    "The downloaded installer could not be verified (no valid checksum or Authenticode signature).\n\n" +
+                var proceed = MessageBox.Show(
+                    "The installer could not be automatically verified — no checksum file was found and the installer is not Authenticode signed.\n\n" +
                     (string.IsNullOrWhiteSpace(verificationMessage) ? string.Empty : $"Details: {verificationMessage}\n\n") +
-                    "Opening the releases page so you can download and verify manually.",
-                    "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                OpenUrl(update.ReleasePageUrl);
-                return;
+                    "It was downloaded directly from GitHub over HTTPS. Run it anyway?",
+                    "Verification Not Available", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                    MessageBoxResult.No);
+
+                if (proceed != MessageBoxResult.Yes)
+                {
+                    try { File.Delete(installerPath); } catch { /* best-effort cleanup */ }
+                    OpenUrl(update.ReleasePageUrl);
+                    return;
+                }
             }
 
             var confirm = MessageBox.Show(

@@ -13,6 +13,7 @@
                     <Button Margin="0,0,8,0" Padding="10,4" Click="OnOpenClick" Content="Open..."/>
                     <Button Margin="0,0,8,0" Padding="10,4" Click="OnSaveClick" Content="Save"/>
                     <Button Margin="0,0,8,0" Padding="10,4" Click="OnSaveAsClick" Content="Save As..."/>
+                    <Button Margin="0,0,8,0" Padding="10,4" Click="OnFocusModeClick" Content="{Binding FocusModeButtonLabel}"/>
                     <Button Padding="10,4" Click="OnPopOutClick" Content="Pop out"/>
                 </StackPanel>
                 <StackPanel>
