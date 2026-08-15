@@ -328,6 +328,20 @@ public static class FileFormatDetector
     };
 
     /// <summary>
+    /// Theme-aware variant of <see cref="GetFormatBadgeColors"/>: returns semantic
+    /// brush resource keys defined in Themes/*.xaml instead of literal hex values.
+    /// </summary>
+    public static (string BackgroundKey, string ForegroundKey) GetFormatBadgeBrushKeys(SupportedFileFormat format) => format switch
+    {
+        SupportedFileFormat.Parquet => ("Brush.SuccessBg", "Brush.SuccessText"),
+        SupportedFileFormat.Csv     => ("Brush.InfoBg", "Brush.InfoText"),
+        SupportedFileFormat.Tsv     => ("Brush.InfoBg", "Brush.InfoText"),
+        SupportedFileFormat.Json    => ("Brush.WarningBg", "Brush.WarningText"),
+        SupportedFileFormat.Excel   => ("Brush.SuccessBg", "Brush.SuccessText"),
+        _                           => ("Brush.Subtle", "Brush.TextSecondary")
+    };
+
+    /// <summary>
     /// Sniffs the encoding of a text file by inspecting its leading bytes.
     /// Returns an encoding tag consumed by <see cref="PrepareFilePath"/>:
     /// "utf-8-bom", "utf-16", "windows-1252", "latin1", or "auto".

@@ -15,15 +15,15 @@
         <Style x:Key="ToolButton" TargetType="Button">
             <Setter Property="Margin" Value="0,0,8,0"/>
             <Setter Property="Padding" Value="10,4"/>
-            <Setter Property="Background" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#C7D5E3"/>
+            <Setter Property="Background" Value="{DynamicResource Brush.Card}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
     </Window.Resources>
 
-    <DockPanel Background="#EEF3F8">
-        <Border DockPanel.Dock="Top" Background="#1F3A5C" Padding="16,12">
+    <DockPanel Background="{DynamicResource Brush.Window}">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource Brush.BannerBg}" Padding="16,12">
             <DockPanel LastChildFill="True">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                     <Button Style="{StaticResource ToolButton}" Click="OnNewClick" Content="New"/>
@@ -33,37 +33,37 @@
                     <Button Style="{StaticResource ToolButton}" Click="OnDockBackClick" Content="Dock back"/>
                 </StackPanel>
                 <StackPanel>
-                    <TextBlock Text="Markdown Helper" FontSize="18" FontWeight="Bold" Foreground="White"/>
-                    <TextBlock Text="Simple open/edit/save and preview for markdown files." FontSize="12" Foreground="#D8E4F0"/>
+                    <TextBlock Text="Markdown Helper" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource Brush.OnAccent}"/>
+                    <TextBlock Text="Simple open/edit/save and preview for markdown files." FontSize="12" Foreground="{DynamicResource Brush.BannerSubtle}"/>
                 </StackPanel>
             </DockPanel>
         </Border>
 
-        <Border DockPanel.Dock="Top" Margin="12,12,12,0" Padding="8,6" Background="#FFFFFF" BorderBrush="#D5DFEA" BorderThickness="1" CornerRadius="10">
+        <Border DockPanel.Dock="Top" Margin="12,12,12,0" Padding="8,6" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="10">
             <DockPanel LastChildFill="True">
                 <Button DockPanel.Dock="Right" Content="Copy path" Padding="8,4" Margin="8,0,0,0"
-                        Background="#FFFFFF" BorderBrush="#C7D5E3" BorderThickness="1" Cursor="Hand"
+                        Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Cursor="Hand"
                         VerticalAlignment="Center"
                         Click="OnCopyPathClick"
                         Visibility="{Binding CurrentFilePath, Converter={StaticResource StringToVisibility}}"/>
                 <TextBlock Text="{Binding CurrentFilePath, TargetNullValue=''}"
                            VerticalAlignment="Center"
-                           Foreground="#5C6F82"
+                           Foreground="{DynamicResource Brush.TextSecondary}"
                            TextTrimming="CharacterEllipsis"/>
             </DockPanel>
         </Border>
 
-        <Border DockPanel.Dock="Bottom" Background="#FFFFFF" BorderBrush="#D5DFEA" BorderThickness="0,1,0,0" Padding="12,5">
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="12,5">
             <DockPanel LastChildFill="True">
-                <TextBlock DockPanel.Dock="Right" Text="{Binding PreviewProfileLabel}" Foreground="#8A9BB0" FontSize="11"
+                <TextBlock DockPanel.Dock="Right" Text="{Binding PreviewProfileLabel}" Foreground="{DynamicResource Brush.TextMuted}" FontSize="11"
                            Margin="12,0,0,0" VerticalAlignment="Center"
                            Visibility="{Binding IsPreviewActive, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#5C6F82" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
             </DockPanel>
         </Border>
-        <TabControl x:Name="EditorTabs" Margin="12" BorderBrush="#D5DFEA" BorderThickness="1" SelectionChanged="OnEditorTabSelectionChanged">
+        <TabControl x:Name="EditorTabs" Margin="12" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" SelectionChanged="OnEditorTabSelectionChanged">
             <TabItem Header="Edit">
-                <Grid Background="#FFFFFF">
+                <Grid Background="{DynamicResource Brush.Card}">
                     <TextBox x:Name="EditorTextBox"
                              Text="{Binding DocumentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                              AcceptsReturn="True"
@@ -78,7 +78,7 @@
                 </Grid>
             </TabItem>
             <TabItem Header="Preview">
-                <Grid Background="#FFFFFF">
+                <Grid Background="{DynamicResource Brush.Card}">
                     <WebBrowser x:Name="PreviewBrowser" Margin="0"/>
                 </Grid>
             </TabItem>

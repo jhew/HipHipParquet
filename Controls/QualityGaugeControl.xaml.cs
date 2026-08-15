@@ -58,7 +58,7 @@ public partial class QualityGaugeControl : UserControl
         var thickness = 10.0;
 
         // Background arc (full semicircle)
-        DrawArc(centerX, centerY, radius, thickness, 180, 360, Brushes.LightGray);
+        DrawArc(centerX, centerY, radius, thickness, 180, 360, Views.ThemeBrushes.BorderNeutral);
 
         // Score arc
         var scoreAngle = 180 + (Score / 100.0) * 180;
@@ -131,10 +131,10 @@ public partial class QualityGaugeControl : UserControl
         GaugeCanvas.Children.Add(path);
     }
 
-    private static SolidColorBrush GetScoreColor(double score) => score switch
+    private static Brush GetScoreColor(double score) => score switch
     {
-        >= 80 => new SolidColorBrush(Color.FromRgb(76, 175, 80)),   // Green
-        >= 60 => new SolidColorBrush(Color.FromRgb(255, 152, 0)),   // Orange
-        _ => new SolidColorBrush(Color.FromRgb(244, 67, 54))        // Red
+        >= 80 => Views.ThemeBrushes.Success,   // Green
+        >= 60 => Views.ThemeBrushes.Warning,   // Orange
+        _ => Views.ThemeBrushes.Danger        // Red
     };
 }

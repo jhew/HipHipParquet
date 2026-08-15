@@ -13,7 +13,7 @@
             <TextBlock x:Name="GradeText" 
                        FontSize="10" 
                        HorizontalAlignment="Center"
-                       Foreground="Gray"
+                       Foreground="{DynamicResource Brush.TextMuted}"
                        Text=""/>
         </StackPanel>
     </Grid>

@@ -253,7 +253,7 @@ internal static class GridActionDialogs
             content.Children.Add(new TextBlock
             {
                 Text = "Example: ^[A-Z]{2}\\d{4}$",
-                Foreground = Brushes.DimGray,
+                Foreground = ThemeBrushes.TextSecondary,
                 FontSize = 11
             });
         });
@@ -314,7 +314,7 @@ internal static class GridActionDialogs
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             SizeToContent = SizeToContent.WidthAndHeight,
             ResizeMode = ResizeMode.NoResize,
-            Background = Brushes.White,
+            Background = ThemeBrushes.Card,
             Content = root,
             MinWidth = 360,
             ShowInTaskbar = false

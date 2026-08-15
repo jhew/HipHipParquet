@@ -59,15 +59,9 @@ public partial class FileImportDialog : Window
         HeaderTitle.Text = $"Configure {displayName} Import Settings";
         Title = $"Import {displayName} File";
 
-        var (bg, fg) = FileFormatDetector.GetFormatBadgeColors(format);
-        // ConvertFromString throws FormatException on invalid hex; guard defensively even though
-        // GetFormatBadgeColors returns hardcoded constants.
-        try
-        {
-            FormatBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bg));
-            FormatBadgeText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(fg));
-        }
-        catch (FormatException) { /* keep default colors */ }
+        var (bg, fg) = FileFormatDetector.GetFormatBadgeBrushKeys(format);
+        FormatBadge.Background = ThemeBrushes.Get(bg);
+        FormatBadgeText.Foreground = ThemeBrushes.Get(fg);
 
         // Show/hide the correct settings panel
         bool isCsv = format == SupportedFileFormat.Csv || format == SupportedFileFormat.Tsv;

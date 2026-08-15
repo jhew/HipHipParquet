@@ -22,7 +22,7 @@ public partial class SparklineControl : UserControl
 
     public static readonly DependencyProperty BarColorProperty =
         DependencyProperty.Register(nameof(BarColor), typeof(Brush),
-            typeof(SparklineControl), new PropertyMetadata(new SolidColorBrush(Color.FromRgb(81, 43, 212))));
+            typeof(SparklineControl), new PropertyMetadata(Views.ThemeBrushes.Accent));
 
     public List<HistogramBucket>? Buckets
     {

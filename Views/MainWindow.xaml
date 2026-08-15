@@ -12,19 +12,19 @@
         Drop="OnFileDrop">
     <Window.Resources>
         <Style x:Key="PaneChrome" TargetType="Border">
-            <Setter Property="Background" Value="#F8FBFF"/>
-            <Setter Property="BorderBrush" Value="#D5DFEA"/>
+            <Setter Property="Background" Value="{DynamicResource Brush.Pane}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="10"/>
         </Style>
         <Style x:Key="PaneTitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="#1F2D3D"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}"/>
         </Style>
         <Style x:Key="PaneSubtitle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Foreground" Value="#5C6F82"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
         </Style>
     </Window.Resources>
     <Window.TaskbarItemInfo>
@@ -42,7 +42,7 @@
         <CommandBinding Command="{x:Static views:MainWindow.GoToRowCommand}" Executed="OnGoToRowShortcut"/>
         <CommandBinding Command="{x:Static views:MainWindow.FocusSearchCommand}" Executed="OnFocusSearchShortcut"/>
     </Window.CommandBindings>
-    <Grid Background="#EEF3F8">
+    <Grid Background="{DynamicResource Brush.Window}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -54,12 +54,12 @@
             <MenuItem Header="_File">
                 <MenuItem Header="_Open..." Click="OnOpenFileClick">
                     <MenuItem.Icon>
-                        <TextBlock Text="📂" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE838;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Open _Markdown Helper..." Click="OnOpenMarkdownHelperClick">
                     <MenuItem.Icon>
-                        <TextBlock Text="📝" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE70F;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
@@ -69,30 +69,30 @@
                 <Separator/>
                 <MenuItem x:Name="SaveMenuItem" Header="_Save" Click="OnSaveClick" IsEnabled="False">
                     <MenuItem.Icon>
-                        <TextBlock Text="💾" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE74E;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem x:Name="SaveAsMenuItem" Header="Save _As..." Click="OnSaveAsClick" IsEnabled="False">
                     <MenuItem.Icon>
-                        <TextBlock Text="📋" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE792;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem x:Name="ExportAsMenuItem" Header="_Export As..." Click="OnExportAsClick" IsEnabled="False">
                     <MenuItem.Icon>
-                        <TextBlock Text="🔄" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xEDE1;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem x:Name="ImportOptionsMenuItem" Header="_Import Options..." Click="OnImportOptionsClick" IsEnabled="False">
                     <MenuItem.Icon>
-                        <TextBlock Text="⚙️" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE713;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem x:Name="FlattenJsonMenuItem" Header="Flatten _Nested JSON..." Click="OnFlattenJsonClick" IsEnabled="False">
                     <MenuItem.Icon>
-                        <TextBlock Text="&#x1F4E6;" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE7B8;"/>
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
@@ -102,6 +102,12 @@
                 <MenuItem x:Name="ToggleQualityPanelMenuItem" Header="Toggle _Quality Review Panel" Click="OnToggleQualityPanelClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem x:Name="ToggleQueryHubMenuItem" Header="Toggle _Query Hub" Click="OnToggleQueryHubClick" IsCheckable="True" IsChecked="True"/>
                 <MenuItem x:Name="ToggleMarkdownHelperMenuItem" Header="Toggle _Markdown Helper" Click="OnToggleMarkdownHelperClick" IsCheckable="True" IsChecked="False"/>
+                <Separator/>
+                <MenuItem Header="_Theme">
+                    <MenuItem x:Name="ThemeSystemMenuItem" Header="_Use System Setting" IsCheckable="True" Click="OnThemeSystemClick"/>
+                    <MenuItem x:Name="ThemeLightMenuItem" Header="_Light" IsCheckable="True" Click="OnThemeLightClick"/>
+                    <MenuItem x:Name="ThemeDarkMenuItem" Header="_Dark" IsCheckable="True" Click="OnThemeDarkClick"/>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Workspace">
                 <MenuItem Header="_Save Current View" Click="OnSaveCurrentViewClick"/>
@@ -129,7 +135,7 @@
                 <Separator/>
                 <MenuItem Header="_Copy" Click="OnCopyClick" InputGestureText="Ctrl+C">
                     <MenuItem.Icon>
-                        <TextBlock Text="📋" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE8C8;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Copy as _CSV" Click="OnCopyAsCsvClick" InputGestureText="Ctrl+Alt+C"/>
@@ -137,31 +143,31 @@
                 <Separator/>
                 <MenuItem Header="Clear All _Filters" Click="OnClearAllFiltersClick">
                     <MenuItem.Icon>
-                        <TextBlock Text="🔽" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE71C;"/>
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_Keyboard Shortcuts" Click="OnKeyboardShortcutsClick" InputGestureText="F1">
                     <MenuItem.Icon>
-                        <TextBlock Text="⌨" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE765;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="_Tips &amp; Tricks" Click="OnTipsAndTricksClick">
                     <MenuItem.Icon>
-                        <TextBlock Text="💡" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xEA80;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Check for _Updates..." Click="OnCheckForUpdatesClick">
                     <MenuItem.Icon>
-                        <TextBlock Text="🔄" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xEDE1;"/>
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="_About HipHipParquet..." Click="OnAboutClick">
                     <MenuItem.Icon>
-                        <TextBlock Text="ℹ" FontSize="14"/>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE946;"/>
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
@@ -197,7 +203,7 @@
                                      AutomationProperties.Name="Filter columns"/>
                             <TextBlock Text="Filter columns..."
                                        IsHitTestVisible="False"
-                                       Foreground="Gray"
+                                       Foreground="{DynamicResource Brush.TextMuted}"
                                        FontStyle="Italic"
                                        Margin="8,0,0,0"
                                        VerticalAlignment="Center">
@@ -219,13 +225,13 @@
                             <TextBlock Text="Schema" FontWeight="Bold" FontSize="16" Margin="0,0,0,8"/>
                             <TextBlock x:Name="SchemaStatusText" 
                                       Text="No file loaded" 
-                                      Foreground="Gray"/>
+                                      Foreground="{DynamicResource Brush.TextMuted}"/>
                         </StackPanel>
                     </ScrollViewer>
-                    <Border Grid.Row="2" BorderBrush="#DDE5EE" BorderThickness="0,1,0,0" Padding="8,6">
+                    <Border Grid.Row="2" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="8,6">
                         <Button x:Name="CopySchemaButton" Content="📋 Copy Schema" 
                                 Click="OnCopySchemaClick" HorizontalAlignment="Stretch"
-                                Padding="6,4" Background="White" BorderBrush="#CCC" Cursor="Hand"
+                                Padding="6,4" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Border}" Cursor="Hand"
                                 IsEnabled="False"/>
                     </Border>
                 </Grid>
@@ -235,7 +241,7 @@
             <GridSplitter x:Name="SchemaSplitter" Grid.Column="1" 
                          HorizontalAlignment="Stretch" 
                          Margin="0,10,0,10"
-                         Background="#D5DFEA"/>
+                         Background="{DynamicResource Brush.Border}"/>
 
             <!-- Data Grid Area -->
             <Grid x:Name="CenterColumnGrid" Grid.Column="2">
@@ -248,21 +254,21 @@
                 <StackPanel x:Name="EmptyStatePanel" Grid.Row="0" 
                            HorizontalAlignment="Center" 
                            VerticalAlignment="Center">
-                    <TextBlock Text="📊" FontSize="48" HorizontalAlignment="Center" Foreground="Gray"/>
+                    <TextBlock Text="&#xE838;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="48" HorizontalAlignment="Center" Foreground="{DynamicResource Brush.TextMuted}"/>
                     <TextBlock Text="Open a data file to get started" 
                               FontSize="18" 
-                              Foreground="Gray"
+                              Foreground="{DynamicResource Brush.TextMuted}"
                               Margin="0,8,0,0"
                               HorizontalAlignment="Center"/>
                     <Button Content="Browse Files" 
-                           Background="#512BD4"
-                           Foreground="White"
+                           Background="{DynamicResource Brush.Accent}"
+                           Foreground="{DynamicResource Brush.OnAccent}"
                            Margin="0,16,0,0"
                            Padding="16,8"
                            Click="OnOpenFileClick"/>
                 </StackPanel>
                 
-                <GridSplitter x:Name="MarkdownHelperSplitter" Grid.Row="1" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="#D5DFEA" Visibility="Collapsed"/>
+                <GridSplitter x:Name="MarkdownHelperSplitter" Grid.Row="1" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="{DynamicResource Brush.Border}" Visibility="Collapsed"/>
                 <Border x:Name="MarkdownHelperHost" Grid.Row="2" Margin="12,4,12,10" Style="{StaticResource PaneChrome}" Visibility="Collapsed" MinHeight="220">
                     <local:MarkdownHelperPanel x:Name="EmbeddedMarkdownHelper" PopOutRequested="OnMarkdownHelperPopOutRequested" FocusModeToggleRequested="OnMarkdownHelperFocusModeToggleRequested"/>
                 </Border>
@@ -303,7 +309,7 @@
                                 </DockPanel>
                                 <TextBlock x:Name="NotebookSourceHintText"
                                            Margin="0,4,0,8"
-                                           Foreground="#5C6F82"
+                                           Foreground="{DynamicResource Brush.TextSecondary}"
                                            Text="Open a source to start building local notebook steps."
                                            TextWrapping="Wrap"/>
 
@@ -363,24 +369,24 @@
                                     <Border x:Name="NotebookModeBadge"
                                             CornerRadius="10"
                                             Padding="8,3"
-                                            Background="#E3F2FD"
+                                            Background="{DynamicResource Brush.InfoBg}"
                                             Margin="0,0,8,0">
                                         <TextBlock x:Name="NotebookModeBadgeText"
                                                    Text="Ready"
                                                    FontSize="11"
                                                    FontWeight="SemiBold"
-                                                   Foreground="#1565C0"/>
+                                                   Foreground="{DynamicResource Brush.InfoText}"/>
                                     </Border>
                                     <TextBlock x:Name="NotebookActiveSourceText"
                                                VerticalAlignment="Center"
                                                FontWeight="SemiBold"
-                                               Foreground="#1F2933"
+                                               Foreground="{DynamicResource Brush.TextPrimary}"
                                                Text="No active source"/>
                                 </WrapPanel>
 
                                 <TextBlock x:Name="NotebookQueryLabelText"
                                            Margin="0,8,0,0"
-                                           Foreground="#52606D"
+                                           Foreground="{DynamicResource Brush.TextSecondary}"
                                            Text="Run local DuckDB SQL over any opened notebook source alias."/>
 
                                 <TextBox x:Name="NotebookQueryTextBox"
@@ -394,8 +400,8 @@
 
                                 <Border Margin="0,2,0,8"
                                     Padding="10"
-                                    Background="#EFF4FA"
-                                    BorderBrush="#D4E0EE"
+                                    Background="{DynamicResource Brush.Pane}"
+                                    BorderBrush="{DynamicResource Brush.Border}"
                                     BorderThickness="1"
                                     CornerRadius="8">
                                     <Grid>
@@ -433,8 +439,8 @@
                                           Margin="0,0,0,8">
                                         <MenuItem Header="Notebook Actions ▾"
                                               Padding="10,4"
-                                              Background="White"
-                                              BorderBrush="#CBD5E0"
+                                              Background="{DynamicResource Brush.Card}"
+                                              BorderBrush="{DynamicResource Brush.Border}"
                                               BorderThickness="1">
                                         <MenuItem x:Name="SaveNotebookQueryButton"
                                               Header="Save Current Query"
@@ -476,7 +482,7 @@
                                             VerticalAlignment="Center">
                                         <TextBlock Text="Saved Query"
                                                VerticalAlignment="Center"
-                                               Foreground="#52606D"
+                                               Foreground="{DynamicResource Brush.TextSecondary}"
                                                Margin="0,0,8,0"/>
                                         <ComboBox x:Name="SavedNotebookQueriesComboBox"
                                               Width="250"
@@ -484,7 +490,7 @@
                                               DisplayMemberPath="Name"/>
                                         <TextBlock Text="Schema Template"
                                                VerticalAlignment="Center"
-                                               Foreground="#52606D"
+                                               Foreground="{DynamicResource Brush.TextSecondary}"
                                                Margin="0,0,8,0"/>
                                         <ComboBox x:Name="SchemaTemplatesComboBox"
                                               Width="250"
@@ -506,13 +512,13 @@
                                             Click="OnPreviewNextPageClick"/>
                                     <TextBlock x:Name="PreviewPageStatusText"
                                                VerticalAlignment="Center"
-                                               Foreground="#52606D"
+                                               Foreground="{DynamicResource Brush.TextSecondary}"
                                                Text="Preview controls appear for large sources."/>
                                 </WrapPanel>
 
                                 <TextBlock x:Name="NotebookLastCheckText"
                                            Margin="0,8,0,0"
-                                           Foreground="#52606D"
+                                           Foreground="{DynamicResource Brush.TextSecondary}"
                                            TextWrapping="Wrap"/>
                             </StackPanel>
                         </Grid>
@@ -527,7 +533,7 @@
                         <DockPanel LastChildFill="False">
                             <TextBlock Text="Query Hub hidden"
                                        VerticalAlignment="Center"
-                                       Foreground="#52606D"/>
+                                       Foreground="{DynamicResource Brush.TextSecondary}"/>
                             <Button Content="▾ Expand Query Hub"
                                     Padding="10,3"
                                     Margin="10,0,0,0"
@@ -538,19 +544,19 @@
                     
                     <!-- Load More Banner -->
                     <Border x:Name="LoadMoreBanner" Grid.Row="1" 
-                            Background="#FFF3E0" BorderBrush="#FFB74D" BorderThickness="0,0,0,1"
+                            Background="{DynamicResource Brush.WarningBg}" BorderBrush="{DynamicResource Brush.WarningBorder}" BorderThickness="0,0,0,1"
                             Padding="8,6" Visibility="Collapsed">
                         <DockPanel>
                             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                                 <Button Content="Load Next 50K" Padding="10,4" Margin="0,0,6,0"
-                                        Click="OnLoadMoreClick" Background="#FF9800" Foreground="White"
+                                        Click="OnLoadMoreClick" Background="{DynamicResource Brush.Warning}" Foreground="{DynamicResource Brush.OnAccent}"
                                         BorderThickness="0"/>
                                 <Button Content="Load All" Padding="10,4"
-                                        Click="OnLoadAllClick" Background="#E65100" Foreground="White"
+                                        Click="OnLoadAllClick" Background="{DynamicResource Brush.WarningEmphasis}" Foreground="{DynamicResource Brush.OnAccent}"
                                         BorderThickness="0"/>
                             </StackPanel>
                             <TextBlock x:Name="LoadMoreText" VerticalAlignment="Center"
-                                       Text="Showing 50,000 of X rows" Foreground="#E65100" FontWeight="SemiBold"/>
+                                       Text="Showing 50,000 of X rows" Foreground="{DynamicResource Brush.WarningText}" FontWeight="SemiBold"/>
                         </DockPanel>
                     </Border>
 
@@ -560,7 +566,7 @@
                              AutoGenerateColumns="False"
                              HeadersVisibility="All"
                              GridLinesVisibility="All"
-                             AlternatingRowBackground="#F9F9F9"
+                             AlternatingRowBackground="{DynamicResource Brush.RowAlt}"
                              CanUserAddRows="False"
                              CanUserDeleteRows="False"
                              IsReadOnly="False"
@@ -581,12 +587,12 @@
                                 <Separator/>
                                 <MenuItem Header="Copy" Click="OnContextCopyClick">
                                     <MenuItem.Icon>
-                                        <TextBlock Text="📋" FontSize="12"/>
+                                        <TextBlock Style="{StaticResource MenuIconGlyph}" FontSize="12" Text="&#xE8C8;"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <MenuItem Header="Copy with Headers" Click="OnContextCopyWithHeadersClick">
                                     <MenuItem.Icon>
-                                        <TextBlock Text="📋" FontSize="12"/>
+                                        <TextBlock Style="{StaticResource MenuIconGlyph}" FontSize="12" Text="&#xE8C8;"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <Separator/>
@@ -603,12 +609,12 @@
                                 <Separator/>
                                 <MenuItem Header="Copy Row(s)" Click="OnContextCopyRowsClick">
                                     <MenuItem.Icon>
-                                        <TextBlock Text="➡️" FontSize="12"/>
+                                        <TextBlock Style="{StaticResource MenuIconGlyph}" FontSize="12" Text="&#xE72A;"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <MenuItem Header="Copy Row(s) with Headers" Click="OnContextCopyRowsWithHeadersClick">
                                     <MenuItem.Icon>
-                                        <TextBlock Text="➡️" FontSize="12"/>
+                                        <TextBlock Style="{StaticResource MenuIconGlyph}" FontSize="12" Text="&#xE72A;"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <MenuItem x:Name="CopyRowsAsCsvContextMenuItem" Header="Copy Row(s) as CSV" Click="OnContextCopyRowsAsCsvClick"/>
@@ -629,12 +635,12 @@
                                 <Separator/>
                                 <MenuItem Header="Copy Column(s)" Click="OnContextCopyColumnsClick">
                                     <MenuItem.Icon>
-                                        <TextBlock Text="⬇️" FontSize="12"/>
+                                        <TextBlock Style="{StaticResource MenuIconGlyph}" FontSize="12" Text="&#xE74B;"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <MenuItem Header="Copy Column(s) with Headers" Click="OnContextCopyColumnsWithHeadersClick">
                                     <MenuItem.Icon>
-                                        <TextBlock Text="⬇️" FontSize="12"/>
+                                        <TextBlock Style="{StaticResource MenuIconGlyph}" FontSize="12" Text="&#xE74B;"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <Separator/>
@@ -656,7 +662,7 @@
             <GridSplitter x:Name="QualitySplitter" Grid.Column="3" 
                          HorizontalAlignment="Stretch" 
                          Margin="0,10,0,10"
-                         Background="#D5DFEA"
+                         Background="{DynamicResource Brush.Border}"
                          ShowsPreview="True"
                          ResizeBehavior="PreviousAndNext"
                          DragCompleted="OnQualitySplitterDragCompleted"
@@ -670,12 +676,12 @@
 
         <!-- Loading Overlay -->
         <Grid x:Name="LoadingOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Panel.ZIndex="100">
-            <Border Background="#88FFFFFF">
+            <Border Background="{DynamicResource Brush.Overlay}">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                     <ProgressBar x:Name="LoadingProgress" IsIndeterminate="True" 
                                  Width="200" Height="6" Margin="0,0,0,8"/>
                     <TextBlock x:Name="LoadingText" Text="Loading..." 
-                               HorizontalAlignment="Center" FontSize="14" Foreground="#512BD4"/>
+                               HorizontalAlignment="Center" FontSize="14" Foreground="{DynamicResource Brush.AccentText}"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -685,65 +691,66 @@
             <StatusBarItem>
                 <StackPanel Orientation="Horizontal">
                     <Border x:Name="FormatBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
-                            Visibility="Collapsed" Background="#E3F2FD">
+                            Visibility="Collapsed" Background="{DynamicResource Brush.InfoBg}">
                         <TextBlock x:Name="FormatBadgeText" Text="" FontSize="11" 
-                                   FontWeight="SemiBold" Foreground="#1565C0"/>
+                                   FontWeight="SemiBold" Foreground="{DynamicResource Brush.InfoText}"/>
                     </Border>
                     <TextBlock x:Name="StatusText" Text="Ready"/>
-                    <TextBlock x:Name="RowCountText" Text="" Margin="12,0,0,0" Foreground="#666"/>
+                    <TextBlock x:Name="RowCountText" Text="" Margin="12,0,0,0" Foreground="{DynamicResource Brush.TextSecondary}"/>
                 </StackPanel>
             </StatusBarItem>
             <StatusBarItem HorizontalAlignment="Right">
                 <StackPanel Orientation="Horizontal">
                     <Border x:Name="FilterBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
-                            Visibility="Collapsed" Background="#FFF3E0">
+                            Visibility="Collapsed" Background="{DynamicResource Brush.WarningBg}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock x:Name="FilterBadgeText" Text="" FontSize="11"
-                                       FontWeight="SemiBold" Foreground="#E65100" VerticalAlignment="Center"/>
+                                       FontWeight="SemiBold" Foreground="{DynamicResource Brush.WarningText}" VerticalAlignment="Center"/>
                             <Button x:Name="ClearAllFiltersButton" Content="✕" FontSize="10"
                                     Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
-                                    Background="Transparent" Foreground="#E65100" Cursor="Hand"
+                                    Background="Transparent" Foreground="{DynamicResource Brush.WarningText}" Cursor="Hand"
                                     ToolTip="Clear all filters" Click="OnClearAllFiltersClick"
                                     VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
                             <Border x:Name="PendingChangesBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
-                                Visibility="Collapsed" Background="#FFEBEE">
+                                Visibility="Collapsed" Background="{DynamicResource Brush.DangerBg}">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock x:Name="PendingChangesText" Text="" FontSize="11"
-                                       FontWeight="SemiBold" Foreground="#C62828" VerticalAlignment="Center"/>
+                                       FontWeight="SemiBold" Foreground="{DynamicResource Brush.DangerText}" VerticalAlignment="Center"/>
                                 <Button Content="Save" FontSize="10"
                                     Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
-                                    Background="Transparent" Foreground="#C62828" Cursor="Hand"
+                                    Background="Transparent" Foreground="{DynamicResource Brush.DangerText}" Cursor="Hand"
                                     ToolTip="Save pending changes" Click="OnSaveClick"
                                     VerticalAlignment="Center"/>
                             </StackPanel>
                             </Border>
                     <Border x:Name="UndoActionBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
-                            Visibility="Collapsed" Background="#E8F5E9">
+                            Visibility="Collapsed" Background="{DynamicResource Brush.SuccessBg}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock x:Name="UndoActionText" Text="" FontSize="11"
-                                       FontWeight="SemiBold" Foreground="#2E7D32" VerticalAlignment="Center"/>
+                                       FontWeight="SemiBold" Foreground="{DynamicResource Brush.SuccessText}" VerticalAlignment="Center"/>
                             <Button Content="Undo" FontSize="10"
                                     Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
-                                    Background="Transparent" Foreground="#2E7D32" Cursor="Hand"
+                                    Background="Transparent" Foreground="{DynamicResource Brush.SuccessText}" Cursor="Hand"
                                     ToolTip="Undo the last edit" Click="OnUndoLastActionClick"
                                     VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
                     <Border x:Name="QualityStaleBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
-                            Visibility="Collapsed" Background="#FFF3E0">
+                            Visibility="Collapsed" Background="{DynamicResource Brush.WarningBg}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Quality review is stale" FontSize="11"
-                                       FontWeight="SemiBold" Foreground="#E65100" VerticalAlignment="Center"/>
+                                       FontWeight="SemiBold" Foreground="{DynamicResource Brush.WarningText}" VerticalAlignment="Center"/>
                             <Button Content="Refresh" FontSize="10"
                                     Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
-                                    Background="Transparent" Foreground="#E65100" Cursor="Hand"
+                                    Background="Transparent" Foreground="{DynamicResource Brush.WarningText}" Cursor="Hand"
                                     ToolTip="Refresh the quality review" Click="OnRefreshQualityReviewClick"
                                     VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
-                    <TextBlock Text="🔍 Global Search:" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Global Search:" Margin="0,0,5,0" VerticalAlignment="Center"/>
                     <TextBox x:Name="GlobalSearchBox" 
                             Width="200" 
                             TextChanged="OnGlobalSearchTextChanged"
