@@ -6074,7 +6074,8 @@ public partial class MainWindow : Window
                     "The installer could not be automatically verified — no checksum file was found and the installer is not Authenticode signed.\n\n" +
                     (string.IsNullOrWhiteSpace(verificationMessage) ? string.Empty : $"Details: {verificationMessage}\n\n") +
                     "It was downloaded directly from GitHub over HTTPS. Run it anyway?",
-                    "Verification Not Available", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    "Verification Not Available", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                    MessageBoxResult.No);
 
                 if (proceed != MessageBoxResult.Yes)
                 {

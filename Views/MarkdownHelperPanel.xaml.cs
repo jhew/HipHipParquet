@@ -32,6 +32,18 @@ public partial class MarkdownHelperPanel : UserControl
         EditorTextBox.TextChanged += OnEditorTextChanged;
         _persistDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
         _persistDebounceTimer.Tick += PersistDebounceTimerOnTick;
+        Unloaded += OnPanelUnloaded;
+    }
+
+    private async void OnPanelUnloaded(object sender, RoutedEventArgs e)
+    {
+        // A running DispatcherTimer roots the panel via the dispatcher; stop it when the
+        // panel leaves the tree and flush any pending draft so nothing is lost.
+        if (_persistDebounceTimer.IsEnabled)
+        {
+            _persistDebounceTimer.Stop();
+            await PersistDraftAsync();
+        }
     }
 
     public void InitializeWorkspaceService(WorkspaceService workspaceService)
@@ -134,6 +146,7 @@ public partial class MarkdownHelperPanel : UserControl
             return;
 
         LoadDocument(null, string.Empty, isDirty: false);
+        await PersistDraftAsync();
         ViewModel.StatusMessage = "Started a new markdown document.";
     }
 
