@@ -801,6 +801,10 @@ public class ParquetService : IDisposable
             var format = FileFormatDetector.DetectFormat(filePath);
             var formatName = FileFormatDetector.GetFormatDisplayName(format);
             _logger.LogInformation("Saving {Format} file: {FilePath}", formatName, normalizedPath);
+
+            // XLSX export goes through the spatial extension's GDAL xlsx driver.
+            if (format == SupportedFileFormat.Excel)
+                await EnsureExcelExtensionAsync(_connection);
             
             // Create a temporary table from the DataTable
             var tempTableName = "temp_" + Guid.NewGuid().ToString("N");

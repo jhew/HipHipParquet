@@ -21,7 +21,8 @@ HipHipParquet provides a self-contained workflow for data inspection and quality
 | Split / sharded Parquet | Yes | Yes |
 | CSV / TSV / TAB | Yes | Yes |
 | JSON / JSONL / NDJSON | Yes | Yes |
-| Excel (.xlsx, .xls) | Yes | No |
+| Excel (.xlsx) | Yes | Yes |
+| Excel (.xls) | Yes | No |
 
 ---
 
@@ -128,7 +129,7 @@ https://github.com/jhew/HipHipParquet/releases
 
 ## Technical Stack
 
-- .NET 8 and WPF
+- .NET 10 and WPF with Fluent theming (light, dark, and system-tracked modes)
 - DuckDB.NET for file I/O and SQL analytics
 - CommunityToolkit.Mvvm for view model binding
 - Markdig for markdown rendering

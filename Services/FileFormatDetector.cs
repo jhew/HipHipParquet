@@ -288,6 +288,7 @@ public static class FileFormatDetector
         SupportedFileFormat.Csv => "CSV",
         SupportedFileFormat.Tsv => "CSV",
         SupportedFileFormat.Json => "JSON",
+        SupportedFileFormat.Excel => "GDAL",
         _ => "PARQUET"
     };
 
@@ -298,6 +299,7 @@ public static class FileFormatDetector
     {
         SupportedFileFormat.Tsv => ", DELIMITER '\\t', HEADER",
         SupportedFileFormat.Csv => ", HEADER",
+        SupportedFileFormat.Excel => ", DRIVER 'xlsx'",
         _ => ""
     };
 
@@ -455,6 +457,7 @@ public static class FileFormatDetector
                "CSV files (*.csv)|*.csv|" +
                "TSV files (*.tsv)|*.tsv|" +
                "JSON files (*.json)|*.json|" +
+               "Excel workbook (*.xlsx)|*.xlsx|" +
                "All files (*.*)|*.*";
     }
 
