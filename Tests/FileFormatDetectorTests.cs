@@ -310,8 +310,14 @@ public class FileFormatDetectorTests
         Assert.Contains("*.csv", filter);
         Assert.Contains("*.tsv", filter);
         Assert.Contains("*.json", filter);
-        // Excel is not supported for save (no write support)
-        Assert.DoesNotContain("*.xlsx", filter);
+        Assert.Contains("*.xlsx", filter);
+    }
+
+    [Fact]
+    public void GetDuckDbExportFormat_Excel_UsesGdalXlsxDriver()
+    {
+        Assert.Equal("GDAL", FileFormatDetector.GetDuckDbExportFormat(SupportedFileFormat.Excel));
+        Assert.Contains("DRIVER 'xlsx'", FileFormatDetector.GetDuckDbExportOptions(SupportedFileFormat.Excel));
     }
 
     private sealed class TempDirectory : IDisposable

@@ -1,0 +1,67 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+      Semantic color system for HipHipParquet (dark theme).
+      Keys mirror LightTheme.xaml exactly; hues stay recognisable while tinted
+      backgrounds flip to deep desaturated equivalents.
+    -->
+
+    <!-- Surfaces -->
+    <SolidColorBrush x:Key="Brush.Window" Color="#1E2227"/>
+    <SolidColorBrush x:Key="Brush.Card" Color="#262B31"/>
+    <SolidColorBrush x:Key="Brush.Pane" Color="#24292F"/>
+    <SolidColorBrush x:Key="Brush.Subtle" Color="#2A3037"/>
+    <SolidColorBrush x:Key="Brush.RowAlt" Color="#22262C"/>
+    <SolidColorBrush x:Key="Brush.Border" Color="#3A424B"/>
+    <SolidColorBrush x:Key="Brush.BorderNeutral" Color="#3A424B"/>
+    <SolidColorBrush x:Key="Brush.Overlay" Color="#881E2227"/>
+
+    <!-- Text -->
+    <SolidColorBrush x:Key="Brush.TextPrimary" Color="#E8ECF1"/>
+    <SolidColorBrush x:Key="Brush.TextSecondary" Color="#A9B4C0"/>
+    <SolidColorBrush x:Key="Brush.TextMuted" Color="#7C8794"/>
+    <SolidColorBrush x:Key="Brush.OnAccent" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="Brush.HeadingText" Color="#9FC1E8"/>
+    <SolidColorBrush x:Key="Brush.HeadingStrong" Color="#B7D2F0"/>
+    <SolidColorBrush x:Key="Brush.BannerBg" Color="#16283E"/>
+    <SolidColorBrush x:Key="Brush.BannerSubtle" Color="#9FB8D4"/>
+
+    <!-- Accent -->
+    <SolidColorBrush x:Key="Brush.Accent" Color="#6D4FE0"/>
+    <SolidColorBrush x:Key="Brush.AccentHover" Color="#8B70E8"/>
+    <SolidColorBrush x:Key="Brush.AccentText" Color="#B0A0F5"/>
+
+    <!-- Status: success -->
+    <SolidColorBrush x:Key="Brush.Success" Color="#5CBF60"/>
+    <SolidColorBrush x:Key="Brush.SuccessText" Color="#81C784"/>
+    <SolidColorBrush x:Key="Brush.SuccessBg" Color="#1E3320"/>
+    <SolidColorBrush x:Key="Brush.SuccessBorder" Color="#2E4D30"/>
+
+    <!-- Status: danger -->
+    <SolidColorBrush x:Key="Brush.Danger" Color="#EF5350"/>
+    <SolidColorBrush x:Key="Brush.DangerText" Color="#EF9A9A"/>
+    <SolidColorBrush x:Key="Brush.DangerBg" Color="#3A2224"/>
+    <SolidColorBrush x:Key="Brush.DangerBorder" Color="#59383B"/>
+
+    <!-- Status: warning -->
+    <SolidColorBrush x:Key="Brush.Warning" Color="#FFA726"/>
+    <SolidColorBrush x:Key="Brush.WarningText" Color="#FFB74D"/>
+    <SolidColorBrush x:Key="Brush.WarningDeep" Color="#FF8A65"/>
+    <SolidColorBrush x:Key="Brush.WarningBg" Color="#38301F"/>
+    <SolidColorBrush x:Key="Brush.WarningBorder" Color="#8A6A30"/>
+    <SolidColorBrush x:Key="Brush.WarningBorderSoft" Color="#5C4A26"/>
+    <SolidColorBrush x:Key="Brush.WarningEmphasis" Color="#D66A1E"/>
+    <SolidColorBrush x:Key="Brush.DangerEmphasis" Color="#C94F4C"/>
+
+    <!-- Status: info -->
+    <SolidColorBrush x:Key="Brush.Info" Color="#42A5F5"/>
+    <SolidColorBrush x:Key="Brush.InfoText" Color="#64B5F6"/>
+    <SolidColorBrush x:Key="Brush.InfoBg" Color="#1C2C3D"/>
+
+    <!-- Category accents (quality dimensions, schema types) -->
+    <SolidColorBrush x:Key="Brush.Special" Color="#BA68C8"/>
+    <SolidColorBrush x:Key="Brush.SpecialText" Color="#CE93D8"/>
+    <SolidColorBrush x:Key="Brush.Earth" Color="#A1887F"/>
+</ResourceDictionary>

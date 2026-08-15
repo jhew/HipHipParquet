@@ -288,6 +288,7 @@ public static class FileFormatDetector
         SupportedFileFormat.Csv => "CSV",
         SupportedFileFormat.Tsv => "CSV",
         SupportedFileFormat.Json => "JSON",
+        SupportedFileFormat.Excel => "GDAL",
         _ => "PARQUET"
     };
 
@@ -298,6 +299,7 @@ public static class FileFormatDetector
     {
         SupportedFileFormat.Tsv => ", DELIMITER '\\t', HEADER",
         SupportedFileFormat.Csv => ", HEADER",
+        SupportedFileFormat.Excel => ", DRIVER 'xlsx'",
         _ => ""
     };
 
@@ -325,6 +327,20 @@ public static class FileFormatDetector
         SupportedFileFormat.Json    => ("#FFF3E0", "#E65100"),  // Orange
         SupportedFileFormat.Excel   => ("#E8F5E9", "#1B5E20"),  // Dark green
         _                           => ("#F5F5F5", "#616161")   // Grey
+    };
+
+    /// <summary>
+    /// Theme-aware variant of <see cref="GetFormatBadgeColors"/>: returns semantic
+    /// brush resource keys defined in Themes/*.xaml instead of literal hex values.
+    /// </summary>
+    public static (string BackgroundKey, string ForegroundKey) GetFormatBadgeBrushKeys(SupportedFileFormat format) => format switch
+    {
+        SupportedFileFormat.Parquet => ("Brush.SuccessBg", "Brush.SuccessText"),
+        SupportedFileFormat.Csv     => ("Brush.InfoBg", "Brush.InfoText"),
+        SupportedFileFormat.Tsv     => ("Brush.InfoBg", "Brush.InfoText"),
+        SupportedFileFormat.Json    => ("Brush.WarningBg", "Brush.WarningText"),
+        SupportedFileFormat.Excel   => ("Brush.SuccessBg", "Brush.SuccessText"),
+        _                           => ("Brush.Subtle", "Brush.TextSecondary")
     };
 
     /// <summary>
@@ -441,6 +457,7 @@ public static class FileFormatDetector
                "CSV files (*.csv)|*.csv|" +
                "TSV files (*.tsv)|*.tsv|" +
                "JSON files (*.json)|*.json|" +
+               "Excel workbook (*.xlsx)|*.xlsx|" +
                "All files (*.*)|*.*";
     }
 

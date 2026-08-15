@@ -79,6 +79,66 @@ namespace HipHipParquet.Views
             return output.ToString();
         }
 
+        /// <summary>
+        /// Formats the selected cells as a GitHub-flavored Markdown table.
+        /// Headers are always included (a Markdown table requires a header row);
+        /// pipes are escaped and embedded newlines become &lt;br&gt;.
+        /// </summary>
+        public static string FormatCellsAsMarkdown(DataGrid grid, IEnumerable<DataGridCellInfo> selectedCells)
+        {
+            var cells = selectedCells?.ToList() ?? new List<DataGridCellInfo>();
+            if (cells.Count == 0)
+                return string.Empty;
+
+            var indexMap = new Dictionary<object, int>();
+            for (int i = 0; i < grid.Items.Count; i++)
+            {
+                var item = grid.Items[i];
+                if (!indexMap.ContainsKey(item))
+                    indexMap[item] = i;
+            }
+
+            var columns = cells
+                .Select(cell => cell.Column)
+                .Distinct()
+                .OrderBy(col => col.DisplayIndex)
+                .ToList();
+            var columnOrder = columns
+                .Select((col, i) => (col, i))
+                .ToDictionary(p => p.col, p => p.i);
+
+            var output = new StringBuilder();
+            output.Append("| ").Append(string.Join(" | ", columns.Select(c => EscapeMarkdownCell(GetColumnHeaderText(c))))).AppendLine(" |");
+            output.Append("|").Append(string.Concat(Enumerable.Repeat(" --- |", columns.Count))).AppendLine();
+
+            var rowGroups = cells
+                .GroupBy(cell => indexMap.TryGetValue(cell.Item, out var idx) ? idx : -1)
+                .OrderBy(g => g.Key);
+
+            foreach (var rowGroup in rowGroups)
+            {
+                // Keep column positions stable even when the selection is ragged.
+                var values = new string[columns.Count];
+                Array.Fill(values, string.Empty);
+                foreach (var cell in rowGroup)
+                {
+                    if (columnOrder.TryGetValue(cell.Column, out var pos))
+                        values[pos] = EscapeMarkdownCell(GetCellValue(cell, "\t"));
+                }
+                output.Append("| ").Append(string.Join(" | ", values)).AppendLine(" |");
+            }
+
+            return output.ToString();
+        }
+
+        private static string EscapeMarkdownCell(string value)
+        {
+            return value
+                .Replace("|", "\\|")
+                .Replace("\r\n", "<br>")
+                .Replace("\n", "<br>")
+                .Replace("\r", "<br>");
+        }
 
         private static string GetCellValue(DataGridCellInfo cell, string delimiter)
         {

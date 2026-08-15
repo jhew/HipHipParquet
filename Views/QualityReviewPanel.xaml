@@ -5,7 +5,7 @@
              xmlns:vm="clr-namespace:HipHipParquet.ViewModels"
              xmlns:local="clr-namespace:HipHipParquet.Views"
              xmlns:conv="clr-namespace:HipHipParquet.Converters"
-             Background="#F8FBFF">
+             Background="{DynamicResource Brush.Pane}">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
@@ -14,8 +14,8 @@
         
         <!-- Card style for sections -->
         <Style x:Key="SectionCard" TargetType="Border">
-            <Setter Property="Background" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#DCE5EF"/>
+            <Setter Property="Background" Value="{DynamicResource Brush.Card}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Margin" Value="0,0,0,16"/>
@@ -26,23 +26,23 @@
         <Style x:Key="ScoreBar" TargetType="ProgressBar">
             <Setter Property="Height" Value="6"/>
             <Setter Property="Maximum" Value="25"/>
-            <Setter Property="Foreground" Value="#4CAF50"/>
-            <Setter Property="Background" Value="#E8E8E8"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Success}"/>
+            <Setter Property="Background" Value="{DynamicResource Brush.Subtle}"/>
             <Setter Property="Margin" Value="0,2,0,4"/>
         </Style>
         
         <!-- Score bar colors for each dimension -->
         <Style x:Key="CompletenessBar" TargetType="ProgressBar" BasedOn="{StaticResource ScoreBar}">
-            <Setter Property="Foreground" Value="#4CAF50"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Success}"/>
         </Style>
         <Style x:Key="UniquenessBar" TargetType="ProgressBar" BasedOn="{StaticResource ScoreBar}">
-            <Setter Property="Foreground" Value="#2196F3"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Info}"/>
         </Style>
         <Style x:Key="ValidityBar" TargetType="ProgressBar" BasedOn="{StaticResource ScoreBar}">
-            <Setter Property="Foreground" Value="#FF9800"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}"/>
         </Style>
         <Style x:Key="DistributionBar" TargetType="ProgressBar" BasedOn="{StaticResource ScoreBar}">
-            <Setter Property="Foreground" Value="#9C27B0"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Special}"/>
         </Style>
 
         <!-- Small badge style -->
@@ -79,22 +79,22 @@
         
         <!-- Export button style - matches Analyze button colors -->
         <Style x:Key="ExportButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="Foreground" Value="#512BD4"/>
+            <Setter Property="Background" Value="{DynamicResource Brush.Card}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.AccentText}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Padding" Value="8,4"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#F0F0F0"/>
+                    <Setter Property="Background" Value="{DynamicResource Brush.Subtle}"/>
                 </Trigger>
                 <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="#E0E0E0"/>
+                    <Setter Property="Background" Value="{DynamicResource Brush.BorderNeutral}"/>
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#E8E8E8"/>
-                    <Setter Property="Foreground" Value="#999999"/>
+                    <Setter Property="Background" Value="{DynamicResource Brush.Subtle}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}"/>
                     <Setter Property="Cursor" Value="Arrow"/>
                 </Trigger>
             </Style.Triggers>
@@ -109,25 +109,25 @@
         </Grid.RowDefinitions>
         
         <!-- Header -->
-        <Border Grid.Row="0" Padding="12,10" Background="#EEF4FB" BorderBrush="#D5DFEA" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Padding="12,10" Background="{DynamicResource Brush.Pane}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <StackPanel Grid.Row="0" Margin="0,0,0,6">
-                    <TextBlock Text="Quality Review" FontSize="16" FontWeight="Bold" Foreground="#1F2D3D"/>
-                    <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="#5C6F82" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="Quality Review" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource Brush.TextPrimary}"/>
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{DynamicResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
                 <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Border Background="#FFF3E0" CornerRadius="12" Padding="8,3" Margin="0,0,8,0"
+                    <Border Background="{DynamicResource Brush.WarningBg}" CornerRadius="12" Padding="8,3" Margin="0,0,8,0"
                             Visibility="{Binding IsProfileStale, Converter={StaticResource BoolToVis}}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Refresh recommended" FontSize="10" Foreground="#E65100" FontWeight="SemiBold"/>
+                            <TextBlock Text="Refresh recommended" FontSize="10" Foreground="{DynamicResource Brush.WarningText}" FontWeight="SemiBold"/>
                             <Button Content="Refresh"
                                     Command="{Binding AnalyzeCommand}"
                                     Background="Transparent"
-                                    Foreground="#E65100"
+                                    Foreground="{DynamicResource Brush.WarningText}"
                                     BorderThickness="0"
                                     Cursor="Hand"
                                     Padding="6,0,0,0"
@@ -137,13 +137,13 @@
                     </Border>
                         <Button Content="Analyze" 
                             Command="{Binding AnalyzeCommand}" 
-                            Background="#FFFFFF" Foreground="#2B4C7E" 
+                            Background="{DynamicResource Brush.Card}" Foreground="{DynamicResource Brush.HeadingText}" 
                             FontWeight="Bold" Padding="12,4" Margin="0,0,6,0"
-                            BorderBrush="#C7D5E3" BorderThickness="1" Cursor="Hand"
+                            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Cursor="Hand"
                             Visibility="{Binding IsAnalyzing, Converter={StaticResource InverseBoolToVis}}"/>
                     <Button Content="⏹ Cancel"
                             Command="{Binding CancelAnalysisCommand}"
-                            Background="#C62828" Foreground="White"
+                            Background="{DynamicResource Brush.DangerEmphasis}" Foreground="{DynamicResource Brush.OnAccent}"
                             FontWeight="Bold" Padding="12,4" Margin="0,0,6,0"
                             BorderThickness="0" Cursor="Hand"
                             Visibility="{Binding CanCancel, Converter={StaticResource BoolToVis}}"/>
@@ -158,7 +158,7 @@
         <ProgressBar Grid.Row="0" VerticalAlignment="Bottom" Height="3"
                      Value="{Binding AnalysisProgress}" Maximum="100"
                      Visibility="{Binding IsAnalyzing, Converter={StaticResource BoolToVis}}"
-                 Foreground="#2B4C7E" Background="Transparent" BorderThickness="0"/>
+                 Foreground="{DynamicResource Brush.HeadingText}" Background="Transparent" BorderThickness="0"/>
         
         <!-- Scrollable Content -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="12">
@@ -180,7 +180,7 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock FontSize="14" Foreground="Gray"
+                        <TextBlock FontSize="14" Foreground="{DynamicResource Brush.TextMuted}"
                                    HorizontalAlignment="Center" Margin="0,8,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -193,7 +193,7 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock FontSize="11" Foreground="Gray"
+                        <TextBlock FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -218,9 +218,9 @@
                         <!-- File name + analyzed at -->
                         <TextBox Style="{StaticResource SelectableText}" FontSize="11" FontWeight="SemiBold"
                                  Text="{Binding ProfileDisplayName, Mode=OneWay}" TextWrapping="Wrap" Margin="0,0,0,2"/>
-                        <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#888"
+                        <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}"
                                  Text="{Binding AnalyzedAtDisplay, Mode=OneWay}" Margin="0,0,0,10"/>
-                        <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#666"
+                        <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="{DynamicResource Brush.TextSecondary}"
                                  Text="{Binding SourceSetSummary, Mode=OneWay}"
                                  Margin="0,0,0,10"
                                  Visibility="{Binding HasSourceManifest, Converter={StaticResource BoolToVis}}"/>
@@ -238,56 +238,56 @@
                             </Grid.RowDefinitions>
 
                             <!-- Rows -->
-                            <Border Grid.Row="0" Grid.Column="0" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,4,4">
+                            <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource Brush.Subtle}" CornerRadius="4" Padding="8,6" Margin="0,0,4,4">
                                 <StackPanel>
                                     <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
                                              Text="{Binding FileProfile.RowCount, StringFormat='{}{0:N0}', Mode=OneWay}"/>
-                                    <TextBlock Text="Rows" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                    <TextBlock Text="Rows" FontSize="9" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0"/>
                                 </StackPanel>
                             </Border>
 
                             <!-- Columns -->
-                            <Border Grid.Row="0" Grid.Column="1" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,4,4">
+                            <Border Grid.Row="0" Grid.Column="1" Background="{DynamicResource Brush.Subtle}" CornerRadius="4" Padding="8,6" Margin="0,0,4,4">
                                 <StackPanel>
                                     <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
                                              Text="{Binding FileProfile.ColumnCount, Mode=OneWay}"/>
-                                    <TextBlock Text="Columns" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                    <TextBlock Text="Columns" FontSize="9" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0"/>
                                 </StackPanel>
                             </Border>
 
                             <!-- File Size -->
-                            <Border Grid.Row="0" Grid.Column="2" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,0,4">
+                            <Border Grid.Row="0" Grid.Column="2" Background="{DynamicResource Brush.Subtle}" CornerRadius="4" Padding="8,6" Margin="0,0,0,4">
                                 <StackPanel>
                                     <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
                                              Text="{Binding FileProfile.FileSizeFormatted, Mode=OneWay}"/>
-                                    <TextBlock Text="File Size" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                    <TextBlock Text="File Size" FontSize="9" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0"/>
                                 </StackPanel>
                             </Border>
 
                             <!-- Format -->
-                            <Border Grid.Row="1" Grid.Column="0" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,4,0">
+                            <Border Grid.Row="1" Grid.Column="0" Background="{DynamicResource Brush.Subtle}" CornerRadius="4" Padding="8,6" Margin="0,0,4,0">
                                 <StackPanel>
                                     <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
                                              Text="{Binding FormatDisplay, Mode=OneWay}"/>
-                                    <TextBlock Text="Format" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                    <TextBlock Text="Format" FontSize="9" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0"/>
                                 </StackPanel>
                             </Border>
 
                             <!-- Completeness -->
-                            <Border Grid.Row="1" Grid.Column="1" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,4,0">
+                            <Border Grid.Row="1" Grid.Column="1" Background="{DynamicResource Brush.Subtle}" CornerRadius="4" Padding="8,6" Margin="0,0,4,0">
                                 <StackPanel>
                                     <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
                                              Text="{Binding FileProfile.OverallCompleteness, StringFormat='{}{0:F1}%', Mode=OneWay}"/>
-                                    <TextBlock Text="Completeness" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                    <TextBlock Text="Completeness" FontSize="9" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0"/>
                                 </StackPanel>
                             </Border>
 
                             <!-- Columns with Nulls -->
-                            <Border Grid.Row="1" Grid.Column="2" Background="#F5F5F5" CornerRadius="4" Padding="8,6" Margin="0,0,0,0">
+                            <Border Grid.Row="1" Grid.Column="2" Background="{DynamicResource Brush.Subtle}" CornerRadius="4" Padding="8,6" Margin="0,0,0,0">
                                 <StackPanel>
                                     <TextBox Style="{StaticResource SelectableText}" FontSize="14" FontWeight="Bold"
                                              Text="{Binding FileProfile.ColumnsWithNulls, Mode=OneWay}"/>
-                                    <TextBlock Text="Cols w/ Nulls" FontSize="9" Foreground="#888" Margin="0,1,0,0"/>
+                                    <TextBlock Text="Cols w/ Nulls" FontSize="9" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -296,7 +296,7 @@
                                   Margin="0,12,0,0"
                                   IsExpanded="False"
                                   Visibility="{Binding HasSourceManifest, Converter={StaticResource BoolToVis}}">
-                            <Border Background="#FAFAFA" BorderBrush="#EAEAEA" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,6,0,0">
+                            <Border Background="{DynamicResource Brush.Pane}" BorderBrush="{DynamicResource Brush.Subtle}" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,6,0,0">
                                 <ListBox ItemsSource="{Binding SourceManifest}"
                                          MaxHeight="300"
                                          Background="Transparent"
@@ -320,11 +320,11 @@
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <DockPanel LastChildFill="True" Margin="0,2,0,2">
-                                                <TextBlock DockPanel.Dock="Right" Foreground="#666" FontSize="10"
+                                                <TextBlock DockPanel.Dock="Right" Foreground="{DynamicResource Brush.TextSecondary}" FontSize="10"
                                                            Text="{Binding RowCount, StringFormat='{}{0:N0} rows'}"/>
-                                                <TextBlock DockPanel.Dock="Right" Foreground="#999" FontSize="10" Margin="0,0,8,0"
+                                                <TextBlock DockPanel.Dock="Right" Foreground="{DynamicResource Brush.TextMuted}" FontSize="10" Margin="0,0,8,0"
                                                            Text="{Binding ContributionPercent, StringFormat='({0:F1}%)'}"/>
-                                                <TextBlock Foreground="#333" FontSize="10" TextTrimming="CharacterEllipsis"
+                                                <TextBlock Foreground="{DynamicResource Brush.TextPrimary}" FontSize="10" TextTrimming="CharacterEllipsis"
                                                            Text="{Binding FileName}" ToolTip="{Binding FilePath}"/>
                                             </DockPanel>
                                         </DataTemplate>
@@ -352,7 +352,7 @@
                     </Border.Style>
                     <StackPanel>
                         <TextBlock Text="No Data To Score" FontWeight="Bold" FontSize="13" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding EmptyProfileMessage}" TextWrapping="Wrap" Foreground="#5C6F82" FontSize="11"/>
+                        <TextBlock Text="{Binding EmptyProfileMessage}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextSecondary}" FontSize="11"/>
                     </StackPanel>
                 </Border>
 
@@ -398,25 +398,25 @@
                                 </Grid.RowDefinitions>
 
                                 <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,6,6">
-                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}"
                                              Text="{Binding CompletenessScore, StringFormat='Completeness {0:F1}/25', Mode=OneWay}"/>
                                     <ProgressBar Style="{StaticResource CompletenessBar}" Value="{Binding CompletenessScore}"/>
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="0" Grid.Column="1" Margin="6,0,0,6">
-                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}"
                                              Text="{Binding UniquenessScore, StringFormat='Uniqueness {0:F1}/25', Mode=OneWay}"/>
                                     <ProgressBar Style="{StaticResource UniquenessBar}" Value="{Binding UniquenessScore}"/>
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,6,0">
-                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}"
                                              Text="{Binding ValidityScore, StringFormat='Validity {0:F1}/25', Mode=OneWay}"/>
                                     <ProgressBar Style="{StaticResource ValidityBar}" Value="{Binding ValidityScore}"/>
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="1" Grid.Column="1" Margin="6,0,0,0">
-                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="Gray"
+                                    <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}"
                                              Text="{Binding DistributionScore, StringFormat='Distribution {0:F1}/25', Mode=OneWay}"/>
                                     <ProgressBar Style="{StaticResource DistributionBar}" Value="{Binding DistributionScore}"/>
                                 </StackPanel>
@@ -424,10 +424,10 @@
                         </Grid>
                         
                         <!-- Scoring Key - 2 column grid layout -->
-                        <Border Background="#F5F5F5" CornerRadius="8" Padding="16" Margin="0,10,0,0">
+                        <Border Background="{DynamicResource Brush.Subtle}" CornerRadius="8" Padding="16" Margin="0,10,0,0">
                             <StackPanel>
-                                <TextBlock Text="📖 Scoring Key" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,8" Foreground="#333"/>
-                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="#666" TextWrapping="Wrap" Margin="0,0,0,8"
+                                <TextBlock Text="📖 Scoring Key" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,8" Foreground="{DynamicResource Brush.TextPrimary}"/>
+                                <TextBox Style="{StaticResource SelectableText}" FontSize="10" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,8"
                                          Text="Each dimension is scored 0–25. Total score = sum of all four (0–100)."
                                          FontStyle="Italic"/>
                                 
@@ -445,54 +445,54 @@
                                     <!-- Completeness -->
                                     <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,8">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                            <Ellipse Width="6" Height="6" Fill="#4CAF50" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                            <TextBlock Text="Completeness" FontWeight="600" FontSize="10" Foreground="#333"/>
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource Brush.Success}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Completeness" FontWeight="600" FontSize="10" Foreground="{DynamicResource Brush.TextPrimary}"/>
                                         </StackPanel>
-                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="#666" TextWrapping="Wrap"
+                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap"
                                                  Text="Measures how few null/missing values exist. 0% nulls = 25/25."/>
                                     </StackPanel>
                                     
                                     <!-- Uniqueness -->
                                     <StackPanel Grid.Row="0" Grid.Column="1" Margin="8,0,0,8">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                            <Ellipse Width="6" Height="6" Fill="#2196F3" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                            <TextBlock Text="Uniqueness" FontWeight="600" FontSize="10" Foreground="#333"/>
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource Brush.Info}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Uniqueness" FontWeight="600" FontSize="10" Foreground="{DynamicResource Brush.TextPrimary}"/>
                                         </StackPanel>
-                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="#666" TextWrapping="Wrap"
+                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap"
                                                  Text="Measures value diversity. Higher distinct-value ratios score higher; constant columns score low."/>
                                     </StackPanel>
                                     
                                     <!-- Validity -->
                                     <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,0">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                            <Ellipse Width="6" Height="6" Fill="#FF9800" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                            <TextBlock Text="Validity" FontWeight="600" FontSize="10" Foreground="#333"/>
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource Brush.Warning}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Validity" FontWeight="600" FontSize="10" Foreground="{DynamicResource Brush.TextPrimary}"/>
                                         </StackPanel>
-                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="#666" TextWrapping="Wrap"
+                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap"
                                                  Text="Measures type consistency and value correctness. Penalizes empty strings and suspicious patterns."/>
                                     </StackPanel>
                                     
                                     <!-- Distribution -->
                                     <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,0">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                            <Ellipse Width="6" Height="6" Fill="#9C27B0" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                            <TextBlock Text="Distribution" FontWeight="600" FontSize="10" Foreground="#333"/>
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource Brush.Special}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Distribution" FontWeight="600" FontSize="10" Foreground="{DynamicResource Brush.TextPrimary}"/>
                                         </StackPanel>
-                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="#666" TextWrapping="Wrap"
+                                        <TextBox Style="{StaticResource SelectableText}" FontSize="9" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap"
                                                  Text="Measures data spread. Penalizes high outlier rates, extreme skew, and single-value dominance."/>
                                     </StackPanel>
                                 </Grid>
                                 
                                 <!-- Grade badges -->
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Border Background="#E8F5E9" BorderBrush="#C8E6C9" BorderThickness="1" CornerRadius="14" Padding="10,3" Margin="0,0,6,0">
-                                        <TextBlock FontSize="9" FontWeight="500" Foreground="#2E7D32">🟢 80–100 Good</TextBlock>
+                                    <Border Background="{DynamicResource Brush.SuccessBg}" BorderBrush="{DynamicResource Brush.SuccessBorder}" BorderThickness="1" CornerRadius="14" Padding="10,3" Margin="0,0,6,0">
+                                        <TextBlock FontSize="9" FontWeight="500" Foreground="{DynamicResource Brush.SuccessText}">🟢 80–100 Good</TextBlock>
                                     </Border>
-                                    <Border Background="#FFF3E0" BorderBrush="#FFE0B2" BorderThickness="1" CornerRadius="14" Padding="10,3" Margin="0,0,6,0">
-                                        <TextBlock FontSize="9" FontWeight="500" Foreground="#E65100">🟡 60–79 Fair</TextBlock>
+                                    <Border Background="{DynamicResource Brush.WarningBg}" BorderBrush="{DynamicResource Brush.WarningBorderSoft}" BorderThickness="1" CornerRadius="14" Padding="10,3" Margin="0,0,6,0">
+                                        <TextBlock FontSize="9" FontWeight="500" Foreground="{DynamicResource Brush.WarningText}">🟡 60–79 Fair</TextBlock>
                                     </Border>
-                                    <Border Background="#FFEBEE" BorderBrush="#FFCDD2" BorderThickness="1" CornerRadius="14" Padding="10,3">
-                                        <TextBlock FontSize="9" FontWeight="500" Foreground="#C62828">🔴 &lt;60 Needs Review</TextBlock>
+                                    <Border Background="{DynamicResource Brush.DangerBg}" BorderBrush="{DynamicResource Brush.DangerBorder}" BorderThickness="1" CornerRadius="14" Padding="10,3">
+                                        <TextBlock FontSize="9" FontWeight="500" Foreground="{DynamicResource Brush.DangerText}">🔴 &lt;60 Needs Review</TextBlock>
                                     </Border>
                                 </StackPanel>
                             </StackPanel>
@@ -506,23 +506,23 @@
                     <StackPanel>
                         <TextBlock FontWeight="Bold" FontSize="13" Margin="0,0,0,6">
                             <Run Text="📋 Findings"/>
-                            <Run Text="{Binding Findings.Count, StringFormat='({0})', Mode=OneWay}" Foreground="Gray"/>
+                            <Run Text="{Binding Findings.Count, StringFormat='({0})', Mode=OneWay}" Foreground="{DynamicResource Brush.TextMuted}"/>
                         </TextBlock>
                         
                         <!-- Severity filter chips -->
                         <WrapPanel Margin="0,0,0,8">
                             <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="All"
                                     Padding="8,3" Margin="0,0,4,4" FontSize="10" Cursor="Hand"
-                                    BorderThickness="1" BorderBrush="#CCC">
+                                    BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}">
                                 <Button.Style>
                                     <Style TargetType="Button">
-                                        <Setter Property="Background" Value="White"/>
-                                        <Setter Property="Foreground" Value="#666"/>
+                                        <Setter Property="Background" Value="{DynamicResource Brush.Card}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding SelectedFindingFilter}" Value="All">
-                                                <Setter Property="Background" Value="#512BD4"/>
-                                                <Setter Property="Foreground" Value="White"/>
-                                                <Setter Property="BorderBrush" Value="#512BD4"/>
+                                                <Setter Property="Background" Value="{DynamicResource Brush.Accent}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.OnAccent}"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -535,22 +535,22 @@
                             
                             <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="Critical"
                                     Padding="8,3" Margin="0,0,4,4" FontSize="10" Cursor="Hand"
-                                    BorderThickness="1" BorderBrush="#CCC">
+                                    BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}">
                                 <Button.Style>
                                     <Style TargetType="Button">
-                                        <Setter Property="Background" Value="White"/>
-                                        <Setter Property="Foreground" Value="#666"/>
+                                        <Setter Property="Background" Value="{DynamicResource Brush.Card}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding SelectedFindingFilter}" Value="Critical">
-                                                <Setter Property="Background" Value="#F44336"/>
-                                                <Setter Property="Foreground" Value="White"/>
-                                                <Setter Property="BorderBrush" Value="#F44336"/>
+                                                <Setter Property="Background" Value="{DynamicResource Brush.Danger}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.OnAccent}"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Danger}"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Ellipse Width="9" Height="9" Fill="#F44336" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <Ellipse Width="9" Height="9" Fill="{DynamicResource Brush.Danger}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                     <TextBlock VerticalAlignment="Center">
                                         <Run Text="Needs Review"/>
                                         <Run Text="{Binding FindingsCriticalCount, StringFormat=' ({0})', Mode=OneWay}"/>
@@ -560,22 +560,22 @@
                             
                             <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="Warning"
                                     Padding="8,3" Margin="0,0,4,4" FontSize="10" Cursor="Hand"
-                                    BorderThickness="1" BorderBrush="#CCC">
+                                    BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}">
                                 <Button.Style>
                                     <Style TargetType="Button">
-                                        <Setter Property="Background" Value="White"/>
-                                        <Setter Property="Foreground" Value="#666"/>
+                                        <Setter Property="Background" Value="{DynamicResource Brush.Card}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding SelectedFindingFilter}" Value="Warning">
-                                                <Setter Property="Background" Value="#FF9800"/>
-                                                <Setter Property="Foreground" Value="White"/>
-                                                <Setter Property="BorderBrush" Value="#FF9800"/>
+                                                <Setter Property="Background" Value="{DynamicResource Brush.Warning}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.OnAccent}"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Warning}"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Ellipse Width="9" Height="9" Fill="#FF9800" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <Ellipse Width="9" Height="9" Fill="{DynamicResource Brush.Warning}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                     <TextBlock VerticalAlignment="Center">
                                         <Run Text="Fair"/>
                                         <Run Text="{Binding FindingsWarningCount, StringFormat=' ({0})', Mode=OneWay}"/>
@@ -585,22 +585,22 @@
                             
                             <Button Command="{Binding SetFindingFilterCommand}" CommandParameter="Info"
                                     Padding="8,3" Margin="0,0,4,4" FontSize="10" Cursor="Hand"
-                                    BorderThickness="1" BorderBrush="#CCC">
+                                    BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}">
                                 <Button.Style>
                                     <Style TargetType="Button">
-                                        <Setter Property="Background" Value="White"/>
-                                        <Setter Property="Foreground" Value="#666"/>
+                                        <Setter Property="Background" Value="{DynamicResource Brush.Card}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding SelectedFindingFilter}" Value="Info">
-                                                <Setter Property="Background" Value="#4CAF50"/>
-                                                <Setter Property="Foreground" Value="White"/>
-                                                <Setter Property="BorderBrush" Value="#4CAF50"/>
+                                                <Setter Property="Background" Value="{DynamicResource Brush.Success}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.OnAccent}"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Success}"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Ellipse Width="9" Height="9" Fill="#4CAF50" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <Ellipse Width="9" Height="9" Fill="{DynamicResource Brush.Success}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                     <TextBlock VerticalAlignment="Center">
                                         <Run Text="Good"/>
                                         <Run Text="{Binding FindingsInfoCount, StringFormat=' ({0})', Mode=OneWay}"/>
@@ -631,11 +631,11 @@
                                                                  Fill="{Binding Color, Converter={StaticResource StringToBrushConverter}}"/>
                                                         <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
                                                     </StackPanel>
-                                                    <Border Grid.Column="1" Background="#E8E8E8" CornerRadius="8"
+                                                    <Border Grid.Column="1" Background="{DynamicResource Brush.Subtle}" CornerRadius="8"
                                                             Padding="6,1" VerticalAlignment="Center" Margin="6,0">
-                                                        <TextBlock Text="{Binding Count}" FontSize="10" FontWeight="SemiBold" Foreground="#555"/>
+                                                        <TextBlock Text="{Binding Count}" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextSecondary}"/>
                                                     </Border>
-                                                    <TextBlock Grid.Column="2" FontSize="10" Foreground="#999" VerticalAlignment="Center" Margin="4,0,0,0">
+                                                    <TextBlock Grid.Column="2" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="4,0,0,0">
                                                         <TextBlock.Style>
                                                             <Style TargetType="TextBlock">
                                                                 <Setter Property="Text" Value="▶"/>
@@ -668,8 +668,8 @@
                                                                 BorderThickness="0,0,0,1">
                                                             <Border.Style>
                                                                 <Style TargetType="Border">
-                                                                    <Setter Property="Background" Value="#FAFAFA"/>
-                                                                    <Setter Property="BorderBrush" Value="#F0F0F0"/>
+                                                                    <Setter Property="Background" Value="{DynamicResource Brush.Pane}"/>
+                                                                    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Subtle}"/>
                                                                 </Style>
                                                             </Border.Style>
                                                             <StackPanel>
@@ -680,7 +680,7 @@
                                                                              Style="{StaticResource SelectableText}"
                                                                              TextWrapping="Wrap"/>
                                                                 </DockPanel>
-                                                                <TextBox Text="{Binding Description, Mode=OneWay}" FontSize="9" Foreground="#888"
+                                                                <TextBox Text="{Binding Description, Mode=OneWay}" FontSize="9" Foreground="{DynamicResource Brush.TextMuted}"
                                                                          TextWrapping="Wrap" Margin="12,1,0,0" MaxHeight="48"
                                                                          Style="{StaticResource SelectableText}"
                                                                          ToolTip="{Binding Description}"/>
@@ -739,13 +739,13 @@
                                     Cursor="Hand" Padding="0">
                                 <TextBlock FontWeight="Bold" FontSize="13">
                                     <Run Text="📊 Column Profiles"/>
-                                    <Run Text="{Binding DisplayedColumns.Count, StringFormat='({0})', Mode=OneWay}" Foreground="Gray"/>
+                                    <Run Text="{Binding DisplayedColumns.Count, StringFormat='({0})', Mode=OneWay}" Foreground="{DynamicResource Brush.TextMuted}"/>
                                 </TextBlock>
                             </Button>
                             <Button Grid.Column="1" Command="{Binding ToggleColumnProfilesExpandedCommand}"
                                     Background="Transparent" BorderThickness="0" Cursor="Hand" Padding="0"
                                     VerticalAlignment="Center">
-                                <TextBlock FontSize="12" Foreground="#512BD4">
+                                <TextBlock FontSize="12" Foreground="{DynamicResource Brush.AccentText}">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Text" Value="▶"/>
@@ -777,7 +777,7 @@
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                 <StackPanel MinWidth="778">
                                     <!-- Table header (sortable columns) -->
-                                    <Border Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4,4,0,0">
+                                    <Border Background="{DynamicResource Brush.Subtle}" BorderBrush="{DynamicResource Brush.BorderNeutral}" BorderThickness="1" CornerRadius="4,4,0,0">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="120"/>
@@ -799,24 +799,24 @@
                                             <Button Grid.Column="0" Command="{Binding SetSortCommand}" CommandParameter="Name ↑"
                                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                     Padding="6,5" HorizontalContentAlignment="Left">
-                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
-                                                    <Run Text="COLUMN"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Name, Mode=OneWay}" Foreground="#512BD4"/>
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextSecondary}">
+                                                    <Run Text="COLUMN"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Name, Mode=OneWay}" Foreground="{DynamicResource Brush.AccentText}"/>
                                                 </TextBlock>
                                             </Button>
                                             
                                             <Button Grid.Column="1" Command="{Binding SetSortCommand}" CommandParameter="Type ↑"
                                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                     Padding="3,5" HorizontalContentAlignment="Left">
-                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
-                                                    <Run Text="TYPE"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Type, Mode=OneWay}" Foreground="#512BD4"/>
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextSecondary}">
+                                                    <Run Text="TYPE"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Type, Mode=OneWay}" Foreground="{DynamicResource Brush.AccentText}"/>
                                                 </TextBlock>
                                             </Button>
                                             
                                             <Button Grid.Column="2" Command="{Binding SetSortCommand}" CommandParameter="Score ↑"
                                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                     Padding="2,5" HorizontalContentAlignment="Center">
-                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
-                                                    <Run Text="SCR"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Score, Mode=OneWay}" Foreground="#512BD4"/>
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextSecondary}">
+                                                    <Run Text="SCR"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Score, Mode=OneWay}" Foreground="{DynamicResource Brush.AccentText}"/>
                                                 </TextBlock>
                                             </Button>
                                             
@@ -824,7 +824,7 @@
                                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                     Padding="0,5" HorizontalContentAlignment="Center"
                                                     ToolTip="Completeness">
-                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#4CAF50">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.Success}">
                                                     <Run Text="C"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Completeness, Mode=OneWay}"/>
                                                 </TextBlock>
                                             </Button>
@@ -833,7 +833,7 @@
                                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                     Padding="0,5" HorizontalContentAlignment="Center"
                                                     ToolTip="Uniqueness">
-                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#2196F3">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.Info}">
                                                     <Run Text="U"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Uniqueness, Mode=OneWay}"/>
                                                 </TextBlock>
                                             </Button>
@@ -842,7 +842,7 @@
                                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                     Padding="0,5" HorizontalContentAlignment="Center"
                                                     ToolTip="Validity">
-                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#FF9800">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.Warning}">
                                                     <Run Text="V"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Validity, Mode=OneWay}"/>
                                                 </TextBlock>
                                             </Button>
@@ -851,7 +851,7 @@
                                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                     Padding="0,5" HorizontalContentAlignment="Center"
                                                     ToolTip="Distribution">
-                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#9C27B0">
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.Special}">
                                                     <Run Text="D"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Distribution, Mode=OneWay}"/>
                                                 </TextBlock>
                                             </Button>
@@ -859,8 +859,8 @@
                                             <Button Grid.Column="7" Command="{Binding SetSortCommand}" CommandParameter="Nulls ↑"
                                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                     Padding="2,5" HorizontalContentAlignment="Left">
-                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
-                                                    <Run Text="NULLS"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Nulls, Mode=OneWay}" Foreground="#512BD4"/>
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextSecondary}">
+                                                    <Run Text="NULLS"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Nulls, Mode=OneWay}" Foreground="{DynamicResource Brush.AccentText}"/>
                                                 </TextBlock>
                                             </Button>
                                             
@@ -868,31 +868,31 @@
                                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                     Padding="2,5" HorizontalContentAlignment="Left"
                                                     ToolTip="Distinct values">
-                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="#666">
-                                                    <Run Text="DIST"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Distinct, Mode=OneWay}" Foreground="#512BD4"/>
+                                                <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextSecondary}">
+                                                    <Run Text="DIST"/><Run Text="{Binding ColumnSortBy, Converter={StaticResource SortIndicatorConverter}, ConverterParameter=Distinct, Mode=OneWay}" Foreground="{DynamicResource Brush.AccentText}"/>
                                                 </TextBlock>
                                             </Button>
                                             
-                                            <TextBlock Grid.Column="9" Text="MIN" FontSize="9" FontWeight="Bold" Foreground="#999" Padding="3,5"/>
-                                            <TextBlock Grid.Column="10" Text="MAX" FontSize="9" FontWeight="Bold" Foreground="#999" Padding="3,5"/>
-                                            <TextBlock Grid.Column="11" Text="MEAN" FontSize="9" FontWeight="Bold" Foreground="#999" Padding="3,5"/>
-                                            <TextBlock Grid.Column="12" Text="DISTRIBUTION" FontSize="9" FontWeight="Bold" Foreground="#999" Padding="3,5"/>
+                                            <TextBlock Grid.Column="9" Text="MIN" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Padding="3,5"/>
+                                            <TextBlock Grid.Column="10" Text="MAX" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Padding="3,5"/>
+                                            <TextBlock Grid.Column="11" Text="MEAN" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Padding="3,5"/>
+                                            <TextBlock Grid.Column="12" Text="DISTRIBUTION" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Padding="3,5"/>
                                         </Grid>
                                     </Border>
 
                                     <!-- Table rows -->
-                                    <Border BorderBrush="#E0E0E0" BorderThickness="1,0,1,1" CornerRadius="0,0,4,4">
+                                    <Border BorderBrush="{DynamicResource Brush.BorderNeutral}" BorderThickness="1,0,1,1" CornerRadius="0,0,4,4">
                                         <ScrollViewer MaxHeight="500" VerticalScrollBarVisibility="Auto">
                                             <ItemsControl ItemsSource="{Binding DisplayedColumns}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Border BorderBrush="#F0F0F0" BorderThickness="0,0,0,1" Padding="0,2">
+                                                        <Border BorderBrush="{DynamicResource Brush.Subtle}" BorderThickness="0,0,0,1" Padding="0,2">
                                                             <Border.Style>
                                                                 <Style TargetType="Border">
-                                                                    <Setter Property="Background" Value="White"/>
+                                                                    <Setter Property="Background" Value="{DynamicResource Brush.Card}"/>
                                                                     <Style.Triggers>
                                                                         <Trigger Property="IsMouseOver" Value="True">
-                                                                            <Setter Property="Background" Value="#FAFAFA"/>
+                                                                            <Setter Property="Background" Value="{DynamicResource Brush.Pane}"/>
                                                                         </Trigger>
                                                                     </Style.Triggers>
                                                                 </Style>
@@ -938,7 +938,7 @@
                                                                            Padding="6,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
 
                                                                 <!-- Type -->
-                                                                <TextBlock Grid.Column="1" Text="{Binding DuckDbType}" FontSize="9" Foreground="#888"
+                                                                <TextBlock Grid.Column="1" Text="{Binding DuckDbType}" FontSize="9" Foreground="{DynamicResource Brush.TextMuted}"
                                                                            Padding="3,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
 
                                                                 <!-- Score badge -->
@@ -952,35 +952,35 @@
 
                                                                 <!-- C U V D dimension scores -->
                                                                 <TextBlock Grid.Column="3" Text="{Binding Score.Completeness, StringFormat={}{0:F0}}"
-                                                                           FontSize="8" Foreground="#4CAF50" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                           FontSize="8" Foreground="{DynamicResource Brush.Success}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                                 <TextBlock Grid.Column="4" Text="{Binding Score.Uniqueness, StringFormat={}{0:F0}}"
-                                                                           FontSize="8" Foreground="#2196F3" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                           FontSize="8" Foreground="{DynamicResource Brush.Info}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                                 <TextBlock Grid.Column="5" Text="{Binding Score.Validity, StringFormat={}{0:F0}}"
-                                                                           FontSize="8" Foreground="#FF9800" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                           FontSize="8" Foreground="{DynamicResource Brush.Warning}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                                 <TextBlock Grid.Column="6" Text="{Binding Score.Distribution, StringFormat={}{0:F0}}"
-                                                                           FontSize="8" Foreground="#9C27B0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                           FontSize="8" Foreground="{DynamicResource Brush.Special}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
                                                                 <!-- Nulls -->
-                                                                <TextBlock Grid.Column="7" FontSize="9" Foreground="#555" Padding="2,2" VerticalAlignment="Center">
+                                                                <TextBlock Grid.Column="7" FontSize="9" Foreground="{DynamicResource Brush.TextSecondary}" Padding="2,2" VerticalAlignment="Center">
                                                                     <Run Text="{Binding NullPercentage, StringFormat={}{0:F1}%, Mode=OneWay}"/>
                                                                 </TextBlock>
 
                                                                 <!-- Distinct -->
                                                                 <TextBlock Grid.Column="8" Text="{Binding DistinctCount, StringFormat={}{0:N0}}"
-                                                                           FontSize="9" Foreground="#555" Padding="2,2" VerticalAlignment="Center"/>
+                                                                           FontSize="9" Foreground="{DynamicResource Brush.TextSecondary}" Padding="2,2" VerticalAlignment="Center"/>
 
                                                                 <!-- Min -->
-                                                                <TextBlock Grid.Column="9" Text="{Binding DisplayMin}" FontSize="9" Foreground="#555"
+                                                                <TextBlock Grid.Column="9" Text="{Binding DisplayMin}" FontSize="9" Foreground="{DynamicResource Brush.TextSecondary}"
                                                                            Padding="3,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                                                            ToolTip="{Binding DisplayMin}"/>
 
                                                                 <!-- Max -->
-                                                                <TextBlock Grid.Column="10" Text="{Binding DisplayMax}" FontSize="9" Foreground="#555"
+                                                                <TextBlock Grid.Column="10" Text="{Binding DisplayMax}" FontSize="9" Foreground="{DynamicResource Brush.TextSecondary}"
                                                                            Padding="3,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                                                            ToolTip="{Binding DisplayMax}"/>
 
                                                                 <!-- Mean -->
-                                                                <TextBlock Grid.Column="11" Text="{Binding DisplayMean}" FontSize="9" Foreground="#555"
+                                                                <TextBlock Grid.Column="11" Text="{Binding DisplayMean}" FontSize="9" Foreground="{DynamicResource Brush.TextSecondary}"
                                                                            Padding="3,2" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                                                            ToolTip="{Binding DisplayMean}"/>
 
@@ -996,7 +996,7 @@
                                                                                     <ColumnDefinition Width="26"/>
                                                                                 </Grid.ColumnDefinitions>
                                                                                 <TextBlock Grid.Column="0" Text="{Binding Value}"
-                                                                                           FontSize="8" Foreground="#666"
+                                                                                           FontSize="8" Foreground="{DynamicResource Brush.TextSecondary}"
                                                                                            TextTrimming="CharacterEllipsis"
                                                                                            VerticalAlignment="Center"
                                                                                            HorizontalAlignment="Right"
@@ -1004,9 +1004,9 @@
                                                                                            ToolTip="{Binding Value}"/>
                                                                                 <ProgressBar Grid.Column="1" Value="{Binding RelativeWidth}" Maximum="100"
                                                                                              Height="5" VerticalAlignment="Center"
-                                                                                             Background="#EEEEEE" Foreground="#7B5FE0"
+                                                                                             Background="{DynamicResource Brush.Subtle}" Foreground="{DynamicResource Brush.AccentHover}"
                                                                                              BorderThickness="0"/>
-                                                                                <TextBlock Grid.Column="2" FontSize="8" Foreground="#999"
+                                                                                <TextBlock Grid.Column="2" FontSize="8" Foreground="{DynamicResource Brush.TextMuted}"
                                                                                            VerticalAlignment="Center" HorizontalAlignment="Right">
                                                                                     <Run Text="{Binding Percentage, StringFormat={}{0:F0}, Mode=OneWay}"/><Run Text="%"/>
                                                                                 </TextBlock>
@@ -1041,7 +1041,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="📐 Group By Dimensions" FontWeight="Bold" FontSize="13"/>
-                                <TextBlock Grid.Column="1" FontSize="12" Foreground="#512BD4" VerticalAlignment="Center">
+                                <TextBlock Grid.Column="1" FontSize="12" Foreground="{DynamicResource Brush.AccentText}" VerticalAlignment="Center">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Text" Value="▶ Expand"/>
@@ -1069,7 +1069,7 @@
                                 </Style>
                             </StackPanel.Style>
                             
-                            <TextBlock Text="Select categorical columns to group by:" FontSize="10" Foreground="Gray" Margin="0,0,0,4"/>
+                            <TextBlock Text="Select categorical columns to group by:" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,4"/>
                             
                             <ItemsControl ItemsSource="{Binding AvailableDimensions}">
                                 <ItemsControl.ItemsPanel>
@@ -1088,26 +1088,26 @@
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <Button Content="▶ Apply Group By" Command="{Binding ApplyGroupByCommand}"
                                         Padding="10,4" FontSize="11" HorizontalAlignment="Left"
-                                        Background="#512BD4" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                        Background="{DynamicResource Brush.Accent}" Foreground="{DynamicResource Brush.OnAccent}" BorderThickness="0" Cursor="Hand"/>
                                 <Button Content="✕ Clear" Command="{Binding ClearGroupByCommand}"
                                         Padding="10,4" FontSize="11" Margin="8,0,0,0"
-                                        Background="Transparent" Foreground="#999" BorderBrush="#CCC" BorderThickness="1" Cursor="Hand"/>
+                                        Background="Transparent" Foreground="{DynamicResource Brush.TextMuted}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Cursor="Hand"/>
                             </StackPanel>
                             
                             <!-- Status message -->
-                            <TextBlock Text="{Binding GroupByStatusMessage}" FontSize="10" Foreground="#888" Margin="0,4,0,0"
+                            <TextBlock Text="{Binding GroupByStatusMessage}" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,0"
                                        TextWrapping="Wrap"/>
                         </StackPanel>
                         
                         <!-- Grouped Results (always visible when available, even when collapsed) -->
-                        <TextBlock Text="{Binding GroupedResultsSummary}" FontSize="10" Foreground="#666" Margin="0,8,0,0"
+                        <TextBlock Text="{Binding GroupedResultsSummary}" FontSize="10" Foreground="{DynamicResource Brush.TextSecondary}" Margin="0,8,0,0"
                                    TextWrapping="Wrap"
                                    Visibility="{Binding HasGroupedResults, Converter={StaticResource BoolToVis}}"/>
                         <ItemsControl ItemsSource="{Binding GroupedResults}" Margin="0,8,0,0"
                                       Visibility="{Binding HasGroupedResults, Converter={StaticResource BoolToVis}}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1"
+                                    <Border Background="{DynamicResource Brush.Pane}" BorderBrush="{DynamicResource Brush.BorderNeutral}" BorderThickness="1"
                                             CornerRadius="4" Margin="0,0,0,4" Padding="8,6">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -1117,7 +1117,7 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="{Binding GroupKey}" FontSize="11" FontWeight="SemiBold"
                                                        TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1" FontSize="10" Foreground="Gray" 
+                                            <TextBlock Grid.Column="1" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" 
                                                        VerticalAlignment="Center" Margin="8,0">
                                                 <Run Text="{Binding RowCount, StringFormat={}{0:N0}, Mode=OneWay}"/>
                                                 <Run Text="rows"/>
@@ -1126,7 +1126,7 @@
                                                     VerticalAlignment="Center">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="#E8F5E9"/>
+                                                        <Setter Property="Background" Value="{DynamicResource Brush.SuccessBg}"/>
                                                     </Style>
                                                 </Border.Style>
                                                 <TextBlock FontSize="10" FontWeight="Bold"
@@ -1142,8 +1142,8 @@
                                 Command="{Binding LoadMoreGroupedResultsCommand}"
                                 Padding="10,4" FontSize="11" Margin="0,8,0,0"
                                 HorizontalAlignment="Left"
-                                Background="Transparent" Foreground="#2B4C7E"
-                                BorderBrush="#C7D5E3" BorderThickness="1" Cursor="Hand"
+                                Background="Transparent" Foreground="{DynamicResource Brush.HeadingText}"
+                                BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Cursor="Hand"
                                 Visibility="{Binding CanLoadMoreGroupedResults, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
                 </Border>
@@ -1162,7 +1162,7 @@
                         <StackPanel Visibility="{Binding HasComparison, Converter={StaticResource BoolToVis}}"
                                     Margin="0,8,0,0">
                             <TextBlock FontSize="11" Margin="0,0,0,4">
-                                <Run Text="Comparing with: " Foreground="Gray"/>
+                                <Run Text="Comparing with: " Foreground="{DynamicResource Brush.TextMuted}"/>
                                 <Run Text="{Binding ComparisonFileName, Mode=OneWay}" FontWeight="SemiBold"/>
                             </TextBlock>
                             
@@ -1173,7 +1173,7 @@
                                 </Grid.ColumnDefinitions>
                                 
                                 <StackPanel Margin="0,0,8,0">
-                                    <TextBlock Text="Baseline" FontSize="10" Foreground="Gray"/>
+                                    <TextBlock Text="Baseline" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}"/>
                                     <TextBlock FontSize="11">
                                         <Run Text="{Binding Comparison.BaselineProfile.RowCount, StringFormat={}{0:N0}, Mode=OneWay}"/>
                                         <Run Text=" rows"/>
@@ -1185,7 +1185,7 @@
                                 </StackPanel>
                                 
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Comparison" FontSize="10" Foreground="Gray"/>
+                                    <TextBlock Text="Comparison" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}"/>
                                     <TextBlock FontSize="11">
                                         <Run Text="{Binding Comparison.ComparisonProfile.RowCount, StringFormat={}{0:N0}, Mode=OneWay}"/>
                                         <Run Text=" rows"/>
@@ -1198,7 +1198,7 @@
                             </Grid>
                             
                             <TextBlock FontSize="11" Margin="0,6,0,0">
-                                <Run Text="Row delta: " Foreground="Gray"/>
+                                <Run Text="Row delta: " Foreground="{DynamicResource Brush.TextMuted}"/>
                                 <Run Text="{Binding Comparison.RowCountDelta, StringFormat={}{0:+#,0;-#,0;0}, Mode=OneWay}"/>
                                 <Run Text=" ("/>
                                 <Run Text="{Binding Comparison.RowCountDeltaPercent, StringFormat={}{0:+0.0;-0.0;0.0}%, Mode=OneWay}"/>
@@ -1206,12 +1206,12 @@
                             </TextBlock>
                             
                             <TextBlock FontSize="11" Margin="0,2,0,0">
-                                <Run Text="Schema changes: " Foreground="Gray"/>
+                                <Run Text="Schema changes: " Foreground="{DynamicResource Brush.TextMuted}"/>
                                 <Run Text="{Binding Comparison.SchemaChanges.Count, Mode=OneWay}"/>
                             </TextBlock>
                             
                             <TextBlock FontSize="11" Margin="0,2,0,0">
-                                <Run Text="Drift score: " Foreground="Gray"/>
+                                <Run Text="Drift score: " Foreground="{DynamicResource Brush.TextMuted}"/>
                                 <Run Text="{Binding Comparison.DriftScore, StringFormat={}{0:F1}/100, Mode=OneWay}"/>
                             </TextBlock>
 
@@ -1219,14 +1219,14 @@
                             <Expander Header="📊 Schema Diff" Margin="0,8,0,0" FontSize="12" FontWeight="SemiBold"
                                       Visibility="{Binding HasSchemaDiff, Converter={StaticResource BoolToVis}}"
                                       IsExpanded="True">
-                                <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Margin="0,4,0,0">
+                                <Border BorderBrush="{DynamicResource Brush.BorderNeutral}" BorderThickness="1" CornerRadius="4" Margin="0,4,0,0">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="*"/>
                                         </Grid.RowDefinitions>
                                         <!-- Header row -->
-                                        <Grid Background="#F5F5F5" Grid.Row="0">
+                                        <Grid Background="{DynamicResource Brush.Subtle}" Grid.Row="0">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="24"/>
                                                 <ColumnDefinition Width="*"/>
@@ -1235,8 +1235,8 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" Text="" FontSize="10" FontWeight="Bold" Padding="4,3"/>
                                             <TextBlock Grid.Column="1" Text="Column" FontSize="10" FontWeight="Bold" Padding="4,3"/>
-                                            <TextBlock Grid.Column="2" Text="Baseline" FontSize="10" FontWeight="Bold" Padding="4,3" Foreground="#1565C0"/>
-                                            <TextBlock Grid.Column="3" Text="Compare" FontSize="10" FontWeight="Bold" Padding="4,3" Foreground="#6A1B9A"/>
+                                            <TextBlock Grid.Column="2" Text="Baseline" FontSize="10" FontWeight="Bold" Padding="4,3" Foreground="{DynamicResource Brush.InfoText}"/>
+                                            <TextBlock Grid.Column="3" Text="Compare" FontSize="10" FontWeight="Bold" Padding="4,3" Foreground="{DynamicResource Brush.SpecialText}"/>
                                         </Grid>
                                         <!-- Diff rows -->
                                         <ItemsControl Grid.Row="1" ItemsSource="{Binding SchemaDiffItems}" MaxHeight="200">
@@ -1264,9 +1264,9 @@
                                                                    FontSize="10" Padding="4,2" TextTrimming="CharacterEllipsis"
                                                                    ToolTip="{Binding ColumnName}"/>
                                                         <TextBlock Grid.Column="2" Text="{Binding BaselineType}" 
-                                                                   FontSize="10" Padding="4,2" Foreground="#666"/>
+                                                                   FontSize="10" Padding="4,2" Foreground="{DynamicResource Brush.TextSecondary}"/>
                                                         <TextBlock Grid.Column="3" Text="{Binding ComparisonType}" 
-                                                                   FontSize="10" Padding="4,2" Foreground="#666"/>
+                                                                   FontSize="10" Padding="4,2" Foreground="{DynamicResource Brush.TextSecondary}"/>
                                                     </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>

@@ -41,10 +41,33 @@ public class StringToBrushConverter : IValueConverter
 {
     private static readonly Dictionary<string, SolidColorBrush> _cache = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Well-known status hexes produced by view models and models (QualityScore,
+    /// NarrativeItem) mapped to semantic theme brushes so bound status colors
+    /// follow the active light/dark theme.
+    /// </summary>
+    private static readonly Dictionary<string, string> _semanticMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["#F44336"] = "Brush.Danger",
+        ["#FF9800"] = "Brush.Warning",
+        ["#4CAF50"] = "Brush.Success",
+        ["#9E9E9E"] = "Brush.TextMuted",
+        ["#E8F5E9"] = "Brush.SuccessBg",
+        ["#FFF3E0"] = "Brush.WarningBg",
+        ["#FFEBEE"] = "Brush.DangerBg",
+        ["#2E7D32"] = "Brush.SuccessText",
+        ["#E65100"] = "Brush.WarningText",
+        ["#C62828"] = "Brush.DangerText",
+    };
+
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         if (value is string hex)
         {
+            if (_semanticMap.TryGetValue(hex, out var key) &&
+                Application.Current?.TryFindResource(key) is Brush themed)
+                return themed;
+
             if (_cache.TryGetValue(hex, out var cached))
                 return cached;
 
@@ -60,7 +83,7 @@ public class StringToBrushConverter : IValueConverter
                 System.Diagnostics.Debug.WriteLine($"[StringToBrushConverter] Invalid hex color: '{hex}'");
             }
         }
-        return Brushes.Gray;
+        return Views.ThemeBrushes.TextMuted;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

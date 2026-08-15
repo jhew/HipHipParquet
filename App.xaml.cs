@@ -30,6 +30,7 @@ public partial class App : Application
                     services.AddSingleton<NarrativeService>();
                     services.AddSingleton<ReportService>();
                     services.AddSingleton<MarkdownService>();
+                    services.AddSingleton<ThemeService>();
                 })
                 .Build();
         }
@@ -58,6 +59,10 @@ public partial class App : Application
     {
         try
         {
+            // Apply the persisted theme before any window exists so every
+            // control picks up the right brushes on first render.
+            (Services.GetService(typeof(ThemeService)) as ThemeService)?.Initialize();
+
             // Create the main window
             var mainWindow = new MainWindow();
             

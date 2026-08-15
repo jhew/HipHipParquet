@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Data;
 using Microsoft.Win32;
@@ -139,6 +139,57 @@ public partial class MainWindow : Window
         };
 
         UpdateNotebookUiState();
+        InitializeThemeMenu();
+    }
+
+    // ── Theme ─────────────────────────────────────────────────────────────
+
+    private ThemeService? GetThemeService()
+        => App.Current.Services.GetService(typeof(ThemeService)) as ThemeService;
+
+    private void InitializeThemeMenu()
+    {
+        var themeService = GetThemeService();
+        if (themeService == null)
+            return;
+        UpdateThemeMenuChecks(themeService.Preference);
+        themeService.EffectiveThemeChanged += OnEffectiveThemeChanged;
+    }
+
+    private void OnThemeSystemClick(object sender, RoutedEventArgs e) => ApplyThemePreference(AppThemePreference.System);
+    private void OnThemeLightClick(object sender, RoutedEventArgs e) => ApplyThemePreference(AppThemePreference.Light);
+    private void OnThemeDarkClick(object sender, RoutedEventArgs e) => ApplyThemePreference(AppThemePreference.Dark);
+
+    private void ApplyThemePreference(AppThemePreference preference)
+    {
+        var themeService = GetThemeService();
+        if (themeService == null)
+            return;
+        // A change in the effective theme raises EffectiveThemeChanged, which
+        // rebuilds the code-styled grid visuals.
+        themeService.Apply(preference);
+        UpdateThemeMenuChecks(preference);
+    }
+
+    private void UpdateThemeMenuChecks(AppThemePreference preference)
+    {
+        ThemeSystemMenuItem.IsChecked = preference == AppThemePreference.System;
+        ThemeLightMenuItem.IsChecked = preference == AppThemePreference.Light;
+        ThemeDarkMenuItem.IsChecked = preference == AppThemePreference.Dark;
+    }
+
+    private void OnEffectiveThemeChanged(object? sender, bool isDark)
+        => RefreshThemedGridVisuals();
+
+    /// <summary>
+    /// Grid columns and headers are built in code with brushes resolved at creation
+    /// time, so rebuild them after a theme switch. Filter and sort state survives via
+    /// SetupDataGrid's snapshot/restore.
+    /// </summary>
+    private void RefreshThemedGridVisuals()
+    {
+        if (_originalData != null)
+            SetupDataGrid(_originalData, BuildColumnInfos(_originalData));
     }
 
     private void InitializeNotebookHub()
@@ -239,20 +290,20 @@ public partial class MainWindow : Window
         {
             NotebookActiveSourceText.Text = "Choose a source to preview or query.";
             PreviewPageStatusText.Text = "Preview controls appear for large sources.";
-            SetNotebookModeBadge("Notebook", "#E8F5E9", "#2E7D32");
+            SetNotebookModeBadge("Notebook", "Brush.SuccessBg", "Brush.SuccessText");
             return;
         }
 
         if (_isPreviewMode)
-            SetNotebookModeBadge("Read-Only Preview", "#FFF3E0", "#E65100");
+            SetNotebookModeBadge("Read-Only Preview", "Brush.WarningBg", "Brush.WarningText");
         else
-            SetNotebookModeBadge("Editable Working Set", "#E8F5E9", "#2E7D32");
+            SetNotebookModeBadge("Editable Working Set", "Brush.SuccessBg", "Brush.SuccessText");
     }
 
     private void SetNotebookModeBadge(string text, string backgroundHex, string foregroundHex)
     {
-        NotebookModeBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(backgroundHex));
-        NotebookModeBadgeText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(foregroundHex));
+        NotebookModeBadge.Background = ThemeBrushes.Get(backgroundHex);
+        NotebookModeBadgeText.Foreground = ThemeBrushes.Get(foregroundHex);
         NotebookModeBadgeText.Text = text;
     }
 
@@ -722,8 +773,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        FormatBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#ECEFF1"));
-        FormatBadgeText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#37474F"));
+        FormatBadge.Background = ThemeBrushes.Subtle;
+        FormatBadgeText.Foreground = ThemeBrushes.TextSecondary;
         FormatBadgeText.Text = "DuckDB";
         FormatBadge.Visibility = Visibility.Visible;
     }
@@ -1804,6 +1855,28 @@ public partial class MainWindow : Window
     private void OnCopyAsTsvClick(object sender, RoutedEventArgs e)
     {
         CopySelectionToClipboard("\t");
+    }
+
+    private void OnCopyAsMarkdownClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var selectedCells = _savedSelectedCells ?? DataGrid.SelectedCells.ToList();
+            if (selectedCells.Count == 0)
+            {
+                StatusText.Text = "No cells selected to copy";
+                return;
+            }
+
+            var text = CopyHelper.FormatCellsAsMarkdown(DataGrid, selectedCells);
+            Clipboard.SetText(text);
+            StatusText.Text = $"Copied {selectedCells.Count} cell(s) as Markdown table";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error copying to clipboard: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = "Copy failed";
+        }
     }
     
     private void CopySelectionToClipboard(string delimiter)
@@ -3444,7 +3517,7 @@ public partial class MainWindow : Window
             SchemaPanel.Children.Add(new TextBlock
             {
                 Text = "No file loaded",
-                Foreground = Brushes.Gray
+                Foreground = ThemeBrushes.TextMuted
             });
             return;
         }
@@ -3480,7 +3553,7 @@ public partial class MainWindow : Window
                 {
                     Text = $"   \u2022 {Path.GetFileName(sourceFile)}",
                     Margin = new Thickness(10, 0, 0, 1),
-                    Foreground = Brushes.DimGray,
+                    Foreground = ThemeBrushes.TextSecondary,
                     FontSize = 11
                 });
             }
@@ -3491,7 +3564,7 @@ public partial class MainWindow : Window
                 {
                     Text = $"   \u2022 ... and {sourceFileCount - 8:N0} more",
                     Margin = new Thickness(10, 0, 0, 1),
-                    Foreground = Brushes.DimGray,
+                    Foreground = ThemeBrushes.TextSecondary,
                     FontSize = 11
                 });
             }
@@ -3533,7 +3606,7 @@ public partial class MainWindow : Window
             {
                 Text = "No columns match this search.",
                 Margin = new Thickness(8, 2, 0, 2),
-                Foreground = Brushes.Gray
+                Foreground = ThemeBrushes.TextMuted
             });
             return;
         }
@@ -3673,14 +3746,14 @@ public partial class MainWindow : Window
         };
 
         var headerStyle = new Style(typeof(DataGridColumnHeader));
-        headerStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(240, 240, 240))));
+        headerStyle.Setters.Add(new Setter(Control.BackgroundProperty, ThemeBrushes.Subtle));
         headerStyle.Setters.Add(new Setter(Control.FontWeightProperty, FontWeights.Bold));
         headerStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
         col.HeaderStyle = headerStyle;
 
         var cellStyle = new Style(typeof(DataGridCell));
-        cellStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(250, 250, 250))));
-        cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(Color.FromRgb(100, 100, 100))));
+        cellStyle.Setters.Add(new Setter(Control.BackgroundProperty, ThemeBrushes.Pane));
+        cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, ThemeBrushes.TextSecondary));
         cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
         col.CellStyle = cellStyle;
 
@@ -3712,7 +3785,7 @@ public partial class MainWindow : Window
             BorderThickness = new Thickness(0),
             Cursor = System.Windows.Input.Cursors.Hand,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
+            Foreground = ThemeBrushes.TextSecondary,
             ToolTip = "Go to row...",
             Tag = "GoToRowButton"
         };
@@ -3739,8 +3812,8 @@ public partial class MainWindow : Window
 
         var border = new Border
         {
-            Background = System.Windows.Media.Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+            Background = ThemeBrushes.Card,
+            BorderBrush = ThemeBrushes.BorderNeutral,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8),
@@ -3772,7 +3845,7 @@ public partial class MainWindow : Window
         var hint = new TextBlock
         {
             Text = $"Enter row number (1–{totalRows:N0})",
-            Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
+            Foreground = ThemeBrushes.TextSecondary,
             FontSize = 11,
             Margin = new Thickness(0, 0, 0, 4)
         };
@@ -3787,7 +3860,7 @@ public partial class MainWindow : Window
 
         var errorText = new TextBlock
         {
-            Foreground = System.Windows.Media.Brushes.Red,
+            Foreground = ThemeBrushes.Danger,
             FontSize = 11,
             Margin = new Thickness(0, 2, 0, 0),
             Visibility = Visibility.Collapsed
@@ -3805,8 +3878,8 @@ public partial class MainWindow : Window
         {
             Content = "Go",
             Padding = new Thickness(16, 4, 16, 4),
-            Background = new SolidColorBrush(Color.FromRgb(81, 43, 212)),
-            Foreground = System.Windows.Media.Brushes.White,
+            Background = ThemeBrushes.Accent,
+            Foreground = ThemeBrushes.OnAccent,
             BorderThickness = new Thickness(0),
             FontSize = 12
         };
@@ -4045,7 +4118,7 @@ public partial class MainWindow : Window
             Width = 6,
             Height = 6,
             CornerRadius = new CornerRadius(3),
-            Background = new SolidColorBrush(Color.FromRgb(81, 43, 212)), // #512BD4
+            Background = ThemeBrushes.Accent,
             Margin = new Thickness(0, 0, 2, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Visibility = Visibility.Collapsed,
@@ -4064,7 +4137,7 @@ public partial class MainWindow : Window
             BorderThickness = new Thickness(0),
             Cursor = System.Windows.Input.Cursors.Hand,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120)),
+            Foreground = ThemeBrushes.TextSecondary,
             Tag = name,
             ToolTip = $"Filter {name}"
         };
@@ -4229,8 +4302,8 @@ public partial class MainWindow : Window
 
         var border = new Border
         {
-            Background = System.Windows.Media.Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+            Background = ThemeBrushes.Card,
+            BorderBrush = ThemeBrushes.BorderNeutral,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8),
@@ -4270,7 +4343,7 @@ public partial class MainWindow : Window
         var searchPlaceholder = new TextBlock
         {
             Text = "Search values...",
-            Foreground = new SolidColorBrush(Color.FromRgb(160, 160, 160)),
+            Foreground = ThemeBrushes.TextMuted,
             IsHitTestVisible = false,
             Margin = new Thickness(5, 3, 0, 0),
             FontSize = 12
@@ -4290,7 +4363,7 @@ public partial class MainWindow : Window
             var truncNotice = new TextBlock
             {
                 Text = $"Showing up to {MaxDistinctValues:N0} of {filterState.TotalDistinctCount:N0} values",
-                Foreground = new SolidColorBrush(Color.FromRgb(180, 130, 0)),
+                Foreground = ThemeBrushes.WarningText,
                 FontSize = 11,
                 FontStyle = FontStyles.Italic,
                 Margin = new Thickness(0, 0, 0, 4)
@@ -4411,8 +4484,8 @@ public partial class MainWindow : Window
         {
             Content = "Apply",
             Padding = new Thickness(12, 4, 12, 4),
-            Background = new SolidColorBrush(Color.FromRgb(81, 43, 212)), // #512BD4
-            Foreground = System.Windows.Media.Brushes.White,
+            Background = ThemeBrushes.Accent,
+            Foreground = ThemeBrushes.OnAccent,
             BorderThickness = new Thickness(0),
             FontSize = 12
         };
@@ -5698,9 +5771,9 @@ public partial class MainWindow : Window
 
     private void UpdateFormatBadge(SupportedFileFormat format)
     {
-        var (bg, fg) = Services.FileFormatDetector.GetFormatBadgeColors(format);
-        FormatBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bg));
-        FormatBadgeText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(fg));
+        var (bg, fg) = Services.FileFormatDetector.GetFormatBadgeBrushKeys(format);
+        FormatBadge.Background = ThemeBrushes.Get(bg);
+        FormatBadgeText.Foreground = ThemeBrushes.Get(fg);
         FormatBadgeText.Text = Services.FileFormatDetector.GetFormatDisplayName(format);
         FormatBadge.Visibility = Visibility.Visible;
     }

@@ -90,7 +90,7 @@
                      TextChanged="OnOptionChanged"/>
             <TextBlock Text="rows from the top"
                        VerticalAlignment="Center" Margin="8,0,0,0"
-                       Foreground="Gray" FontSize="12"/>
+                       Foreground="{DynamicResource Brush.TextMuted}" FontSize="12"/>
         </StackPanel>
 
         <!-- Preview header -->
@@ -100,7 +100,7 @@
                    Margin="0,8,0,4"/>
 
         <!-- Preview DataGrid -->
-        <Border Grid.Row="7" Grid.ColumnSpan="2" BorderBrush="#E0E0E0" BorderThickness="1"
+        <Border Grid.Row="7" Grid.ColumnSpan="2" BorderBrush="{DynamicResource Brush.BorderNeutral}" BorderThickness="1"
                 CornerRadius="4" Margin="0,0,0,8">
             <Grid>
                 <DataGrid x:Name="PreviewGrid"
@@ -109,7 +109,7 @@
                           CanUserAddRows="False"
                           HeadersVisibility="Column"
                           GridLinesVisibility="All"
-                          AlternatingRowBackground="#F9F9F9"
+                          AlternatingRowBackground="{DynamicResource Brush.RowAlt}"
                           MaxHeight="180"
                           FontSize="11"
                           VerticalScrollBarVisibility="Auto"
@@ -117,9 +117,9 @@
                 <TextBlock x:Name="PreviewPlaceholder"
                            Text="Select a file to see preview..."
                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Foreground="Gray" FontStyle="Italic"/>
+                           Foreground="{DynamicResource Brush.TextMuted}" FontStyle="Italic"/>
                 <TextBlock x:Name="PreviewError"
-                           TextWrapping="Wrap" Foreground="#C62828" FontSize="11"
+                           TextWrapping="Wrap" Foreground="{DynamicResource Brush.DangerText}" FontSize="11"
                            Margin="8" Visibility="Collapsed"/>
             </Grid>
         </Border>
@@ -132,7 +132,7 @@
                     Click="OnUseDefaultsClick"/>
             <Button Content="Apply"
                     Padding="12,6"
-                    Background="#512BD4" Foreground="White"
+                    Background="{DynamicResource Brush.Accent}" Foreground="{DynamicResource Brush.OnAccent}"
                     IsDefault="True"
                     Click="OnApplyClick"/>
             <Button Content="Cancel"

@@ -56,6 +56,60 @@ namespace HipHipParquet.Tests
         }
 
         [Fact]
+        public void FormatCellsAsMarkdown_EscapesPipesAndBuildsTable()
+        {
+            string? result = null;
+            System.Exception? threadEx = null;
+            var thread = new System.Threading.Thread(() =>
+            {
+                try
+                {
+                    var dt = new DataTable();
+                    dt.Columns.Add("A");
+                    dt.Columns.Add("B");
+                    dt.Rows.Add("plain", "has|pipe");
+                    dt.Rows.Add("multi\nline", "y");
+
+                    var grid = new DataGrid();
+                    grid.SelectionUnit = DataGridSelectionUnit.CellOrRowHeader;
+                    grid.SelectionMode = DataGridSelectionMode.Extended;
+                    var colA = new DataGridTextColumn { Binding = new Binding("[A]"), Header = "A", DisplayIndex = 0 };
+                    var colB = new DataGridTextColumn { Binding = new Binding("[B]"), Header = "B", DisplayIndex = 1 };
+                    grid.Columns.Add(colA);
+                    grid.Columns.Add(colB);
+                    grid.ItemsSource = dt.DefaultView;
+                    grid.UpdateLayout();
+
+                    var sel = new System.Collections.Generic.List<DataGridCellInfo>
+                    {
+                        new DataGridCellInfo(dt.DefaultView[0], colA),
+                        new DataGridCellInfo(dt.DefaultView[0], colB),
+                        new DataGridCellInfo(dt.DefaultView[1], colA),
+                        new DataGridCellInfo(dt.DefaultView[1], colB)
+                    };
+                    result = Views.CopyHelper.FormatCellsAsMarkdown(grid, sel);
+                }
+                catch (System.Exception ex)
+                {
+                    threadEx = ex;
+                }
+            });
+            thread.SetApartmentState(System.Threading.ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+
+            if (threadEx != null)
+                throw new System.InvalidOperationException("STA thread threw", threadEx);
+
+            var expected =
+                "| A | B |\r\n" +
+                "| --- | --- |\r\n" +
+                "| plain | has\\|pipe |\r\n" +
+                "| multi<br>line | y |\r\n";
+            Assert.Equal(expected, result);
+        }
+
+        [Fact]
         public void FormatCells_SingleCell_NoHeader_ReturnsPlainValue()
         {
             string? result = null;
