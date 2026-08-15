@@ -57,6 +57,10 @@
             <Setter Property="IsReadOnly" Value="True"/>
             <Setter Property="IsTabStop" Value="False"/>
             <Setter Property="Background" Value="Transparent"/>
+            <!-- The template override below bypasses the Fluent theme style, so the
+                 foreground would otherwise fall back to the system window-text color
+                 (black) and vanish in dark mode. -->
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="0"/>
