@@ -3,7 +3,7 @@
 ; SourceDir must contain HipHipParquet.exe
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.13.1"
+  #define MyAppVersion "1.13.2"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\publish"
