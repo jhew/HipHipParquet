@@ -293,57 +293,7 @@ public static class UpdateService
             var checksumsText = await SharedClient.GetStringAsync(checksumsUrl, cancellationToken);
             var installerFileName = Path.GetFileName(installerPath);
             var expectedFileLeaf = Path.GetFileName(expectedInstallerFileName);
-
-            // The temp file name has format "BaseName-<guid>.exe" where <guid> is 32 hex chars (N format).
-            // Strip the GUID suffix to recover the original release filename for lookup in the checksums file.
-            var originalInstallerName = System.Text.RegularExpressions.Regex.Replace(
-                installerFileName,
-                @"-[0-9a-fA-F]{32}(?=\.[^.]+$)",
-                string.Empty);
-
-            var candidateInstallerNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(expectedFileLeaf))
-                candidateInstallerNames.Add(expectedFileLeaf);
-            if (!string.IsNullOrWhiteSpace(originalInstallerName))
-                candidateInstallerNames.Add(originalInstallerName);
-            if (!string.IsNullOrWhiteSpace(installerFileName))
-                candidateInstallerNames.Add(installerFileName);
-
-            string? expectedHash = null;
-            string? uniqueSetupExeHash = null;
-            var setupExeEntryCount = 0;
-            foreach (var line in checksumsText.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-            {
-                // Accept common SHA256SUMS formats such as:
-                // "<hash>  <filename>", "<hash>\t<filename>", and "<hash>  *<filename>".
-                var match = System.Text.RegularExpressions.Regex.Match(
-                    line.Trim(),
-                    @"^(?<hash>[A-Fa-f0-9]+)\s+(?<filename>.+)$");
-
-                if (!match.Success)
-                    continue;
-
-                var parsedFileName = match.Groups["filename"].Value.Trim().TrimStart('*');
-                var parsedFileLeaf = Path.GetFileName(parsedFileName);
-                if (!string.IsNullOrWhiteSpace(parsedFileLeaf) && parsedFileLeaf.EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
-                {
-                    setupExeEntryCount++;
-                    uniqueSetupExeHash = match.Groups["hash"].Value.Trim();
-                }
-
-                var matchedCandidate = candidateInstallerNames.Contains(parsedFileName) ||
-                                       candidateInstallerNames.Contains(parsedFileLeaf);
-                if (matchedCandidate)
-                {
-                    expectedHash = match.Groups["hash"].Value.Trim();
-                    break;
-                }
-            }
-
-            // Some GitHub redirects produce opaque local temp names; if checksum list has exactly
-            // one setup executable entry, use it as a safe fallback for installer verification.
-            if (string.IsNullOrEmpty(expectedHash) && setupExeEntryCount == 1)
-                expectedHash = uniqueSetupExeHash;
+            var expectedHash = ResolveExpectedChecksumHash(checksumsText, installerFileName, expectedFileLeaf);
 
             if (string.IsNullOrEmpty(expectedHash))
                 return UpdateVerificationResult.Fail(UpdateFailureKind.MissingChecksumEntry, "No matching checksum entry was found for the downloaded installer.");
@@ -373,6 +323,65 @@ public static class UpdateService
         {
             return UpdateVerificationResult.Fail(UpdateFailureKind.Unknown, $"Checksum verification failed unexpectedly: {ex.Message}");
         }
+    }
+
+    internal static string? ResolveExpectedChecksumHash(
+        string checksumsText,
+        string installerFileName,
+        string? expectedInstallerFileName)
+    {
+        // The temp file name has format "BaseName-<guid>.exe" where <guid> is 32 hex chars (N format).
+        // Strip the GUID suffix to recover the original release filename for lookup in the checksums file.
+        var originalInstallerName = System.Text.RegularExpressions.Regex.Replace(
+            installerFileName,
+            @"-[0-9a-fA-F]{32}(?=\.[^.]+$)",
+            string.Empty);
+
+        var candidateInstallerNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(expectedInstallerFileName))
+            candidateInstallerNames.Add(expectedInstallerFileName);
+        if (!string.IsNullOrWhiteSpace(originalInstallerName))
+            candidateInstallerNames.Add(originalInstallerName);
+        if (!string.IsNullOrWhiteSpace(installerFileName))
+            candidateInstallerNames.Add(installerFileName);
+
+        string? expectedHash = null;
+        string? uniqueSetupExeHash = null;
+        var setupExeEntryCount = 0;
+        foreach (var line in checksumsText.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            // Accept common SHA256SUMS formats such as:
+            // "<hash>  <filename>", "<hash>\t<filename>", and "<hash>  *<filename>".
+            var match = System.Text.RegularExpressions.Regex.Match(
+                line.Trim(),
+                @"^(?<hash>[A-Fa-f0-9]+)\s+(?<filename>.+)$");
+
+            if (!match.Success)
+                continue;
+
+            var parsedFileName = match.Groups["filename"].Value.Trim().TrimStart('*');
+            var parsedFileLeaf = Path.GetFileName(parsedFileName);
+            if (!string.IsNullOrWhiteSpace(parsedFileLeaf) && parsedFileLeaf.EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                setupExeEntryCount++;
+                uniqueSetupExeHash = match.Groups["hash"].Value.Trim();
+            }
+
+            var matchedCandidate = candidateInstallerNames.Contains(parsedFileName) ||
+                                   candidateInstallerNames.Contains(parsedFileLeaf);
+            if (matchedCandidate)
+            {
+                expectedHash = match.Groups["hash"].Value.Trim();
+                break;
+            }
+        }
+
+        // Some GitHub redirects produce opaque local temp names; if checksum list has exactly
+        // one setup executable entry, use it as a safe fallback for installer verification.
+        if (string.IsNullOrEmpty(expectedHash) && setupExeEntryCount == 1)
+            expectedHash = uniqueSetupExeHash;
+
+        return expectedHash;
     }
 
     private static async Task<string> ComputeFileSha256Async(string filePath, CancellationToken cancellationToken)

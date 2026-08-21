@@ -164,6 +164,38 @@ public class UpdateServiceTests
         }
     }
 
+      [Fact]
+      public void ResolveExpectedChecksumHash_UsesExpectedInstallerFileName_WhenTempNameOpaque()
+      {
+        var expectedHash = new string('A', 64);
+        var checksumsText =
+          $"{expectedHash}  HipHipParquet-1.13.2-Setup.exe\n" +
+          $"{new string('B', 64)}  HipHipParquet-1.13.2-Portable.zip\n";
+
+        var result = UpdateService.ResolveExpectedChecksumHash(
+          checksumsText,
+          "tmp-download-opaque-name.exe",
+          "HipHipParquet-1.13.2-Setup.exe");
+
+        Assert.Equal(expectedHash, result);
+      }
+
+      [Fact]
+      public void ResolveExpectedChecksumHash_UsesSingleSetupExeFallback_WhenNoNamesMatch()
+      {
+        var expectedHash = new string('C', 64);
+        var checksumsText =
+          $"{expectedHash}  HipHipParquet-1.13.2-Setup.exe\n" +
+          $"{new string('D', 64)}  HipHipParquet-1.13.2-Portable.zip\n";
+
+        var result = UpdateService.ResolveExpectedChecksumHash(
+          checksumsText,
+          "tmp-download-opaque-name.exe",
+          "non-matching-installer-name.exe");
+
+        Assert.Equal(expectedHash, result);
+      }
+
     [Fact]
     public void VerifyAuthenticodeSignatureWithDiagnostics_MissingFile_ReturnsFileNotFound()
     {

@@ -6113,7 +6113,8 @@ public partial class MainWindow : Window
             if (!string.IsNullOrEmpty(update.ChecksumsUrl))
             {
                 ShowLoading("Verifying checksum…");
-                var expectedInstallerFileName = Path.GetFileName(new Uri(update.InstallerUrl!, UriKind.Absolute).AbsolutePath);
+                var downloadUri = new Uri(update.InstallerUrl!, UriKind.Absolute);
+                var expectedInstallerFileName = Path.GetFileName(downloadUri.LocalPath);
                 var checksumResult = await Services.UpdateService.VerifyChecksumWithDiagnosticsAsync(
                     installerPath,
                     update.ChecksumsUrl,
