@@ -28,6 +28,9 @@
         <Version>1.13.1</Version>
         <AssemblyVersion>1.13.1.0</AssemblyVersion>
         <FileVersion>1.13.1.0</FileVersion>
+
+        <!-- NU1510 is a false positive: CodePages is required by FileFormatDetector for Windows-1252 support -->
+        <NoWarn>$(NoWarn);NU1510</NoWarn>
     </PropertyGroup>
 
 
@@ -58,9 +61,9 @@
         <!-- DuckDB for Parquet operations -->
         <PackageReference Include="DuckDB.NET.Data.Full" Version="1.1.3" />
 
-        <!-- Encoding support for Windows-1252 and other code pages -->
+        <!-- Required for CodePagesEncodingProvider / Encoding.GetEncoding(1252) -->
         <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
-        
+
         <!-- MVVM and UI helpers -->
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
 

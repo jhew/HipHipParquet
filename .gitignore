@@ -133,4 +133,4 @@ local-test-data/
 .dotnet-home/
 
 # Local instructions
-.github/copilot-instructions.md
+.github/
