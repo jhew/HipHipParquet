@@ -508,8 +508,8 @@ public partial class FileImportDialog : Window
             {
                 // Keep dialog stable and inform user of clipboard failure
                 CopyErrorButton.Content = "Copy failed";
-                MessageBox.Show(
-                    $"Failed to copy error details to clipboard: {ex.Message}\n\nPlease try again or manually select and copy the error text.",
+                MessageBox.Show(this, 
+                    $"Failed to copy error details to clipboard: {UserFacingError.Describe(ex)}\n\nPlease try again or manually select and copy the error text.",
                     "Clipboard Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);

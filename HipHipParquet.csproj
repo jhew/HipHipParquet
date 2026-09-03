@@ -58,6 +58,13 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- Shipped locally, never fetched: the app renders diagrams with no network access. -->
+        <None Include="Assets\Markdown\mermaid.min.js">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
         <!-- DuckDB for Parquet operations -->
         <PackageReference Include="DuckDB.NET.Data.Full" Version="1.1.3" />
 
@@ -69,6 +76,10 @@
 
         <!-- Markdown rendering for helper preview profiles -->
         <PackageReference Include="Markdig" Version="0.37.0" />
+
+        <!-- Chromium preview host for the Markdown helper. Trident (WebBrowser) cannot
+             run mermaid, and caps out below the CSS the preview stylesheet needs. -->
+        <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
         
         <!-- Dependency injection and configuration -->
         <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />

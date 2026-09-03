@@ -1,0 +1,4 @@
+# Vendored, minified third-party bundle. Keep it byte-identical to the upstream
+# release so it can be verified against the published artefact, and keep it out
+# of diffs and merge attempts.
+Assets/Markdown/mermaid.min.js -text linguist-vendored

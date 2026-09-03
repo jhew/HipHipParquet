@@ -35,12 +35,23 @@
         <KeyBinding Key="F1" Command="Help"/>
         <KeyBinding Key="G" Modifiers="Ctrl" Command="{x:Static views:MainWindow.GoToRowCommand}"/>
         <KeyBinding Key="F" Modifiers="Ctrl" Command="{x:Static views:MainWindow.FocusSearchCommand}"/>
+        <KeyBinding Key="OemPlus" Modifiers="Ctrl" Command="{x:Static views:MainWindow.ZoomInCommand}"/>
+        <KeyBinding Key="Add" Modifiers="Ctrl" Command="{x:Static views:MainWindow.ZoomInCommand}"/>
+        <KeyBinding Key="OemMinus" Modifiers="Ctrl" Command="{x:Static views:MainWindow.ZoomOutCommand}"/>
+        <KeyBinding Key="Subtract" Modifiers="Ctrl" Command="{x:Static views:MainWindow.ZoomOutCommand}"/>
+        <KeyBinding Key="D0" Modifiers="Ctrl" Command="{x:Static views:MainWindow.ResetZoomCommand}"/>
+        <KeyBinding Key="NumPad0" Modifiers="Ctrl" Command="{x:Static views:MainWindow.ResetZoomCommand}"/>
+        <KeyBinding Key="Z" Modifiers="Ctrl" Command="{x:Static views:MainWindow.UndoCommand}"/>
     </Window.InputBindings>
     <Window.CommandBindings>
         <CommandBinding Command="Save" Executed="OnSaveClick"/>
         <CommandBinding Command="Help" Executed="OnHelpClick"/>
         <CommandBinding Command="{x:Static views:MainWindow.GoToRowCommand}" Executed="OnGoToRowShortcut"/>
         <CommandBinding Command="{x:Static views:MainWindow.FocusSearchCommand}" Executed="OnFocusSearchShortcut"/>
+        <CommandBinding Command="{x:Static views:MainWindow.ZoomInCommand}" Executed="OnZoomInShortcut"/>
+        <CommandBinding Command="{x:Static views:MainWindow.ZoomOutCommand}" Executed="OnZoomOutShortcut"/>
+        <CommandBinding Command="{x:Static views:MainWindow.ResetZoomCommand}" Executed="OnResetZoomShortcut"/>
+        <CommandBinding Command="{x:Static views:MainWindow.UndoCommand}" Executed="OnUndoShortcut"/>
     </Window.CommandBindings>
     <Grid Background="{DynamicResource Brush.Window}">
         <Grid.RowDefinitions>
@@ -107,6 +118,13 @@
                     <MenuItem x:Name="ThemeSystemMenuItem" Header="_Use System Setting" IsCheckable="True" Click="OnThemeSystemClick"/>
                     <MenuItem x:Name="ThemeLightMenuItem" Header="_Light" IsCheckable="True" Click="OnThemeLightClick"/>
                     <MenuItem x:Name="ThemeDarkMenuItem" Header="_Dark" IsCheckable="True" Click="OnThemeDarkClick"/>
+                </MenuItem>
+                <MenuItem Header="_Zoom">
+                    <MenuItem x:Name="ZoomInMenuItem" Header="Zoom _In" Click="OnZoomInClick" InputGestureText="Ctrl+="/>
+                    <MenuItem x:Name="ZoomOutMenuItem" Header="Zoom _Out" Click="OnZoomOutClick" InputGestureText="Ctrl+-"/>
+                    <MenuItem x:Name="ZoomResetMenuItem" Header="_Reset to 100%" Click="OnResetZoomClick" InputGestureText="Ctrl+0"/>
+                    <Separator/>
+                    <MenuItem Header="Tip: hold Ctrl and scroll the wheel to zoom" IsEnabled="False"/>
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Workspace">
@@ -175,7 +193,10 @@
         </Menu>
 
         <!-- Main Content Area -->
-        <Grid x:Name="MainContentGrid" Grid.Row="1">
+        <Grid x:Name="MainContentGrid" Grid.Row="1" PreviewMouseWheel="OnMainContentPreviewMouseWheel">
+            <Grid.LayoutTransform>
+                <ScaleTransform x:Name="ContentZoomTransform" ScaleX="1" ScaleY="1"/>
+            </Grid.LayoutTransform>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="SchemaPaneColumn" Width="250" MinWidth="200"/>
                 <ColumnDefinition x:Name="SchemaSplitterColumn" Width="5"/>
@@ -305,6 +326,7 @@
                                             Padding="0"
                                             FontWeight="Bold"
                                             ToolTip="Collapse Query Hub"
+                                            AutomationProperties.Name="Collapse Query Hub"
                                             Click="OnCollapseQueryHubClick"
                                             DockPanel.Dock="Right"/>
                                 </DockPanel>
@@ -391,6 +413,7 @@
                                            Text="Run local DuckDB SQL over any opened notebook source alias."/>
 
                                 <TextBox x:Name="NotebookQueryTextBox"
+                                         AutomationProperties.Name="DuckDB SQL query"
                                          Margin="0,6,0,8"
                                          Height="112"
                                          AcceptsReturn="True"
@@ -486,6 +509,7 @@
                                                Foreground="{DynamicResource Brush.TextSecondary}"
                                                Margin="0,0,8,0"/>
                                         <ComboBox x:Name="SavedNotebookQueriesComboBox"
+                                                  AutomationProperties.Name="Saved query"
                                               Width="250"
                                               Margin="0,0,16,0"
                                               DisplayMemberPath="Name"/>
@@ -494,6 +518,7 @@
                                                Foreground="{DynamicResource Brush.TextSecondary}"
                                                Margin="0,0,8,0"/>
                                         <ComboBox x:Name="SchemaTemplatesComboBox"
+                                                  AutomationProperties.Name="Schema template"
                                               Width="250"
                                               DisplayMemberPath="Name"/>
                                     </StackPanel>
@@ -688,6 +713,10 @@
                                  Width="200" Height="6" Margin="0,0,0,8"/>
                     <TextBlock x:Name="LoadingText" Text="Loading..." 
                                HorizontalAlignment="Center" FontSize="14" Foreground="{DynamicResource Brush.AccentText}"/>
+                    <Button x:Name="LoadingCancelButton" Content="Cancel" Visibility="Collapsed"
+                            HorizontalAlignment="Center" Margin="0,14,0,0" Padding="18,4" Cursor="Hand"
+                            Click="OnCancelLoadingClick"
+                            AutomationProperties.Name="Cancel the operation in progress"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -707,6 +736,19 @@
             </StatusBarItem>
             <StatusBarItem HorizontalAlignment="Right">
                 <StackPanel Orientation="Horizontal">
+                    <Border x:Name="ZoomBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
+                            Visibility="Collapsed" Background="{DynamicResource Brush.InfoBg}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="ZoomBadgeText" Text="" FontSize="11"
+                                       FontWeight="SemiBold" Foreground="{DynamicResource Brush.InfoText}" VerticalAlignment="Center"/>
+                            <Button Content="✕" FontSize="10"
+                                    Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
+                                    Background="Transparent" Foreground="{DynamicResource Brush.InfoText}" Cursor="Hand"
+                                    ToolTip="Reset zoom to 100% (Ctrl+0)" Click="OnResetZoomClick"
+                                    AutomationProperties.Name="Reset zoom to 100 percent"
+                                    VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
                     <Border x:Name="FilterBadge" CornerRadius="3" Padding="6,2" Margin="0,0,8,0"
                             Visibility="Collapsed" Background="{DynamicResource Brush.WarningBg}">
                         <StackPanel Orientation="Horizontal">
@@ -716,6 +758,7 @@
                                     Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
                                     Background="Transparent" Foreground="{DynamicResource Brush.WarningText}" Cursor="Hand"
                                     ToolTip="Clear all filters" Click="OnClearAllFiltersClick"
+                                    AutomationProperties.Name="Clear all filters"
                                     VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
@@ -728,6 +771,7 @@
                                     Padding="4,0" Margin="6,0,0,0" BorderThickness="0"
                                     Background="Transparent" Foreground="{DynamicResource Brush.DangerText}" Cursor="Hand"
                                     ToolTip="Save pending changes" Click="OnSaveClick"
+                                    AutomationProperties.Name="Save pending changes"
                                     VerticalAlignment="Center"/>
                             </StackPanel>
                             </Border>
