@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
+using HipHipParquet.Models;
 
 namespace HipHipParquet.Converters;
 
@@ -112,4 +113,14 @@ public class SortIndicatorConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotImplementedException();
+}
+
+/// <summary>Shows a <see cref="MarkdownFlavorProfile"/> by its friendly name in pickers.</summary>
+public class MarkdownProfileNameConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is MarkdownFlavorProfile profile ? profile.GetDisplayName() : string.Empty;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => Binding.DoNothing;
 }

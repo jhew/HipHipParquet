@@ -7,8 +7,13 @@
         ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="False"
         MinWidth="480" MinHeight="420"
+        Background="{DynamicResource Brush.Window}"
         Icon="/Assets/app.ico">
     <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Themes/ControlStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
         <Style x:Key="ShortcutBadge" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource Brush.Accent}"/>
             <Setter Property="CornerRadius" Value="3"/>
@@ -23,6 +28,7 @@
         </Style>
         <Style x:Key="ShortcutDesc" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
@@ -34,11 +40,13 @@
         </Style>
         <Style x:Key="TipText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="VerticalAlignment" Value="Top"/>
         </Style>
+        </ResourceDictionary>
     </Window.Resources>
-    <Grid>
+    <Grid Background="{DynamicResource Brush.Window}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -46,12 +54,18 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <Border Grid.Row="0" Background="{DynamicResource Brush.Accent}" Padding="16,10">
-            <TextBlock Text="Help" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource Brush.OnAccent}"/>
+        <!-- Pane treatment, matching the app's other headers rather than a solid accent banner. -->
+        <Border Grid.Row="0" Background="{DynamicResource Brush.Pane}"
+                BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="16,10">
+            <StackPanel>
+                <TextBlock Text="Help" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextPrimary}"/>
+                <TextBlock Text="Shortcuts, tips and version information." FontSize="11" Foreground="{DynamicResource Brush.TextSecondary}"/>
+            </StackPanel>
         </Border>
 
         <!-- Tab Control -->
         <TabControl x:Name="HelpTabControl" Grid.Row="1" Margin="12,12,12,0"
+                    Background="{DynamicResource Brush.Card}"
                     BorderThickness="1" BorderBrush="{DynamicResource Brush.BorderNeutral}">
 
             <!-- ── Tab 0: Keyboard Shortcuts ───────────────────────────── -->
@@ -59,7 +73,7 @@
                 <TabItem.Header>
                     <TextBlock Text="⌨  Keyboard Shortcuts" FontSize="11"/>
                 </TabItem.Header>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12" Background="{DynamicResource Brush.Card}">
                     <StackPanel>
                         <TextBlock Text="⌨  Keyboard Shortcuts" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
 
@@ -171,6 +185,9 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="32"/>
                                 <RowDefinition Height="32"/>
+                                <RowDefinition Height="32"/>
+                                <RowDefinition Height="32"/>
+                                <RowDefinition Height="32"/>
                             </Grid.RowDefinitions>
                             <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource Brush.RowAlt}" Padding="8,0">
                                 <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
@@ -182,10 +199,34 @@
                             </Border>
                             <Border Grid.Row="1" Grid.Column="0" Padding="8,0">
                                 <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left" Background="{DynamicResource Brush.TextMuted}">
-                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Drag &amp; Drop"/>
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + Wheel"/>
                                 </Border>
                             </Border>
                             <Border Grid.Row="1" Grid.Column="1" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Zoom the working area in and out"/>
+                            </Border>
+                            <Border Grid.Row="2" Grid.Column="0" Background="{DynamicResource Brush.RowAlt}" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + = / -"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="2" Grid.Column="1" Background="{DynamicResource Brush.RowAlt}" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Zoom in or out one step"/>
+                            </Border>
+                            <Border Grid.Row="3" Grid.Column="0" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Ctrl + 0"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="3" Grid.Column="1" Padding="8,0">
+                                <TextBlock Style="{StaticResource ShortcutDesc}" Text="Reset zoom to 100%"/>
+                            </Border>
+                            <Border Grid.Row="4" Grid.Column="0" Background="{DynamicResource Brush.RowAlt}" Padding="8,0">
+                                <Border Style="{StaticResource ShortcutBadge}" HorizontalAlignment="Left" Background="{DynamicResource Brush.TextMuted}">
+                                    <TextBlock Style="{StaticResource ShortcutLabel}" Text="Drag &amp; Drop"/>
+                                </Border>
+                            </Border>
+                            <Border Grid.Row="4" Grid.Column="1" Background="{DynamicResource Brush.RowAlt}" Padding="8,0">
                                 <TextBlock Style="{StaticResource ShortcutDesc}" Text="Drop any supported file onto the window to open it"/>
                             </Border>
                         </Grid>
@@ -198,7 +239,7 @@
                 <TabItem.Header>
                     <TextBlock Text="💡 Tips &amp; Tricks" FontSize="11"/>
                 </TabItem.Header>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12" Background="{DynamicResource Brush.Card}">
                     <StackPanel>
                         <TextBlock Text="💡 Tips &amp; Tricks" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
 
@@ -282,7 +323,7 @@
                 <TabItem.Header>
                     <TextBlock Text="ℹ  About" FontSize="11"/>
                 </TabItem.Header>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12" Background="{DynamicResource Brush.Card}">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top">
 
                         <!-- App icon + name -->
@@ -327,11 +368,9 @@
         </TabControl>
 
         <!-- Footer -->
-        <Border Grid.Row="2" BorderBrush="{DynamicResource Brush.BorderNeutral}" BorderThickness="0,1,0,0" Padding="12,8">
+        <Border Grid.Row="2" Background="{DynamicResource Brush.Pane}" BorderBrush="{DynamicResource Brush.BorderNeutral}" BorderThickness="0,1,0,0" Padding="12,8">
             <Button Content="Close" HorizontalAlignment="Right"
-                    Padding="24,6" Click="OnCloseClick"
-                    Background="{DynamicResource Brush.Accent}" Foreground="{DynamicResource Brush.OnAccent}"
-                    BorderThickness="0" Cursor="Hand" FontWeight="SemiBold"/>
+                    Style="{StaticResource AppAccentButton}" Click="OnCloseClick"/>
         </Border>
     </Grid>
 </Window>

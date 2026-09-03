@@ -28,6 +28,10 @@ public partial class MainWindow : Window
     private const string DuckDbFilenameColumnName = "filename";
     public static readonly RoutedUICommand GoToRowCommand = new("Go to Row", "GoToRow", typeof(MainWindow));
     public static readonly RoutedUICommand FocusSearchCommand = new("Focus Search", "FocusSearch", typeof(MainWindow));
+    public static readonly RoutedUICommand ZoomInCommand = new("Zoom In", "ZoomIn", typeof(MainWindow));
+    public static readonly RoutedUICommand ZoomOutCommand = new("Zoom Out", "ZoomOut", typeof(MainWindow));
+    public static readonly RoutedUICommand ResetZoomCommand = new("Reset Zoom", "ResetZoom", typeof(MainWindow));
+    public static readonly RoutedUICommand UndoCommand = new("Undo", "Undo", typeof(MainWindow));
 
     private DataTable? _originalData;
     private DataView? _dataView;
@@ -79,6 +83,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<NotebookBlock> _notebookBlocks = [];
     private string? _activeNotebookSourceAlias;
     private CancellationTokenSource? _previewLoadCts;
+    private CancellationTokenSource? _cancellableOperation;
     private long _previewRowOffset;
     private long _previewFilteredRowCount;
     private bool _isPreviewMode;
@@ -140,6 +145,7 @@ public partial class MainWindow : Window
 
         UpdateNotebookUiState();
         InitializeThemeMenu();
+        InitializeZoom();
     }
 
     // ── Theme ─────────────────────────────────────────────────────────────
@@ -192,6 +198,68 @@ public partial class MainWindow : Window
             SetupDataGrid(_originalData, BuildColumnInfos(_originalData));
     }
 
+    // ── Zoom ──────────────────────────────────────────────────────────────
+
+    private ZoomService? GetZoomService()
+        => App.Current.Services.GetService(typeof(ZoomService)) as ZoomService;
+
+    private void InitializeZoom()
+    {
+        var zoomService = GetZoomService();
+        if (zoomService == null)
+            return;
+
+        zoomService.Initialize();
+        zoomService.ZoomChanged += OnZoomChanged;
+        ApplyZoom(zoomService.Current);
+    }
+
+    private void OnZoomChanged(object? sender, double zoom) => ApplyZoom(zoom);
+
+    /// <summary>
+    /// Scales the working area only. The menu bar and status bar keep their native
+    /// size so the chrome stays a fixed reference while the content grows or shrinks.
+    /// </summary>
+    private void ApplyZoom(double zoom)
+    {
+        ContentZoomTransform.ScaleX = zoom;
+        ContentZoomTransform.ScaleY = zoom;
+
+        var zoomService = GetZoomService();
+        var isDefault = zoomService?.IsDefault ?? true;
+
+        ZoomBadgeText.Text = $"Zoom {Math.Round(zoom * 100)}%";
+        ZoomBadge.Visibility = isDefault ? Visibility.Collapsed : Visibility.Visible;
+        ZoomInMenuItem.IsEnabled = zoomService?.CanZoomIn ?? false;
+        ZoomOutMenuItem.IsEnabled = zoomService?.CanZoomOut ?? false;
+        ZoomResetMenuItem.IsEnabled = !isDefault;
+    }
+
+    private void OnMainContentPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.Control || e.Delta == 0)
+            return;
+
+        var zoomService = GetZoomService();
+        if (zoomService == null)
+            return;
+
+        if (e.Delta > 0)
+            zoomService.ZoomIn();
+        else
+            zoomService.ZoomOut();
+
+        // Swallow the notch so the grid underneath does not also scroll.
+        e.Handled = true;
+    }
+
+    private void OnZoomInClick(object sender, RoutedEventArgs e) => GetZoomService()?.ZoomIn();
+    private void OnZoomOutClick(object sender, RoutedEventArgs e) => GetZoomService()?.ZoomOut();
+    private void OnResetZoomClick(object sender, RoutedEventArgs e) => GetZoomService()?.Reset();
+
+    private void OnZoomInShortcut(object sender, ExecutedRoutedEventArgs e) => GetZoomService()?.ZoomIn();
+    private void OnZoomOutShortcut(object sender, ExecutedRoutedEventArgs e) => GetZoomService()?.ZoomOut();
+    private void OnResetZoomShortcut(object sender, ExecutedRoutedEventArgs e) => GetZoomService()?.Reset();
     private void InitializeNotebookHub()
     {
         NotebookSourcesList.ItemsSource = _notebookSources;
@@ -586,12 +654,12 @@ public partial class MainWindow : Window
 
         try
         {
-            ShowLoading($"Previewing {source.DisplayName}...");
+            ShowLoading($"Previewing {source.DisplayName}...", _previewLoadCts);
 
             var queryState = CreateQueryStateForSource(source, RowLimitBatch, _previewRowOffset);
             var dataTable = await GetNotebookSession().GetPreviewPageAsync(source.Alias, queryState, _previewLoadCts.Token);
 
-            ShowLoading("Indexing preview rows...");
+            ShowLoading("Indexing preview rows...", _previewLoadCts);
             await Task.Run(() => EnsureRowMetadataColumns(dataTable, ResolveNotebookSourceFiles(source)));
 
             _suppressFilterApply = true;
@@ -635,6 +703,7 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
+            StatusText.Text = "Preview cancelled";
             return;
         }
         catch (Exception ex)
@@ -660,11 +729,11 @@ public partial class MainWindow : Window
     {
         try
         {
-            ShowLoading($"Loading working set from {source.DisplayName}...");
+            ShowLoading($"Loading working set from {source.DisplayName}...", _previewLoadCts);
 
             var dataTable = await GetNotebookSession().MaterializeSourceAsync(source.Alias, queryState);
 
-            ShowLoading("Indexing working set...");
+            ShowLoading("Indexing working set...", _previewLoadCts);
             await Task.Run(() => EnsureRowMetadataColumns(dataTable, ResolveNotebookSourceFiles(source)));
 
             if (clearFiltersAfterLoad)
@@ -707,6 +776,11 @@ public partial class MainWindow : Window
             StatusText.Text = $"Loaded {dataTable.Rows.Count:N0} rows from {source.DisplayName}{parquetPartsSuffix} as an editable working set";
             if (!string.IsNullOrWhiteSpace(unknownExtension))
                 StatusText.Text += $" - unknown extension '{unknownExtension}' treated as CSV";
+        }
+        catch (OperationCanceledException)
+        {
+            // A user-initiated cancel is a normal outcome, not an error to report.
+            StatusText.Text = "Load cancelled";
         }
         finally
         {
@@ -865,7 +939,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Query failed: {ex.Message}", "Query Hub", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Query failed: {UserFacingError.Describe(ex)}", "Query Hub", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Notebook query failed";
         }
         finally
@@ -927,7 +1001,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var result = MessageBox.Show(
+        var result = MessageBox.Show(this, 
             $"Delete saved query '{query.Name}'?",
             "Delete Saved Query",
             MessageBoxButton.YesNo,
@@ -959,7 +1033,7 @@ public partial class MainWindow : Window
         var scopeCount = _previewFilteredRowCount > 0 ? _previewFilteredRowCount : source.RowCount;
         if (scopeCount > 250_000)
         {
-            var confirm = MessageBox.Show(
+            var confirm = MessageBox.Show(this, 
                 $"This working set will materialize {scopeCount:N0} rows into memory.\n\nContinue?",
                 "Large Working Set",
                 MessageBoxButton.YesNo,
@@ -1026,7 +1100,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Export failed: {ex.Message}", "Notebook Export", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Export failed: {UserFacingError.Describe(ex)}", "Notebook Export", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Notebook export failed";
         }
         finally
@@ -1051,7 +1125,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Null / empty check failed: {ex.Message}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Null / empty check failed: {UserFacingError.Describe(ex)}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Null / empty check failed";
         }
         finally
@@ -1090,7 +1164,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Duplicate check failed: {ex.Message}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Duplicate check failed: {UserFacingError.Describe(ex)}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Duplicate check failed";
         }
         finally
@@ -1122,7 +1196,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Regex check failed: {ex.Message}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Regex check failed: {UserFacingError.Describe(ex)}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Regex check failed";
         }
         finally
@@ -1194,7 +1268,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Schema validation failed: {ex.Message}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Schema validation failed: {UserFacingError.Describe(ex)}", "Notebook Checks", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Schema validation failed";
         }
         finally
@@ -1264,7 +1338,7 @@ public partial class MainWindow : Window
         // Cancel initially so we can run async save without deadlocking.
         e.Cancel = true;
 
-        var result = MessageBox.Show(
+        var result = MessageBox.Show(this, 
             "You have unsaved changes. Do you want to save before closing?",
             "Unsaved Changes",
             MessageBoxButton.YesNoCancel,
@@ -1381,7 +1455,7 @@ public partial class MainWindow : Window
             {
                 if (openFileDialog.FileNames.Any(path => Services.FileFormatDetector.DetectFormat(path) != SupportedFileFormat.Parquet))
                 {
-                    MessageBox.Show(
+                    MessageBox.Show(this, 
                         "Multi-select loading is currently supported only for parquet files.",
                         "Unsupported Selection",
                         MessageBoxButton.OK,
@@ -1460,7 +1534,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error loading parquet file set: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Error loading parquet file set: {UserFacingError.Describe(ex)}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             StatusText.Text = "Error loading parquet file set";
             EmptyStatePanel.Visibility = Visibility.Visible;
             DataGridContainer.Visibility = Visibility.Collapsed;
@@ -1605,14 +1679,14 @@ public partial class MainWindow : Window
     /// Shows a confirmation prompt when the file has an unrecognised extension.
     /// Returns true if the file should be opened, false if the user declined.
     /// </summary>
-    private static bool ConfirmUnknownExtension(string filePath)
+    private bool ConfirmUnknownExtension(string filePath)
     {
         if (!Services.FileFormatDetector.IsUnknownExtension(filePath))
             return true;
 
         var ext = System.IO.Path.GetExtension(filePath);
         var extDisplay = string.IsNullOrEmpty(ext) ? "(no extension)" : ext;
-        var confirm = MessageBox.Show(
+        var confirm = MessageBox.Show(this, 
             $"'{System.IO.Path.GetFileName(filePath)}' has an unrecognised file extension ({extDisplay}).\n\n" +
             "Hip Hip Parquet will attempt to read it as a CSV file, which may fail or produce unexpected results.\n\n" +
             "Continue?",
@@ -1874,7 +1948,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error copying to clipboard: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Error copying to clipboard: {UserFacingError.Describe(ex)}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Copy failed";
         }
     }
@@ -1901,7 +1975,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error copying to clipboard: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Error copying to clipboard: {UserFacingError.Describe(ex)}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Copy failed";
         }
     }
@@ -2040,7 +2114,15 @@ public partial class MainWindow : Window
         UpdateQualityStaleBadge();
     }
 
-    private void OnUndoLastActionClick(object sender, RoutedEventArgs e)
+    private void OnUndoLastActionClick(object sender, RoutedEventArgs e) => TryUndoLastEdit();
+
+    private void OnUndoShortcut(object sender, ExecutedRoutedEventArgs e) => TryUndoLastEdit();
+
+    /// <summary>
+    /// Undo is reachable from the Edit menu, from Ctrl+Z anywhere in the window, and from
+    /// the grid's own key handler, so the editable-working-set guard lives in one place.
+    /// </summary>
+    private void TryUndoLastEdit()
     {
         if (!CanEditCurrentWorkingSet())
         {
@@ -2069,7 +2151,7 @@ public partial class MainWindow : Window
         }
 
         var rowCount = selectedRows.Count;
-        var result = MessageBox.Show(
+        var result = MessageBox.Show(this, 
             rowCount == 1
                 ? "Delete the selected row from the current dataset? This action cannot be undone."
                 : $"Delete {rowCount:N0} selected rows from the current dataset? This action cannot be undone.",
@@ -2113,7 +2195,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var result = MessageBox.Show(
+        var result = MessageBox.Show(this, 
             $"Keep the {rowCount:N0} selected row{(rowCount == 1 ? string.Empty : "s")} and delete the remaining {removedCount:N0} row{(removedCount == 1 ? string.Empty : "s")} from the current dataset?",
             "Keep Only Selected Rows",
             MessageBoxButton.YesNo,
@@ -2154,7 +2236,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var result = MessageBox.Show(
+        var result = MessageBox.Show(this, 
             $"Delete the {removedCount:N0} unselected row{(removedCount == 1 ? string.Empty : "s")} and keep the current selection?",
             "Delete Unselected Rows",
             MessageBoxButton.YesNo,
@@ -2270,7 +2352,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error exporting selected rows: {ex.Message}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Error exporting selected rows: {UserFacingError.Describe(ex)}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
             StatusText.Text = "Selected-row export failed";
         }
         finally
@@ -2317,7 +2399,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var result = MessageBox.Show(
+        var result = MessageBox.Show(this, 
             $"Delete {duplicateCount:N0} duplicate row{(duplicateCount == 1 ? string.Empty : "s")} using {chosenColumns.Count:N0} chosen column{(chosenColumns.Count == 1 ? string.Empty : "s")}? The first row in each duplicate group will be kept.",
             "Delete Duplicate Rows",
             MessageBoxButton.YesNo,
@@ -2397,7 +2479,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             DiscardLatestUndoSnapshot();
-            MessageBox.Show($"Error applying edit: {ex.Message}", "Edit Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Error applying edit: {UserFacingError.Describe(ex)}", "Edit Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Edit failed";
         }
     }
@@ -2580,10 +2662,10 @@ public partial class MainWindow : Window
 
         if (currentCellAvailable)
         {
-            var valueLabel = currentCellContext.IsBlank ? "blank" : $"\"{currentCellContext.DisplayValue}\"";
+            var valueLabel = currentCellContext.IsBlank ? "blank" : $"\"{EscapeMenuHeaderText(currentCellContext.DisplayValue)}\"";
             FilterToValueContextMenuItem.Header = $"Filter to {valueLabel}";
             ExcludeValueContextMenuItem.Header = $"Exclude {valueLabel}";
-            ShowBlankValuesContextMenuItem.Header = $"Show Blank Values in {currentCellContext.ColumnName}";
+            ShowBlankValuesContextMenuItem.Header = $"Show Blank Values in {EscapeMenuHeaderText(currentCellContext.ColumnName)}";
         }
         else
         {
@@ -2599,6 +2681,10 @@ public partial class MainWindow : Window
 
         UpdateUndoUi();
     }
+
+    // WPF reads a single underscore in menu header text as an access-key marker and hides it,
+    // so column names and cell values interpolated into a header must double their underscores.
+    private static string EscapeMenuHeaderText(string text) => text.Replace("_", "__");
 
     private void UpdateQualityStaleBadge()
     {
@@ -2906,7 +2992,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error copying rows: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Error copying rows: {UserFacingError.Describe(ex)}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Copy failed";
         }
     }
@@ -2944,7 +3030,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error copying rows as JSON: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Error copying rows as JSON: {UserFacingError.Describe(ex)}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Copy failed";
         }
     }
@@ -3026,7 +3112,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error copying columns: {ex.Message}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Error copying columns: {UserFacingError.Describe(ex)}", "Copy Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Copy failed";
         }
     }
@@ -3102,10 +3188,7 @@ public partial class MainWindow : Window
         }
         else if (mods == System.Windows.Input.ModifierKeys.Control && e.Key == System.Windows.Input.Key.Z)
         {
-            if (CanEditCurrentWorkingSet())
-                UndoLastEdit();
-            else
-                StatusText.Text = "Undo is only available for editable working sets";
+            TryUndoLastEdit();
             e.Handled = true;
         }
         else if (mods == System.Windows.Input.ModifierKeys.None && e.Key == System.Windows.Input.Key.Delete && DataGrid.SelectedItems.Count > 0)
@@ -3197,8 +3280,8 @@ public partial class MainWindow : Window
                     // For CSV/TSV/JSON, offer to retry with adjusted settings
                     if (_currentFormat == SupportedFileFormat.Csv || _currentFormat == SupportedFileFormat.Tsv || _currentFormat == SupportedFileFormat.Json)
                     {
-                        var retry = MessageBox.Show(
-                            $"Error loading file: {ex.Message}\n\nWould you like to return to the import settings to adjust options (e.g. enable 'Skip malformed rows')?",
+                        var retry = MessageBox.Show(this, 
+                            $"Error loading file: {UserFacingError.Describe(ex)}\n\nWould you like to return to the import settings to adjust options (e.g. enable 'Skip malformed rows')?",
                             "Import Error",
                             MessageBoxButton.YesNo,
                             MessageBoxImage.Warning);
@@ -3217,7 +3300,7 @@ public partial class MainWindow : Window
                     }
                     else
                     {
-                        MessageBox.Show($"Error loading file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show(this, $"Error loading file: {UserFacingError.Describe(ex)}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
 
                     // If we get here, either non-CSV format or user declined retry — give up
@@ -3330,7 +3413,7 @@ public partial class MainWindow : Window
     {
         if (_originalData == null)
         {
-            MessageBox.Show("No file is currently loaded.", "Save As", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "No file is currently loaded.", "Save As", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         
@@ -3387,13 +3470,13 @@ public partial class MainWindow : Window
             StatusText.Text = $"Saved {System.IO.Path.GetFileName(filePath)} — {_originalData.Rows.Count:N0} rows";
 
             if (showConfirmation)
-                MessageBox.Show($"File saved to:\n{filePath}", "Save Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, $"File saved to:\n{filePath}", "Save Complete", MessageBoxButton.OK, MessageBoxImage.Information);
 
             return true;
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error saving file: {ex.Message}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Error saving file: {UserFacingError.Describe(ex)}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
             StatusText.Text = "Error saving file";
             return false;
         }
@@ -3436,7 +3519,7 @@ public partial class MainWindow : Window
     {
         if (_originalData == null)
         {
-            MessageBox.Show("No file is currently loaded.", "Export As", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "No file is currently loaded.", "Export As", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -3469,7 +3552,7 @@ public partial class MainWindow : Window
                 var formatName = Services.FileFormatDetector.GetFormatDisplayName(targetFormat);
                 StatusText.Text = $"Exported as {formatName} to {System.IO.Path.GetFileName(saveFileDialog.FileName)}";
 
-                MessageBox.Show(
+                MessageBox.Show(this, 
                     $"File exported successfully as {formatName} to:\n{saveFileDialog.FileName}",
                     "Export Complete",
                     MessageBoxButton.OK,
@@ -3477,7 +3560,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error exporting file: {ex.Message}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(this, $"Error exporting file: {UserFacingError.Describe(ex)}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusText.Text = "Error exporting file";
             }
             finally
@@ -3680,7 +3763,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             StatusText.Text = "Failed to copy schema to clipboard";
-            MessageBox.Show($"Error copying schema to clipboard: {ex.Message}", "Clipboard Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Error copying schema to clipboard: {UserFacingError.Describe(ex)}", "Clipboard Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
     
@@ -3726,7 +3809,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error setting up data grid: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Error setting up data grid: {UserFacingError.Describe(ex)}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             StatusText.Text = "Error displaying data";
         }
     }
@@ -4225,7 +4308,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to load filter values: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(this, $"Failed to load filter values: {UserFacingError.Describe(ex)}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -4253,7 +4336,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to load filter values: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(this, $"Failed to load filter values: {UserFacingError.Describe(ex)}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
         else if (_originalData != null && _originalData.Columns.Contains(columnName))
@@ -4636,7 +4719,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error sorting data: {ex.Message}", "Sort Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Error sorting data: {UserFacingError.Describe(ex)}", "Sort Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             StatusText.Text = "Sort failed";
         }
     }
@@ -5207,7 +5290,7 @@ public partial class MainWindow : Window
         {
             var item = new MenuItem
             {
-                Header = savedView.Name,
+                Header = EscapeMenuHeaderText(savedView.Name),
                 ToolTip = savedView.Description,
                 Tag = savedView
             };
@@ -5353,7 +5436,7 @@ public partial class MainWindow : Window
                 var fileName = System.IO.Path.GetFileName(filePath);
                 var menuItem = new MenuItem
                 {
-                    Header = $"_{i + 1}. {fileName}",
+                    Header = $"_{i + 1}. {EscapeMenuHeaderText(fileName)}",
                     ToolTip = filePath,
                     Tag = filePath
                 };
@@ -5386,7 +5469,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                MessageBox.Show($"File not found: {filePath}", "File Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, $"File not found: {filePath}", "File Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
                 _recentFiles.Remove(filePath);
                 SaveRecentFiles();
                 UpdateRecentFilesMenu();
@@ -5480,7 +5563,7 @@ public partial class MainWindow : Window
         var format = Services.FileFormatDetector.DetectFormat(_currentFilePath);
         if (format != SupportedFileFormat.Csv && format != SupportedFileFormat.Tsv && format != SupportedFileFormat.Json)
         {
-            MessageBox.Show("Import options are available for CSV, TSV, and JSON files.",
+            MessageBox.Show(this, "Import options are available for CSV, TSV, and JSON files.",
                 "Import Options", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -5569,7 +5652,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error loading additional rows: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Error loading additional rows: {UserFacingError.Describe(ex)}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -5655,7 +5738,7 @@ public partial class MainWindow : Window
 
         if (_totalRowCount > 500_000)
         {
-            var result = MessageBox.Show(
+            var result = MessageBox.Show(this, 
                 $"This file has {_totalRowCount:N0} rows. Loading all rows may cause the application to become slow or unresponsive.\n\nContinue?",
                 "Large File Warning", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (result != MessageBoxResult.Yes) return;
@@ -5686,12 +5769,12 @@ public partial class MainWindow : Window
 
             if (flatQuery == null)
             {
-                MessageBox.Show("No nested STRUCT columns were detected in this JSON file.",
+                MessageBox.Show(this, "No nested STRUCT columns were detected in this JSON file.",
                     "Flatten JSON", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
-            var result = MessageBox.Show(
+            var result = MessageBox.Show(this, 
                 "Nested STRUCT columns were detected. Flatten them into separate columns?\n\n" +
                 "This will reload the data with nested fields expanded (e.g., address.city becomes address_city).",
                 "Flatten Nested JSON", MessageBoxButton.YesNo, MessageBoxImage.Question);
@@ -5724,7 +5807,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error flattening JSON: {ex.Message}", "Flatten Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Error flattening JSON: {UserFacingError.Describe(ex)}", "Flatten Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -5734,21 +5817,52 @@ public partial class MainWindow : Window
 
     // ── Loading Overlay ─────────────────────────────────────────────────
 
-    private void ShowLoading(string message)
+    /// <summary>
+    /// Shows the busy overlay. Pass the operation's <paramref name="cancellation"/> source to
+    /// offer a Cancel button; without one the button stays hidden rather than presenting a
+    /// control that cannot actually stop the work.
+    /// </summary>
+    private void ShowLoading(string message, CancellationTokenSource? cancellation = null)
     {
         // Immediately clear the empty state so the overlay renders on a clean background
         EmptyStatePanel.Visibility = Visibility.Collapsed;
         LoadingText.Text = message;
         LoadingOverlay.Visibility = Visibility.Visible;
         MainTaskbarItemInfo.ProgressState = TaskbarItemProgressState.Indeterminate;
+
+        _cancellableOperation = cancellation;
+        LoadingCancelButton.IsEnabled = true;
+        LoadingCancelButton.Visibility = cancellation == null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void HideLoading()
     {
         LoadingOverlay.Visibility = Visibility.Collapsed;
+        LoadingCancelButton.Visibility = Visibility.Collapsed;
+        _cancellableOperation = null;
         // Only clear the taskbar progress if quality analysis is not currently showing it
         if (_qualityViewModel?.TaskbarProgressVisible != true)
             MainTaskbarItemInfo.ProgressState = TaskbarItemProgressState.None;
+    }
+
+    private void OnCancelLoadingClick(object sender, RoutedEventArgs e)
+    {
+        if (_cancellableOperation == null)
+            return;
+
+        // The overlay stays up until the operation actually unwinds, so say so.
+        LoadingCancelButton.IsEnabled = false;
+        LoadingText.Text = "Cancelling...";
+        StatusText.Text = "Cancelling...";
+
+        try
+        {
+            _cancellableOperation.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The operation finished between the click and the cancel; nothing to stop.
+        }
     }
 
     private sealed class WorkspaceState
@@ -5821,28 +5935,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_markdownHelperEmbedded)
-        {
-            if (!string.IsNullOrWhiteSpace(filePath))
-                await EmbeddedMarkdownHelper.OpenFileAsync(filePath);
-            ToggleMarkdownHelperEmbedded(true);
-            StatusText.Text = "Opened Markdown Helper in workspace.";
-            return;
-        }
-
-        var markdownService = App.Current.Services.GetService<MarkdownService>() ?? new MarkdownService();
-        _markdownEditorWindow = new MarkdownEditorWindow(markdownService, _workspaceService)
-        {
-            Owner = this
-        };
-        _markdownEditorWindow.Closed += (_, _) => _markdownEditorWindow = null;
-        _markdownEditorWindow.DockBackRequested += OnMarkdownHelperDockBackRequested;
-        _markdownEditorWindow.Show();
-
+        // Markdown opens in the workspace like every other supported file type. Popping out
+        // into a separate window is now something the user asks for, not the default.
         if (!string.IsNullOrWhiteSpace(filePath))
-            await _markdownEditorWindow.OpenFileAsync(filePath);
+            await EmbeddedMarkdownHelper.OpenFileAsync(filePath);
 
-        StatusText.Text = "Opened Markdown Helper window.";
+        ToggleMarkdownHelperEmbedded(true);
+        StatusText.Text = string.IsNullOrWhiteSpace(filePath)
+            ? "Opened the Markdown Helper in the workspace."
+            : $"Opened {Path.GetFileName(filePath)} in the Markdown Helper.";
     }
 
     private void OnToggleMarkdownHelperClick(object sender, RoutedEventArgs e)
@@ -5898,8 +5999,12 @@ public partial class MainWindow : Window
         };
         _markdownEditorWindow.Closed += (_, _) => _markdownEditorWindow = null;
         _markdownEditorWindow.DockBackRequested += OnMarkdownHelperDockBackRequested;
-        _markdownEditorWindow.Show();
+
+        // Queue the draft before Show(). Show() raises Loaded, whose handler restores the
+        // persisted draft when nothing is pending - and that restore would land after this
+        // hand-off and wipe the document the user just popped out.
         await _markdownEditorWindow.LoadDraftStateAsync(state);
+        _markdownEditorWindow.Show();
         StatusText.Text = "Opened Markdown Helper window.";
     }
 
@@ -6018,10 +6123,10 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             StatusText.Text = "Could not check for updates.";
-            MessageBox.Show(
+            MessageBox.Show(this, 
                 "HipHipParquet could not check whether a newer version is available.\n\n" +
                 "This may be due to being offline, network issues, or a problem contacting the update service.\n\n" +
-                $"Details: {ex.Message}",
+                $"Details: {UserFacingError.Describe(ex)}",
                 "Update Check Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -6030,13 +6135,13 @@ public partial class MainWindow : Window
         {
             var current = Services.UpdateService.GetCurrentVersion();
             StatusText.Text = $"HipHipParquet v{current.ToString(3)} is up to date.";
-            MessageBox.Show(
+            MessageBox.Show(this, 
                 $"You are running the latest version of HipHipParquet.\n\nCurrent version: {current.ToString(3)}",
                 "No Updates Available", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        var result = MessageBox.Show(
+        var result = MessageBox.Show(this, 
             $"A new version of HipHipParquet is available!\n\n" +
             $"Current version:  {Services.UpdateService.GetCurrentVersion().ToString(3)}\n" +
             $"Latest version:   {update.LatestVersion.ToString(3)}\n\n" +
@@ -6099,7 +6204,7 @@ public partial class MainWindow : Window
 
             if (!downloadResult.Succeeded || installerPath == null || !File.Exists(installerPath))
             {
-                MessageBox.Show(
+                MessageBox.Show(this, 
                     "Download failed. Opening the releases page so you can install manually.\n\n" +
                     (string.IsNullOrWhiteSpace(downloadResult.Message) ? "No additional diagnostics were available." : downloadResult.Message),
                     "Download Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -6149,7 +6254,7 @@ public partial class MainWindow : Window
 
             if (!verified)
             {
-                var proceed = MessageBox.Show(
+                var proceed = MessageBox.Show(this, 
                     "The installer could not be automatically verified — no checksum file was found and the installer is not Authenticode signed.\n\n" +
                     (string.IsNullOrWhiteSpace(verificationMessage) ? string.Empty : $"Details: {verificationMessage}\n\n") +
                     "It was downloaded directly from GitHub over HTTPS. Run it anyway?",
@@ -6164,7 +6269,7 @@ public partial class MainWindow : Window
                 }
             }
 
-            var confirm = MessageBox.Show(
+            var confirm = MessageBox.Show(this, 
                 $"Version {update.LatestVersion.ToString(3)} is ready to install.\n\n" +
                 "The application will close and the installer will run. Continue?",
                 "Install Update", MessageBoxButton.YesNo, MessageBoxImage.Question);
@@ -6228,7 +6333,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                var result = MessageBox.Show(
+                var result = MessageBox.Show(this, 
                     $"The file '{System.IO.Path.GetFileName(e.FullPath)}' has been modified externally.\n\nReload the file?",
                     "File Changed", MessageBoxButton.YesNo, MessageBoxImage.Question);
 

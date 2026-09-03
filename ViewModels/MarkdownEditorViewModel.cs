@@ -33,6 +33,9 @@ public partial class MarkdownEditorViewModel : ObservableObject
 
     public string FocusModeButtonLabel => IsFocusModeActive ? "Exit focus" : "Focus";
 
+    /// <summary>Backs the toolbar picker; the status label alone gave no way to change this.</summary>
+    public IReadOnlyList<MarkdownFlavorProfile> Profiles { get; } = Enum.GetValues<MarkdownFlavorProfile>();
+
     public string PreviewProfileLabel => $"Preview profile: {SelectedProfile.GetDisplayName()}";
 
     partial void OnSelectedProfileChanged(MarkdownFlavorProfile value)

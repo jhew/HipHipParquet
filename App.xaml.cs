@@ -31,6 +31,7 @@ public partial class App : Application
                     services.AddSingleton<ReportService>();
                     services.AddSingleton<MarkdownService>();
                     services.AddSingleton<ThemeService>();
+                    services.AddSingleton<ZoomService>();
                 })
                 .Build();
         }
@@ -43,18 +44,43 @@ public partial class App : Application
 
     private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
-        MessageBox.Show($"An error occurred: {e.Exception.Message}\n\nClick OK to continue.", 
-                       "Application Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+        ShowErrorDialog($"{UserFacingError.Describe(e.Exception)}\n\nClick OK to continue.",
+            "Application Error", MessageBoxImage.Warning);
         e.Handled = true; // Prevent app crash
     }
 
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         var ex = e.ExceptionObject as Exception;
-        MessageBox.Show($"A fatal error occurred: {ex?.Message}", 
-                       "Fatal Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        ShowErrorDialog($"A fatal error occurred.\n\n{UserFacingError.Describe(ex)}",
+            "Fatal Error", MessageBoxImage.Error);
     }
 
+
+    /// <summary>
+    /// Shows an error owned by the main window where possible, so it centres on the app
+    /// instead of appearing behind it. Falls back to an unowned dialog during startup and
+    /// on background threads, where no window can safely be reached.
+    /// </summary>
+    private static void ShowErrorDialog(string message, string caption, MessageBoxImage icon)
+    {
+        Window? owner = null;
+        try
+        {
+            var app = Application.Current;
+            if (app != null && app.Dispatcher.CheckAccess())
+                owner = app.MainWindow;
+        }
+        catch
+        {
+            // No reachable window yet; fall through to an unowned dialog.
+        }
+
+        if (owner is { IsLoaded: true })
+            MessageBox.Show(owner, message, caption, MessageBoxButton.OK, icon);
+        else
+            MessageBox.Show(message, caption, MessageBoxButton.OK, icon);
+    }
     private void OnStartup(object sender, StartupEventArgs e)
     {
         try
@@ -91,7 +117,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Startup error: {ex.Message}", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowErrorDialog($"Hip Hip Parquet could not start.\n\n{UserFacingError.Describe(ex)}", "Startup Error", MessageBoxImage.Error);
         }
     }
 

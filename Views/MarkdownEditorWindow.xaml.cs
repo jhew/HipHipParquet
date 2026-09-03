@@ -20,6 +20,7 @@ public partial class MarkdownEditorWindow : Window
     private string? _pendingOpenFilePath;
     private MarkdownEditorState? _pendingDraftState;
     private bool _previewDirty;
+    private readonly MarkdownPreviewHost _previewHost;
 
     public MarkdownEditorViewModel ViewModel { get; }
     public event EventHandler? DockBackRequested;
@@ -45,10 +46,12 @@ public partial class MarkdownEditorWindow : Window
         };
         _persistDebounceTimer.Tick += PersistDebounceTimerOnTick;
 
+        SubscribeToThemeChanges();
+        ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
         Closed += OnWindowClosed;
-        PreviewBrowser.Navigating += OnPreviewBrowserNavigating;
+        _previewHost = new MarkdownPreviewHost(PreviewBrowser);
         EditorTextBox.TextChanged += OnEditorTextChanged;
     }
 
@@ -125,7 +128,7 @@ public partial class MarkdownEditorWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Could not open the markdown file.\n\n{ex.Message}", "Open Markdown File", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Could not open the markdown file.\n\n{UserFacingError.Describe(ex)}", "Open Markdown File", MessageBoxButton.OK, MessageBoxImage.Warning);
             ViewModel.StatusMessage = "Open failed.";
         }
     }
@@ -191,32 +194,6 @@ public partial class MarkdownEditorWindow : Window
             RefreshPreviewIfVisible(force: true);
     }
 
-    private void OnPreviewBrowserNavigating(object? sender, NavigatingCancelEventArgs e)
-    {
-        if (e.Uri == null || e.Uri.Scheme.Equals("about", StringComparison.OrdinalIgnoreCase))
-            return;
-
-        if (e.Uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
-            e.Uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
-            e.Uri.Scheme.Equals(Uri.UriSchemeMailto, StringComparison.OrdinalIgnoreCase))
-        {
-            e.Cancel = true;
-            try
-            {
-                Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
-            }
-            catch (Exception)
-            {
-                ViewModel.StatusMessage = $"Unable to open link: {e.Uri.AbsoluteUri}";
-            }
-
-            return;
-        }
-
-        e.Cancel = true;
-        ViewModel.StatusMessage = $"Blocked opening {e.Uri.Scheme} links from the preview.";
-    }
-
     private async void OnWindowClosing(object? sender, CancelEventArgs e)
     {
         if (_closingConfirmed)
@@ -234,6 +211,8 @@ public partial class MarkdownEditorWindow : Window
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
+        UnsubscribeFromThemeChanges();
+        _previewHost.Dispose();
         _previewDebounceTimer.Stop();
         _previewDebounceTimer.Tick -= PreviewDebounceTimerOnTick;
         _persistDebounceTimer.Stop();
@@ -314,7 +293,7 @@ public partial class MarkdownEditorWindow : Window
             ? "\n\nSelecting No closes the window and keeps this draft for next time."
             : string.Empty;
 
-        var result = MessageBox.Show(
+        var result = MessageBox.Show(this, 
             $"You have unsaved markdown changes. Save before {actionLabel}?{keepDraftNote}",
             "Unsaved Markdown Changes",
             MessageBoxButton.YesNoCancel,
@@ -360,7 +339,7 @@ public partial class MarkdownEditorWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Could not save the markdown file.\n\n{ex.Message}", "Save Markdown File", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Could not save the markdown file.\n\n{UserFacingError.Describe(ex)}", "Save Markdown File", MessageBoxButton.OK, MessageBoxImage.Warning);
             ViewModel.StatusMessage = "Save failed.";
             return false;
         }
@@ -376,14 +355,54 @@ public partial class MarkdownEditorWindow : Window
 
         try
         {
-            ViewModel.PreviewHtml = _markdownService.RenderHtmlDocument(EditorTextBox.Text, ViewModel.SelectedProfile);
-            PreviewBrowser.NavigateToString(ViewModel.PreviewHtml);
+            ViewModel.PreviewHtml = _markdownService.RenderHtmlDocument(EditorTextBox.Text, ViewModel.SelectedProfile, IsDarkTheme());
             _previewDirty = false;
+            _ = RenderPreviewAsync(ViewModel.PreviewHtml);
         }
         catch (Exception ex)
         {
             ViewModel.StatusMessage = $"Preview failed: {ex.Message}";
         }
+    }
+
+
+    private static bool IsDarkTheme()
+        => (App.Current.Services.GetService(typeof(ThemeService)) as ThemeService)?.IsDarkEffective ?? false;
+
+    private void SubscribeToThemeChanges()
+    {
+        if (App.Current.Services.GetService(typeof(ThemeService)) is ThemeService theme)
+            theme.EffectiveThemeChanged += OnEffectiveThemeChanged;
+    }
+
+    private void UnsubscribeFromThemeChanges()
+    {
+        if (App.Current.Services.GetService(typeof(ThemeService)) is ThemeService theme)
+            theme.EffectiveThemeChanged -= OnEffectiveThemeChanged;
+    }
+
+    /// <summary>The preview is a rendered HTML document, so it must be re-rendered to follow a theme switch.</summary>
+    private void OnEffectiveThemeChanged(object? sender, bool isDark)
+    {
+        _previewDirty = true;
+        RefreshPreviewIfVisible(force: true);
+    }
+    /// <summary>Preview rendering is async because the WebView2 core initialises on first use.</summary>
+    private async Task RenderPreviewAsync(string html)
+    {
+        if (!await _previewHost.RenderAsync(html) && _previewHost.UnavailableReason != null)
+            ViewModel.StatusMessage = _previewHost.UnavailableReason;
+    }
+
+
+    /// <summary>Changing the profile changes the rendered output, so the preview must follow.</summary>
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MarkdownEditorViewModel.SelectedProfile))
+            return;
+
+        _previewDirty = true;
+        RefreshPreviewIfVisible(force: true);
     }
 
     private void SchedulePreview()

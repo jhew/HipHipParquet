@@ -17,6 +17,7 @@ public partial class MarkdownHelperPanel : UserControl
     private WorkspaceService? _workspaceService;
     private bool _suppressDocumentEvents;
     private bool _previewDirty = true;
+    private readonly MarkdownPreviewHost _previewHost;
 
     public MarkdownEditorViewModel ViewModel { get; }
     public event EventHandler? PopOutRequested;
@@ -28,15 +29,19 @@ public partial class MarkdownHelperPanel : UserControl
         _markdownService = App.Current.Services.GetService(typeof(MarkdownService)) as MarkdownService ?? new MarkdownService();
         ViewModel = new MarkdownEditorViewModel();
         DataContext = ViewModel;
-        PreviewBrowser.Navigating += OnPreviewBrowserNavigating;
+        _previewHost = new MarkdownPreviewHost(PreviewBrowser);
         EditorTextBox.TextChanged += OnEditorTextChanged;
         _persistDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
         _persistDebounceTimer.Tick += PersistDebounceTimerOnTick;
+        SubscribeToThemeChanges();
+        ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         Unloaded += OnPanelUnloaded;
     }
 
     private async void OnPanelUnloaded(object sender, RoutedEventArgs e)
     {
+        UnsubscribeFromThemeChanges();
+        _previewHost.Dispose();
         // A running DispatcherTimer roots the panel via the dispatcher; stop it when the
         // panel leaves the tree and flush any pending draft so nothing is lost.
         if (_persistDebounceTimer.IsEnabled)
@@ -44,6 +49,39 @@ public partial class MarkdownHelperPanel : UserControl
             _persistDebounceTimer.Stop();
             await PersistDraftAsync();
         }
+    }
+
+
+    private static bool IsDarkTheme()
+        => (App.Current.Services.GetService(typeof(ThemeService)) as ThemeService)?.IsDarkEffective ?? false;
+
+    private void SubscribeToThemeChanges()
+    {
+        if (App.Current.Services.GetService(typeof(ThemeService)) is ThemeService theme)
+            theme.EffectiveThemeChanged += OnEffectiveThemeChanged;
+    }
+
+    private void UnsubscribeFromThemeChanges()
+    {
+        if (App.Current.Services.GetService(typeof(ThemeService)) is ThemeService theme)
+            theme.EffectiveThemeChanged -= OnEffectiveThemeChanged;
+    }
+
+    /// <summary>The preview is a rendered HTML document, so it must be re-rendered to follow a theme switch.</summary>
+    private void OnEffectiveThemeChanged(object? sender, bool isDark)
+    {
+        _previewDirty = true;
+        RefreshPreviewIfVisible(force: true);
+    }
+
+    /// <summary>Changing the profile changes the rendered output, so the preview must follow.</summary>
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MarkdownEditorViewModel.SelectedProfile))
+            return;
+
+        _previewDirty = true;
+        RefreshPreviewIfVisible(force: true);
     }
 
     public void InitializeWorkspaceService(WorkspaceService workspaceService)
@@ -167,7 +205,7 @@ public partial class MarkdownHelperPanel : UserControl
         if (!ViewModel.IsDirty)
             return true;
 
-        var result = MessageBox.Show(
+        var result = MessageBox.Show(Window.GetWindow(this), 
             $"You have unsaved markdown changes. Save before {actionLabel}?",
             "Unsaved Markdown Changes",
             MessageBoxButton.YesNoCancel,
@@ -251,9 +289,9 @@ public partial class MarkdownHelperPanel : UserControl
 
         try
         {
-            var html = _markdownService.RenderHtmlDocument(EditorTextBox.Text, ViewModel.SelectedProfile);
-            PreviewBrowser.NavigateToString(html);
+            var html = _markdownService.RenderHtmlDocument(EditorTextBox.Text, ViewModel.SelectedProfile, IsDarkTheme());
             _previewDirty = false;
+            _ = RenderPreviewAsync(html);
         }
         catch (Exception ex)
         {
@@ -261,30 +299,11 @@ public partial class MarkdownHelperPanel : UserControl
         }
     }
 
-    private void OnPreviewBrowserNavigating(object? sender, NavigatingCancelEventArgs e)
+    /// <summary>Preview rendering is async because the WebView2 core initialises on first use.</summary>
+    private async Task RenderPreviewAsync(string html)
     {
-        if (e.Uri == null || e.Uri.Scheme.Equals("about", StringComparison.OrdinalIgnoreCase))
-            return;
-
-        if (e.Uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-            || e.Uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || e.Uri.Scheme.Equals(Uri.UriSchemeMailto, StringComparison.OrdinalIgnoreCase))
-        {
-            e.Cancel = true;
-            try
-            {
-                Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
-            }
-            catch (Exception)
-            {
-                ViewModel.StatusMessage = $"Unable to open link: {e.Uri.AbsoluteUri}";
-            }
-
-            return;
-        }
-
-        e.Cancel = true;
-        ViewModel.StatusMessage = $"Blocked opening {e.Uri.Scheme} links from the preview.";
+        if (!await _previewHost.RenderAsync(html) && _previewHost.UnavailableReason != null)
+            ViewModel.StatusMessage = _previewHost.UnavailableReason;
     }
 
     private void OnFocusModeClick(object sender, RoutedEventArgs e) => FocusModeToggleRequested?.Invoke(this, EventArgs.Empty);

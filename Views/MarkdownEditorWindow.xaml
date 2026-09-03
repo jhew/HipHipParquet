@@ -2,47 +2,63 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:conv="clr-namespace:HipHipParquet.Converters"
+    xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="{Binding WindowTitle}"
         Width="1080" Height="760"
         MinWidth="820" MinHeight="560"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="False"
+        Background="{DynamicResource Brush.Window}"
         Icon="/Assets/app.ico">
     <Window.Resources>
-        <conv:StringToVisibilityConverter x:Key="StringToVisibility"/>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-        <Style x:Key="ToolButton" TargetType="Button">
-            <Setter Property="Margin" Value="0,0,8,0"/>
-            <Setter Property="Padding" Value="10,4"/>
-            <Setter Property="Background" Value="{DynamicResource Brush.Card}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Themes/MarkdownStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <conv:StringToVisibilityConverter x:Key="StringToVisibility"/>
+            <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+            <conv:MarkdownProfileNameConverter x:Key="ProfileName"/>
+        </ResourceDictionary>
     </Window.Resources>
 
     <DockPanel Background="{DynamicResource Brush.Window}">
-        <Border DockPanel.Dock="Top" Background="{DynamicResource Brush.BannerBg}" Padding="16,12">
+        <!-- Same header treatment as the docked panel, so popping out does not restyle the tool. -->
+        <Border DockPanel.Dock="Top" Style="{StaticResource MarkdownHeaderBar}" Padding="16,10">
             <DockPanel LastChildFill="True">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <Button Style="{StaticResource ToolButton}" Click="OnNewClick" Content="New"/>
-                    <Button Style="{StaticResource ToolButton}" Click="OnOpenClick" Content="Open..."/>
-                    <Button Style="{StaticResource ToolButton}" Click="OnSaveClick" Content="Save"/>
-                    <Button Style="{StaticResource ToolButton}" Click="OnSaveAsClick" Content="Save As..."/>
-                    <Button Style="{StaticResource ToolButton}" Click="OnDockBackClick" Content="Dock back"/>
+                    <TextBlock Text="Profile" VerticalAlignment="Center" Margin="0,0,6,0"
+                               Style="{StaticResource MarkdownHeaderSubtitle}"/>
+                    <ComboBox x:Name="ProfileSelector" Width="150" Margin="0,0,10,0" VerticalAlignment="Center"
+                              ItemsSource="{Binding Profiles}"
+                              SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
+                              Foreground="{DynamicResource Brush.TextPrimary}"
+                              ToolTip="How permissive the preview renderer is"
+                              AutomationProperties.Name="Markdown preview profile">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={StaticResource ProfileName}}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Style="{StaticResource MarkdownToolButton}" Click="OnNewClick" Content="New"/>
+                    <Button Style="{StaticResource MarkdownToolButton}" Click="OnOpenClick" Content="Open..."/>
+                    <Button Style="{StaticResource MarkdownToolButton}" Click="OnSaveClick" Content="Save"/>
+                    <Button Style="{StaticResource MarkdownToolButton}" Click="OnSaveAsClick" Content="Save As..."/>
+                    <Button Style="{StaticResource MarkdownToolButton}" Margin="0" Click="OnDockBackClick" Content="Dock back"
+                            ToolTip="Return the helper to the main workspace"/>
                 </StackPanel>
-                <StackPanel>
-                    <TextBlock Text="Markdown Helper" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource Brush.OnAccent}"/>
-                    <TextBlock Text="Simple open/edit/save and preview for markdown files." FontSize="12" Foreground="{DynamicResource Brush.BannerSubtle}"/>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Markdown Helper" Style="{StaticResource MarkdownHeaderTitle}"/>
+                    <TextBlock Text="Open, edit and preview markdown files." Style="{StaticResource MarkdownHeaderSubtitle}"/>
                 </StackPanel>
             </DockPanel>
         </Border>
 
         <Border DockPanel.Dock="Top" Margin="12,12,12,0" Padding="8,6" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="10">
             <DockPanel LastChildFill="True">
-                <Button DockPanel.Dock="Right" Content="Copy path" Padding="8,4" Margin="8,0,0,0"
-                        Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Cursor="Hand"
+                <Button DockPanel.Dock="Right" Content="Copy path" Margin="8,0,0,0"
+                        Style="{StaticResource MarkdownToolButton}"
                         VerticalAlignment="Center"
                         Click="OnCopyPathClick"
                         Visibility="{Binding CurrentFilePath, Converter={StaticResource StringToVisibility}}"/>
@@ -74,12 +90,16 @@
                              FontFamily="Consolas"
                              FontSize="13"
                              Padding="14"
-                             BorderThickness="0"/>
+                             BorderThickness="0"
+                             Background="{DynamicResource Brush.Card}"
+                             Foreground="{DynamicResource Brush.TextPrimary}"
+                             CaretBrush="{DynamicResource Brush.TextPrimary}"
+                             AutomationProperties.Name="Markdown source"/>
                 </Grid>
             </TabItem>
             <TabItem Header="Preview">
                 <Grid Background="{DynamicResource Brush.Card}">
-                    <WebBrowser x:Name="PreviewBrowser" Margin="0"/>
+                    <wv2:WebView2 x:Name="PreviewBrowser" Margin="0"/>
                 </Grid>
             </TabItem>
         </TabControl>
