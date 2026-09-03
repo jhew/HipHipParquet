@@ -96,11 +96,14 @@ jobs:
 
             ### What's Changed
 
-            - **Multi-file Parquet** — hold Ctrl or Shift in the file picker to select several `.parquet` files; they are loaded as a single logical table so you can profile and export split-part datasets without manual merging.
-            - **`.snappy.parquet` support** — the file open dialog now recognises the `.snappy.parquet` double extension alongside `.parquet`.
-            - **CSV encoding detection** — encoding is auto-detected via BOM sniffing (UTF-8, UTF-16 LE/BE) and heuristic analysis (Windows-1252, Latin-1). Non-UTF-8 files are transparently transcoded on the .NET side before being handed to DuckDB, so accented characters and Windows-codepage CSVs import correctly without any manual setting.
-            - **Quality report improvements** — the HTML report now groups findings by severity (Needs Review / Fair / Good) with colour-coded headers and ordered lists; repetitive per-column findings (e.g. multiple "High outlier rate" entries) are consolidated under a single heading with a bulleted sub-list.
-            - **Stability fixes** — fixed a crash when closing the window and choosing "No" on the save prompt; added an informative dialog for unsupported file types; fixed a temp-file leak in the CSV transcoding path.
+            - **Zoom the workspace** — hold Ctrl and scroll, or use `Ctrl+=` / `Ctrl+-` / `Ctrl+0`, to scale the schema pane, grid, Query Hub and quality panel. The menu bar and status bar stay at native size, and the level is remembered between sessions.
+            - **Markdown helper rebuilt on WebView2** — the preview previously rendered in a legacy engine that ignored most of its own stylesheet, so it never matched the app. It now uses the Chromium-based host, follows the light/dark theme, and re-renders when the theme changes.
+            - **Mermaid diagrams** — flowcharts, pie charts, state diagrams and timelines render in the markdown preview from a renderer bundled with the app. Nothing is fetched from the network.
+            - **Collapsible sections and richer markdown** — `<details>`/`<summary>` disclosures now render, alongside task lists and aligned tables. Raw HTML is filtered through an allow-list so nothing scriptable runs in the preview.
+            - **Markdown opens in the workspace** — opening a `.md` file docks the helper alongside your data instead of launching a separate window; **Pop out** moves it to its own window when you want it there.
+            - **Accessibility and dialog fixes** — message boxes are now owned by the main window so they centre correctly instead of hiding behind it, `Ctrl+Z` works anywhere in the window rather than only in the grid, long loads can be cancelled, and error messages read in plain language instead of raw exception text.
+            - **Menu text fix** — column names, filenames and saved-view names containing an underscore rendered with it missing (`ARR_TIME` appeared as `ARRTIME`).
+            - **Dark theme corrections** — the Help dialog and Markdown helper no longer fall back to unthemed defaults in dark mode.
 
             ### Download
 
@@ -113,7 +116,7 @@ jobs:
             ### Requirements
 
             - Windows 10 (build 19041) or later, 64-bit
-            - [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime?runtime=desktop&os=windows&arch=x64) — the installer will prompt if not present
+            - [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0/runtime?runtime=desktop&os=windows&arch=x64) — required; install it first if the app does not start
 
             ### Installation
 
