@@ -60,7 +60,22 @@ jobs:
         working-directory: installer
         run: |
           $ver = "${{ steps.version.outputs.VER }}"
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          # The runner image ships Inno Setup, but the install path is not contractual.
+          # Resolve it, and fail with a clear reason rather than a missing-file error.
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $candidates = @(
+              (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+              (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+            )
+            $iscc = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+            if (-not $iscc) {
+              Write-Error "Inno Setup (ISCC.exe) not found. Checked PATH and: $($candidates -join '; ')"
+              exit 1
+            }
+          }
+
+          Write-Host "Using ISCC at $iscc"
           & $iscc HipHipParquet.iss /DMyAppVersion=$ver /DSourceDir=..\publish
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -91,16 +106,12 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.VER }}
           name: "Hip Hip Parquet v${{ steps.version.outputs.VER }}"
+          # Static sections only. The "What is Changed" list is appended by
+          # generate_release_notes below, built from merged pull requests. Do not
+          # hardcode a change list here: v1.12.0 through v1.13.2 each shipped the
+          # v1.11.0 notes because the hardcoded block was never updated.
           body: |
             ## Hip Hip Parquet v${{ steps.version.outputs.VER }}
-
-            ### What's Changed
-
-            - **Multi-file Parquet** — hold Ctrl or Shift in the file picker to select several `.parquet` files; they are loaded as a single logical table so you can profile and export split-part datasets without manual merging.
-            - **`.snappy.parquet` support** — the file open dialog now recognises the `.snappy.parquet` double extension alongside `.parquet`.
-            - **CSV encoding detection** — encoding is auto-detected via BOM sniffing (UTF-8, UTF-16 LE/BE) and heuristic analysis (Windows-1252, Latin-1). Non-UTF-8 files are transparently transcoded on the .NET side before being handed to DuckDB, so accented characters and Windows-codepage CSVs import correctly without any manual setting.
-            - **Quality report improvements** — the HTML report now groups findings by severity (Needs Review / Fair / Good) with colour-coded headers and ordered lists; repetitive per-column findings (e.g. multiple "High outlier rate" entries) are consolidated under a single heading with a bulleted sub-list.
-            - **Stability fixes** — fixed a crash when closing the window and choosing "No" on the save prompt; added an informative dialog for unsupported file types; fixed a temp-file leak in the CSV transcoding path.
 
             ### Download
 
