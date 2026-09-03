@@ -124,7 +124,7 @@ jobs:
             ### Requirements
 
             - Windows 10 (build 19041) or later, 64-bit
-            - [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime?runtime=desktop&os=windows&arch=x64) — the installer will prompt if not present
+            - [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0/runtime?runtime=desktop&os=windows&arch=x64) — required; install it first if the app does not start
 
             ### Installation
 
