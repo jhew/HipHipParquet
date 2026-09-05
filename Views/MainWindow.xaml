@@ -26,6 +26,62 @@
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
         </Style>
+
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!--
+          Column headers are templates over a ColumnHeaderViewModel, never live visuals.
+          The grid virtualises header containers, and a UIElement can only have one visual
+          parent, so a header built in code gets re-parented on recycle and leaves blank
+          headers behind on wide files. A template is instantiated per realised header.
+        -->
+        <DataTemplate x:Key="DataColumnHeaderTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <DockPanel Grid.Column="0" LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding TypeIcon}"
+                               Margin="0,0,4,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding ColumnName}" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                               ToolTip="{Binding ColumnName}"/>
+                </DockPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="6,0,0,0">
+                    <Border Width="6" Height="6" CornerRadius="3" Margin="0,0,2,0"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource Brush.Accent}"
+                            Visibility="{Binding IsFilterActive, Converter={StaticResource BoolToVis}}"/>
+                    <Button Content="&#x25BC;" FontSize="8" Padding="3,1" Margin="0"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                            VerticalAlignment="Center"
+                            Foreground="{DynamicResource Brush.TextSecondary}"
+                            Tag="{Binding ColumnName}"
+                            ToolTip="{Binding FilterToolTip}"
+                            AutomationProperties.Name="{Binding FilterToolTip}"
+                            Click="OnFilterButtonClick"/>
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="RowNumberHeaderTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="#" FontWeight="Bold"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="&#x25BC;" FontSize="8" Padding="3,1"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource Brush.TextSecondary}"
+                        Tag="GoToRowButton" ToolTip="Go to row..."
+                        AutomationProperties.Name="Go to row"
+                        Click="OnGoToRowButtonClick"/>
+            </Grid>
+        </DataTemplate>
     </Window.Resources>
     <Window.TaskbarItemInfo>
         <shell:TaskbarItemInfo x:Name="MainTaskbarItemInfo"/>
