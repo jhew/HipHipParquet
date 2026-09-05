@@ -4,6 +4,7 @@ using System.Data;
 using Microsoft.Win32;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
+using HipHipParquet.Controls;
 using HipHipParquet.Models;
 using HipHipParquet.Services;
 using HipHipParquet.ViewModels;
@@ -4002,6 +4003,19 @@ public partial class MainWindow : Window
         GlobalSearchBox.SelectAll();
     }
 
+    /// <summary>
+    /// Right-alignment for numeric cells. One shared instance: the previous code built a new
+    /// Style per numeric column, which on a wide file meant hundreds of identical objects.
+    /// </summary>
+    private static readonly Style NumericCellStyle = BuildNumericCellStyle();
+
+    private static Style BuildNumericCellStyle()
+    {
+        var style = new Style(typeof(DataGridCell));
+        style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Right));
+        return style;
+    }
+
     private DataGridColumn CreateDataColumn(DataColumn column, ColumnInfo? columnInfo)
     {
         var columnName = column.ColumnName;
@@ -4009,47 +4023,17 @@ public partial class MainWindow : Window
         _columnFilters[columnName] = new ColumnFilterState();
 
         var isNumeric = IsNumericType(column.DataType);
-        var displayBinding = new System.Windows.Data.Binding($"[{columnName}]") { TargetNullValue = string.Empty };
 
-        // Display template: ScrollViewer wrapping a TextBlock so long values can be scrolled horizontally
-        var displayTemplate = new DataTemplate();
-        var svFactory = new FrameworkElementFactory(typeof(ScrollViewer));
-        svFactory.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
-        svFactory.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
-        svFactory.SetValue(ScrollViewer.FocusableProperty, false);
-        svFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-
-        var tbFactory = new FrameworkElementFactory(typeof(TextBlock));
-        tbFactory.SetBinding(TextBlock.TextProperty, displayBinding);
-        tbFactory.SetValue(TextBlock.TextWrappingProperty, TextWrapping.NoWrap);
-        tbFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        if (isNumeric)
-            tbFactory.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Right);
-
-        svFactory.AppendChild(tbFactory);
-        displayTemplate.VisualTree = svFactory;
-
-        // Editing template: TextBox with horizontal scroll
-        var editTemplate = new DataTemplate();
-        var txFactory = new FrameworkElementFactory(typeof(TextBox));
-        txFactory.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding($"[{columnName}]")
-        {
-            UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.LostFocus
-        });
-        txFactory.SetValue(TextBox.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
-        txFactory.SetValue(TextBox.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
-        txFactory.SetValue(TextBox.BorderThicknessProperty, new Thickness(0));
-        txFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Stretch);
-        if (isNumeric)
-            txFactory.SetValue(TextBox.TextAlignmentProperty, TextAlignment.Right);
-        editTemplate.VisualTree = txFactory;
-
-        var gridColumn = new DataGridTemplateColumn
+        var gridColumn = new DataGridScrollableTextColumn
         {
             Header = new ColumnHeaderViewModel(columnName, GetTypeIcon(columnInfo?.Type ?? "unknown")),
             HeaderTemplate = (DataTemplate)FindResource("DataColumnHeaderTemplate"),
-            CellTemplate = displayTemplate,
-            CellEditingTemplate = editTemplate,
+            Binding = new System.Windows.Data.Binding($"[{columnName}]") { TargetNullValue = string.Empty },
+            EditingBinding = new System.Windows.Data.Binding($"[{columnName}]")
+            {
+                UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.LostFocus
+            },
+            IsNumeric = isNumeric,
             Width = DataGridLength.Auto,
             MinWidth = 100,
             CanUserSort = true,
@@ -4057,13 +4041,8 @@ public partial class MainWindow : Window
             SortMemberPath = columnName
         };
 
-        // Right-align numeric columns
         if (isNumeric)
-        {
-            var cellStyle = new Style(typeof(DataGridCell));
-            cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Right));
-            gridColumn.CellStyle = cellStyle;
-        }
+            gridColumn.CellStyle = NumericCellStyle;
 
         return gridColumn;
     }
