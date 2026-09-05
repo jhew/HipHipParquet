@@ -4,6 +4,7 @@ using System.Data;
 using Microsoft.Win32;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
+using HipHipParquet.Controls;
 using HipHipParquet.Models;
 using HipHipParquet.Services;
 using HipHipParquet.ViewModels;
@@ -3117,32 +3118,28 @@ public partial class MainWindow : Window
         }
     }
     
+    /// <summary>
+    /// The column's display name, for Copy with Headers and similar exports.
+    /// </summary>
+    /// <remarks>
+    /// This deliberately reads <see cref="DataGridColumn.SortMemberPath"/> rather than digging
+    /// the text back out of the header visual. The visual is virtualised, so a scrolled-out
+    /// column used to yield an empty string and silently export a blank header name.
+    /// </remarks>
     private string GetColumnHeaderText(DataGridColumn column)
     {
-        if (column.Header is FrameworkElement element)
+        if (column.SortMemberPath == RowNumberColumnName)
+            return "#";
+
+        if (!string.IsNullOrEmpty(column.SortMemberPath))
+            return column.SortMemberPath;
+
+        return column.Header switch
         {
-            // Handle new Grid-based column header (DockPanel with icon + name TextBlocks)
-            if (element is Grid grid)
-            {
-                var namePanel = grid.Children.OfType<DockPanel>().FirstOrDefault();
-                if (namePanel != null)
-                {
-                    var nameBlock = namePanel.Children.OfType<TextBlock>().LastOrDefault();
-                    return nameBlock?.Text ?? "";
-                }
-                // Fallback for Grid headers without a DockPanel (e.g., row-number header: TextBlock + Button)
-                var gridTextBlock = grid.Children.OfType<TextBlock>().FirstOrDefault();
-                if (gridTextBlock != null)
-                    return gridTextBlock.Text ?? "";
-            }
-            // Handle legacy StackPanel header (icon + text)
-            if (element is StackPanel panel)
-            {
-                var textBlock = panel.Children.OfType<TextBlock>().LastOrDefault();
-                return textBlock?.Text ?? column.Header.ToString() ?? "";
-            }
-        }
-        return column.Header?.ToString() ?? "";
+            ColumnHeaderViewModel header => header.ColumnName,
+            string text => text,
+            _ => column.Header?.ToString() ?? string.Empty
+        };
     }
     
     /// <summary>Escapes characters that have special meaning in DataView LIKE expressions.</summary>
@@ -3797,7 +3794,7 @@ public partial class MainWindow : Window
                 if (column.ColumnName is "__RowNumber" or "__SourceFile") continue;
 
                 var columnInfo = columns?.FirstOrDefault(c => c.Name == column.ColumnName);
-                var gridColumn = CreateDataColumn(column, columnInfo, i);
+                var gridColumn = CreateDataColumn(column, columnInfo);
                 DataGrid.Columns.Add(gridColumn);
             }
             
@@ -3818,7 +3815,8 @@ public partial class MainWindow : Window
     {
         var col = new DataGridTextColumn
         {
-            Header = CreateRowNumberHeader(),
+            Header = "#",
+            HeaderTemplate = (DataTemplate)FindResource("RowNumberHeaderTemplate"),
             Width = 80,
             MinWidth = 40,
             IsReadOnly = true,
@@ -3843,50 +3841,23 @@ public partial class MainWindow : Window
         return col;
     }
 
-    private FrameworkElement CreateRowNumberHeader()
-    {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        var label = new TextBlock
-        {
-            Text = "#",
-            FontWeight = FontWeights.Bold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(label, 0);
-        grid.Children.Add(label);
-
-        var goToButton = new Button
-        {
-            Content = "\u25BC", // ▼
-            FontSize = 8,
-            Padding = new Thickness(3, 1, 3, 1),
-            Background = System.Windows.Media.Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Cursor = System.Windows.Input.Cursors.Hand,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = ThemeBrushes.TextSecondary,
-            ToolTip = "Go to row...",
-            Tag = "GoToRowButton"
-        };
-        goToButton.Click += OnGoToRowButtonClick;
-        Grid.SetColumn(goToButton, 1);
-        grid.Children.Add(goToButton);
-
-        return grid;
-    }
-
     private void OnGoToRowButtonClick(object sender, RoutedEventArgs e)
+        => ShowGoToRowPopup(sender as UIElement ?? DataGrid);
+
+    /// <summary>
+    /// Opens the go-to-row popup anchored on <paramref name="placementTarget"/>.
+    /// </summary>
+    /// <remarks>
+    /// Ctrl+G anchors on the grid itself rather than hunting for the header button: the button
+    /// lives inside a virtualised column header and is not guaranteed to be realised.
+    /// </remarks>
+    private void ShowGoToRowPopup(UIElement placementTarget)
     {
-        if (sender is not Button button) return;
         if (_originalData == null || _dataView == null) return;
 
         var popup = new Popup
         {
-            PlacementTarget = button,
+            PlacementTarget = placementTarget,
             Placement = PlacementMode.Bottom,
             StaysOpen = false,
             AllowsTransparency = true,
@@ -4024,25 +3995,7 @@ public partial class MainWindow : Window
     }
 
     private void OnGoToRowShortcut(object sender, ExecutedRoutedEventArgs e)
-    {
-        if (_originalData == null || _dataView == null) return;
-
-        // Find the go-to-row button in the # column header and simulate a click
-        foreach (var col in DataGrid.Columns)
-        {
-            if (col.SortMemberPath == "__RowNumber" && col.Header is Grid headerGrid)
-            {
-                foreach (var child in headerGrid.Children)
-                {
-                    if (child is Button btn && btn.Tag?.ToString() == "GoToRowButton")
-                    {
-                        OnGoToRowButtonClick(btn, new RoutedEventArgs());
-                        return;
-                    }
-                }
-            }
-        }
-    }
+        => ShowGoToRowPopup(DataGrid);
 
     private void OnFocusSearchShortcut(object sender, ExecutedRoutedEventArgs e)
     {
@@ -4050,53 +4003,37 @@ public partial class MainWindow : Window
         GlobalSearchBox.SelectAll();
     }
 
-    private DataGridColumn CreateDataColumn(DataColumn column, ColumnInfo? columnInfo, int index)
+    /// <summary>
+    /// Right-alignment for numeric cells. One shared instance: the previous code built a new
+    /// Style per numeric column, which on a wide file meant hundreds of identical objects.
+    /// </summary>
+    private static readonly Style NumericCellStyle = BuildNumericCellStyle();
+
+    private static Style BuildNumericCellStyle()
+    {
+        var style = new Style(typeof(DataGridCell));
+        style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Right));
+        return style;
+    }
+
+    private DataGridColumn CreateDataColumn(DataColumn column, ColumnInfo? columnInfo)
     {
         var columnName = column.ColumnName;
         // Initialize filter state for this column
         _columnFilters[columnName] = new ColumnFilterState();
 
         var isNumeric = IsNumericType(column.DataType);
-        var displayBinding = new System.Windows.Data.Binding($"[{columnName}]") { TargetNullValue = string.Empty };
 
-        // Display template: ScrollViewer wrapping a TextBlock so long values can be scrolled horizontally
-        var displayTemplate = new DataTemplate();
-        var svFactory = new FrameworkElementFactory(typeof(ScrollViewer));
-        svFactory.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
-        svFactory.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
-        svFactory.SetValue(ScrollViewer.FocusableProperty, false);
-        svFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-
-        var tbFactory = new FrameworkElementFactory(typeof(TextBlock));
-        tbFactory.SetBinding(TextBlock.TextProperty, displayBinding);
-        tbFactory.SetValue(TextBlock.TextWrappingProperty, TextWrapping.NoWrap);
-        tbFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        if (isNumeric)
-            tbFactory.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Right);
-
-        svFactory.AppendChild(tbFactory);
-        displayTemplate.VisualTree = svFactory;
-
-        // Editing template: TextBox with horizontal scroll
-        var editTemplate = new DataTemplate();
-        var txFactory = new FrameworkElementFactory(typeof(TextBox));
-        txFactory.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding($"[{columnName}]")
+        var gridColumn = new DataGridScrollableTextColumn
         {
-            UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.LostFocus
-        });
-        txFactory.SetValue(TextBox.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
-        txFactory.SetValue(TextBox.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
-        txFactory.SetValue(TextBox.BorderThicknessProperty, new Thickness(0));
-        txFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Stretch);
-        if (isNumeric)
-            txFactory.SetValue(TextBox.TextAlignmentProperty, TextAlignment.Right);
-        editTemplate.VisualTree = txFactory;
-
-        var gridColumn = new DataGridTemplateColumn
-        {
-            Header = CreateColumnHeader(columnName, columnInfo?.Type ?? "unknown", index),
-            CellTemplate = displayTemplate,
-            CellEditingTemplate = editTemplate,
+            Header = new ColumnHeaderViewModel(columnName, GetTypeIcon(columnInfo?.Type ?? "unknown")),
+            HeaderTemplate = (DataTemplate)FindResource("DataColumnHeaderTemplate"),
+            Binding = new System.Windows.Data.Binding($"[{columnName}]") { TargetNullValue = string.Empty },
+            EditingBinding = new System.Windows.Data.Binding($"[{columnName}]")
+            {
+                UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.LostFocus
+            },
+            IsNumeric = isNumeric,
             Width = DataGridLength.Auto,
             MinWidth = 100,
             CanUserSort = true,
@@ -4104,13 +4041,8 @@ public partial class MainWindow : Window
             SortMemberPath = columnName
         };
 
-        // Right-align numeric columns
         if (isNumeric)
-        {
-            var cellStyle = new Style(typeof(DataGridCell));
-            cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Right));
-            gridColumn.CellStyle = cellStyle;
-        }
+            gridColumn.CellStyle = NumericCellStyle;
 
         return gridColumn;
     }
@@ -4165,96 +4097,20 @@ public partial class MainWindow : Window
             ApplyAllFilters();
     }
 
-    private FrameworkElement CreateColumnHeader(string name, string type, int index)
-    {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        // Left side: type icon + column name
-        var namePanel = new DockPanel { LastChildFill = true };
-        namePanel.Children.Add(new TextBlock
-        {
-            Text = GetTypeIcon(type),
-            Margin = new Thickness(0, 0, 4, 0),
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        DockPanel.SetDock(namePanel.Children[0], Dock.Left);
-        var nameBlock = new TextBlock
-        {
-            Text = name,
-            FontWeight = FontWeights.SemiBold,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center,
-            ToolTip = name
-        };
-        namePanel.Children.Add(nameBlock);
-        Grid.SetColumn(namePanel, 0);
-        grid.Children.Add(namePanel);
-
-        // Right side: filter button with indicator
-        var filterPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 0, 0) };
-
-        // Filter active indicator (small colored dot, hidden by default)
-        var indicator = new Border
-        {
-            Width = 6,
-            Height = 6,
-            CornerRadius = new CornerRadius(3),
-            Background = ThemeBrushes.Accent,
-            Margin = new Thickness(0, 0, 2, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Visibility = Visibility.Collapsed,
-            Tag = $"indicator_{name}"
-        };
-        filterPanel.Children.Add(indicator);
-
-        // Filter dropdown button (funnel icon)
-        var filterButton = new Button
-        {
-            Content = "\u25BC", // ▼ down arrow
-            FontSize = 8,
-            Padding = new Thickness(3, 1, 3, 1),
-            Margin = new Thickness(0),
-            Background = System.Windows.Media.Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Cursor = System.Windows.Input.Cursors.Hand,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = ThemeBrushes.TextSecondary,
-            Tag = name,
-            ToolTip = $"Filter {name}"
-        };
-        filterButton.Click += OnFilterButtonClick;
-        filterPanel.Children.Add(filterButton);
-
-        Grid.SetColumn(filterPanel, 1);
-        grid.Children.Add(filterPanel);
-
-        return grid;
-    }
-
+    /// <summary>
+    /// Flips the filter dot on a column's header. The header is a bound view-model, so this is
+    /// a property set rather than a walk through recycled header visuals.
+    /// </summary>
     private void UpdateFilterIndicator(string columnName)
     {
-        // Find the indicator in the column header by scanning DataGrid columns
+        var isActive = _columnFilters.TryGetValue(columnName, out var state) && state.IsActive;
+
         foreach (var col in DataGrid.Columns)
         {
-            if (col.SortMemberPath == columnName && col.Header is Grid headerGrid)
+            if (col.SortMemberPath == columnName && col.Header is ColumnHeaderViewModel header)
             {
-                foreach (var child in headerGrid.Children)
-                {
-                    if (child is StackPanel sp)
-                    {
-                        foreach (var spChild in sp.Children)
-                        {
-                            if (spChild is Border border && border.Tag?.ToString() == $"indicator_{columnName}")
-                            {
-                                var isActive = _columnFilters.TryGetValue(columnName, out var state) && state.IsActive;
-                                border.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
-                                return;
-                            }
-                        }
-                    }
-                }
+                header.IsFilterActive = isActive;
+                return;
             }
         }
     }
