@@ -1,5 +1,6 @@
 using DuckDB.NET.Data;
 using System.Data;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Microsoft.Extensions.Logging;
@@ -157,12 +158,12 @@ public class ParquetService : IDisposable
             var fullSql = $"SELECT * FROM ({sql}) AS flattened{limitClause}";
             _logger.LogDebug("Executing flattened SQL: {SQL}", fullSql);
 
+            var columnTypes = await DuckDbValueHelper.DescribeColumnTypesAsync(_connection, fullSql);
             using var command = new DuckDBCommand(fullSql, _connection);
             using var reader = await command.ExecuteReaderAsync();
 
             var dataTable = new DataTable();
-            for (int i = 0; i < reader.FieldCount; i++)
-                dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
+            DuckDbValueHelper.AddColumns(dataTable, reader, columnTypes);
 
             while (await reader.ReadAsync())
             {
@@ -205,17 +206,15 @@ public class ParquetService : IDisposable
             var sql = $"SELECT * FROM {readerExpr}{limitClause}";
             _logger.LogDebug("Executing SQL: {SQL}", sql);
             
+            var columnTypes = await DuckDbValueHelper.DescribeColumnTypesAsync(_connection, sql);
             using var command = new DuckDBCommand(sql, _connection);
             using var reader = await command.ExecuteReaderAsync();
-            
+
             var dataTable = new DataTable();
-            
+
             // Create columns from reader schema
-            for (int i = 0; i < reader.FieldCount; i++)
-            {
-                dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
-            }
-            
+            DuckDbValueHelper.AddColumns(dataTable, reader, columnTypes);
+
             // Fill data
             while (await reader.ReadAsync())
             {
@@ -270,12 +269,12 @@ public class ParquetService : IDisposable
             var sql = $"SELECT * FROM {readerExpr}{limitClause}";
             _logger.LogDebug("Executing multi-file SQL: {SQL}", sql);
 
+            var columnTypes = await DuckDbValueHelper.DescribeColumnTypesAsync(connection, sql);
             using var command = new DuckDBCommand(sql, connection);
             using var reader = await command.ExecuteReaderAsync();
 
             var dataTable = new DataTable();
-            for (int i = 0; i < reader.FieldCount; i++)
-                dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
+            DuckDbValueHelper.AddColumns(dataTable, reader, columnTypes);
 
             while (await reader.ReadAsync())
             {
@@ -666,12 +665,12 @@ public class ParquetService : IDisposable
 
             _logger.LogDebug("Executing grid query: {SQL}", sql);
 
+            var columnTypes = await DuckDbValueHelper.DescribeColumnTypesAsync(connection, sql, cancellationToken);
             using var command = new DuckDBCommand(sql, connection);
             using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
             var dataTable = new DataTable();
-            for (int i = 0; i < reader.FieldCount; i++)
-                dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
+            DuckDbValueHelper.AddColumns(dataTable, reader, columnTypes);
 
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -809,16 +808,13 @@ public class ParquetService : IDisposable
             // Create a temporary table from the DataTable
             var tempTableName = "temp_" + Guid.NewGuid().ToString("N");
             
-            // Build CREATE TABLE statement
-            var columnDefs = new List<string>();
-            foreach (DataColumn col in dataTable.Columns)
-            {
-                if (col.ColumnName is "__RowNumber" or "__SourceFile") continue; // Skip internal columns
-                
-                var duckDbType = GetDuckDbType(col.DataType);
-                columnDefs.Add($"{EscapeDuckDbIdentifier(col.ColumnName)} {duckDbType}");
-            }
-            
+            // Build CREATE TABLE statement, skipping internal columns
+            var dataCols = dataTable.Columns.Cast<DataColumn>()
+                .Where(c => c.ColumnName is not ("__RowNumber" or "__SourceFile")).ToList();
+            var columnTypes = dataCols.Select(GetDuckDbType).ToList();
+            var jsonBound = dataCols.Select(c => DuckDbValueHelper.NeedsJsonBinding(c.DataType)).ToList();
+            var columnDefs = dataCols.Select((col, i) => $"{EscapeDuckDbIdentifier(col.ColumnName)} {columnTypes[i]}");
+
             var createTableSql = $"CREATE TABLE {tempTableName} ({string.Join(", ", columnDefs)})";
             _logger.LogDebug("Creating temp table: {SQL}", createTableSql);
             
@@ -828,9 +824,8 @@ public class ParquetService : IDisposable
             }
             
             // Insert data using parameterized queries (SQL injection-safe, batched in a transaction)
-            var dataCols = dataTable.Columns.Cast<DataColumn>()
-                .Where(c => c.ColumnName is not ("__RowNumber" or "__SourceFile")).ToList();
-            var placeholders = string.Join(", ", Enumerable.Range(1, dataCols.Count).Select(i => $"${i}"));
+            var placeholders = string.Join(", ", Enumerable.Range(0, dataCols.Count).Select(i =>
+                jsonBound[i] ? $"CAST(${i + 1}::JSON AS {columnTypes[i]})" : $"${i + 1}"));
             var insertSql = $"INSERT INTO {tempTableName} VALUES ({placeholders})";
 
             using (var beginTx = new DuckDBCommand("BEGIN TRANSACTION", _connection))
@@ -847,7 +842,10 @@ public class ParquetService : IDisposable
                     {
                         for (int i = 0; i < dataCols.Count; i++)
                         {
-                            insertCommand.Parameters[i].Value = DuckDbValueHelper.ToParameterValue(row[dataCols[i]]);
+                            var value = row[dataCols[i]];
+                            insertCommand.Parameters[i].Value = jsonBound[i]
+                                ? DuckDbValueHelper.ToJsonParameterValue(value)
+                                : DuckDbValueHelper.ToParameterValue(value);
                         }
                         await insertCommand.ExecuteNonQueryAsync();
                     }
@@ -872,7 +870,10 @@ public class ParquetService : IDisposable
             var tempFilePath = Path.Combine(dir, tempFileName);
             var normalizedTempPath = tempFilePath.Replace("\\", "/");
             var escapedTempPath = normalizedTempPath.Replace("'", "''");
-            var exportSql = $"COPY {tempTableName} TO '{escapedTempPath}' (FORMAT {exportFormat}{exportOptions})";
+            var exportSource = format == SupportedFileFormat.Excel
+                ? $"(SELECT {BuildExcelColumnList(dataCols, columnTypes)} FROM {tempTableName})"
+                : tempTableName;
+            var exportSql = $"COPY {exportSource} TO '{escapedTempPath}' (FORMAT {exportFormat}{exportOptions})";
             _logger.LogDebug("Exporting to {Format}: {SQL}", formatName, exportSql);
             
             using (var exportCommand = new DuckDBCommand(exportSql, _connection))
@@ -914,19 +915,117 @@ public class ParquetService : IDisposable
         }
     }
     
-    private string GetDuckDbType(Type dotNetType)
+    /// <summary>
+    /// The DuckDB type to recreate a column with on save: the type it was loaded with when known,
+    /// otherwise one mapped from its .NET type.
+    /// </summary>
+    internal static string GetDuckDbType(DataColumn column)
     {
-        if (dotNetType == typeof(string)) return "VARCHAR";
-        if (dotNetType == typeof(int)) return "INTEGER";
-        if (dotNetType == typeof(long)) return "BIGINT";
-        if (dotNetType == typeof(double)) return "DOUBLE";
-        if (dotNetType == typeof(float)) return "FLOAT";
-        if (dotNetType == typeof(decimal)) return "DECIMAL";
-        if (dotNetType == typeof(bool)) return "BOOLEAN";
-        if (dotNetType == typeof(DateTime)) return "TIMESTAMP";
-        if (dotNetType == typeof(byte[])) return "BLOB";
+        if (column.ExtendedProperties[DuckDbValueHelper.DuckDbTypeProperty] is string loadedType)
+            return loadedType;
+
+        return column.DataType == typeof(decimal) ? GetDecimalType(column) : MapDotNetType(column.DataType);
+    }
+
+    private static string MapDotNetType(Type dotNetType)
+    {
+        if (DuckDbValueHelper.NeedsJsonBinding(dotNetType)) return "JSON";
+        if (DotNetToDuckDbTypes.TryGetValue(dotNetType, out var duckDbType)) return duckDbType;
+        if (dotNetType.IsGenericType && dotNetType.GetGenericTypeDefinition() == typeof(List<>))
+        {
+            // Decimal elements can't be sized from the rows like a decimal column, so take a wide default.
+            var elementType = dotNetType.GetGenericArguments()[0];
+            return elementType == typeof(decimal) ? "DECIMAL(38,10)[]" : $"{MapDotNetType(elementType)}[]";
+        }
         if (typeof(Stream).IsAssignableFrom(dotNetType)) return "BLOB";
         return "VARCHAR"; // Default to VARCHAR for unknown types
+    }
+
+    /// <summary>
+    /// Column types the GDAL xlsx driver writes natively. UBIGINT is left out: GDAL writes it as a
+    /// signed 64-bit integer, which overflows above long.MaxValue.
+    /// </summary>
+    private static readonly HashSet<string> ExcelNativeTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "BOOLEAN", "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "UTINYINT", "USMALLINT", "UINTEGER",
+        "FLOAT", "DOUBLE", "VARCHAR", "DATE",
+        "TIMESTAMP", "TIMESTAMP_S", "TIMESTAMP_MS", "TIMESTAMP_NS", "TIMESTAMP WITH TIME ZONE"
+    };
+
+    /// <summary>
+    /// Select list for an XLSX export. GDAL refuses some types (INTERVAL, HUGEINT, DECIMAL wider
+    /// than 18 digits) and silently leaves others out of the file (TIME, UUID, BLOB, ENUM, lists,
+    /// structs), so anything it can't write natively goes out as text. Wide decimals go out as
+    /// DOUBLE instead, since Excel stores every number as one anyway.
+    /// </summary>
+    private static string BuildExcelColumnList(IReadOnlyList<DataColumn> columns, IReadOnlyList<string> columnTypes)
+        => string.Join(", ", columns.Select((col, i) =>
+        {
+            var name = EscapeDuckDbIdentifier(col.ColumnName);
+            var type = columnTypes[i];
+            if (ExcelNativeTypes.Contains(type))
+                return name;
+
+            var decimalMatch = System.Text.RegularExpressions.Regex.Match(type, @"^DECIMAL\((\d+),\s*\d+\)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (decimalMatch.Success)
+                return int.Parse(decimalMatch.Groups[1].Value, CultureInfo.InvariantCulture) <= 18
+                    ? name
+                    : $"CAST({name} AS DOUBLE) AS {name}";
+
+            return $"CAST({name} AS VARCHAR) AS {name}";
+        }));
+
+    /// <summary>
+    /// .NET types DuckDB.NET reads each DuckDB type as, mapped back. Every entry binds as a
+    /// parameter into its DuckDB type.
+    /// </summary>
+    private static readonly Dictionary<Type, string> DotNetToDuckDbTypes = new()
+    {
+        [typeof(string)] = "VARCHAR",
+        [typeof(bool)] = "BOOLEAN",
+        [typeof(sbyte)] = "TINYINT",
+        [typeof(short)] = "SMALLINT",
+        [typeof(int)] = "INTEGER",
+        [typeof(long)] = "BIGINT",
+        [typeof(System.Numerics.BigInteger)] = "HUGEINT",
+        [typeof(byte)] = "UTINYINT",
+        [typeof(ushort)] = "USMALLINT",
+        [typeof(uint)] = "UINTEGER",
+        [typeof(ulong)] = "UBIGINT",
+        [typeof(float)] = "FLOAT",
+        [typeof(double)] = "DOUBLE",
+        [typeof(DateTime)] = "TIMESTAMP",
+        [typeof(DateTimeOffset)] = "TIMESTAMPTZ",
+        [typeof(DateOnly)] = "DATE",
+        [typeof(TimeOnly)] = "TIME",
+        [typeof(TimeSpan)] = "INTERVAL",
+        [typeof(Guid)] = "UUID",
+        [typeof(byte[])] = "BLOB",
+    };
+
+    /// <summary>
+    /// A DECIMAL wide enough for the column's values. Bare DECIMAL is DECIMAL(18,3) in DuckDB,
+    /// which would round every value to three places.
+    /// </summary>
+    private static string GetDecimalType(DataColumn column)
+    {
+        const int maxPrecision = 38;
+        int integerDigits = 1, scale = 0;
+        if (column.Table != null)
+        {
+            foreach (DataRow row in column.Table.Rows)
+            {
+                if (row.RowState == DataRowState.Deleted || row[column] is not decimal value)
+                    continue;
+
+                scale = Math.Max(scale, value.Scale);
+                var integerPart = decimal.Truncate(Math.Abs(value));
+                integerDigits = Math.Max(integerDigits, integerPart.ToString(CultureInfo.InvariantCulture).Length);
+            }
+        }
+
+        // Integer digits take priority: losing them overflows, losing scale only rounds.
+        return $"DECIMAL({maxPrecision},{Math.Min(scale, maxPrecision - integerDigits)})";
     }
 
     // ── Analytics Methods ───────────────────────────────────────────────
