@@ -3988,10 +3988,21 @@ public partial class MainWindow : Window
 
         border.Child = mainPanel;
         popup.Child = border;
-        popup.IsOpen = true;
 
-        // Focus the input when popup opens
-        popup.Opened += (s, _) => rowInput.Focus();
+        // Subscribe before opening: Popup raises Opened while IsOpen is being set, so a handler
+        // attached afterwards never runs. Defer the focus until the popup's window is shown and
+        // laid out; focusing during Opened (or from a keyboard shortcut, while the DataGrid still
+        // holds focus) is otherwise dropped.
+        popup.Opened += (_, _) => rowInput.Dispatcher.BeginInvoke(
+            System.Windows.Threading.DispatcherPriority.Input,
+            () =>
+            {
+                rowInput.Focus();
+                Keyboard.Focus(rowInput);
+                rowInput.SelectAll();
+            });
+
+        popup.IsOpen = true;
     }
 
     private void OnGoToRowShortcut(object sender, ExecutedRoutedEventArgs e)
