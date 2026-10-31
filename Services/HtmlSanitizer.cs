@@ -109,9 +109,12 @@ public static partial class HtmlSanitizer
             if (!permitted)
                 continue;
 
-            var value = attr.Groups["quoted"].Success
+            // Validate the decoded value and emit exactly that, re-encoded. Checking a decoded
+            // copy but writing the raw text let entities WebUtility doesn't know (&colon;, &Tab;)
+            // pass the check and then decode to "javascript:" in the browser.
+            var value = System.Net.WebUtility.HtmlDecode(attr.Groups["quoted"].Success
                 ? attr.Groups["quoted"].Value
-                : attr.Groups["bare"].Value;
+                : attr.Groups["bare"].Value);
 
             if (IsUrlAttribute(attrName) && !IsSafeUrl(value))
                 continue;
@@ -120,7 +123,7 @@ public static partial class HtmlSanitizer
                 continue;
 
             builder.Append(' ').Append(attrName.ToLowerInvariant())
-                   .Append("=\"").Append(value.Replace("\"", "&quot;")).Append('"');
+                   .Append("=\"").Append(System.Net.WebUtility.HtmlEncode(value)).Append('"');
         }
 
         if (match.Groups["selfClose"].Success)
@@ -135,7 +138,7 @@ public static partial class HtmlSanitizer
     /// </summary>
     private static bool IsSafeStyle(string value)
         => Regex.IsMatch(
-            System.Net.WebUtility.HtmlDecode(value),
+            value,
             @"^\s*text-align\s*:\s*(left|right|center)\s*;?\s*$",
             RegexOptions.IgnoreCase);
 
@@ -144,9 +147,13 @@ public static partial class HtmlSanitizer
         || name.Equals("src", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Blocks javascript:, vbscript: and non-image data: URLs.</summary>
+    /// <param name="value">The decoded attribute value.</param>
     private static bool IsSafeUrl(string value)
     {
-        var trimmed = System.Net.WebUtility.HtmlDecode(value).Trim();
+        // Read the scheme the way a browser's URL parser does: tabs and newlines are removed
+        // anywhere, so "jav\tascript:" is "javascript:", and leading/trailing controls and
+        // spaces are ignored.
+        var trimmed = UrlIgnoredCharacters().Replace(value, string.Empty).Trim(UrlTrimmedCharacters);
 
         if (trimmed.StartsWith("#", StringComparison.Ordinal)
             || trimmed.StartsWith("/", StringComparison.Ordinal)
@@ -166,6 +173,12 @@ public static partial class HtmlSanitizer
         // Anything with a scheme we did not list is rejected; bare relative paths are fine.
         return !Regex.IsMatch(trimmed, @"^[a-zA-Z][a-zA-Z0-9+.\-]*:");
     }
+
+    private static readonly char[] UrlTrimmedCharacters =
+        Enumerable.Range(0, 0x21).Select(c => (char)c).ToArray();
+
+    [GeneratedRegex(@"[\t\n\r]")]
+    private static partial Regex UrlIgnoredCharacters();
 
     [GeneratedRegex(@"<(?<close>/)?(?<name>[a-zA-Z][a-zA-Z0-9]*)(?<attrs>(?:""[^""]*""|'[^']*'|[^>""'])*?)(?<selfClose>/)?>")]
     private static partial Regex TagPattern();
