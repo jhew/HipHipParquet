@@ -1773,25 +1773,58 @@ public partial class MainWindow : Window
 
         if (visible)
         {
-            // Restore data row to fill available space
-            CenterColumnGrid.RowDefinitions[0].Height = new GridLength(1, GridUnitType.Star);
             var hasData = _originalData != null;
             DataGridContainer.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
             EmptyStatePanel.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
-            // Markdown panel back to auto height
-            CenterColumnGrid.RowDefinitions[2].Height = GridLength.Auto;
         }
         else
         {
-            // Collapse data row
-            CenterColumnGrid.RowDefinitions[0].Height = new GridLength(0);
             DataGridContainer.Visibility = Visibility.Collapsed;
             EmptyStatePanel.Visibility = Visibility.Collapsed;
-            // Expand markdown panel to fill if it is open
-            CenterColumnGrid.RowDefinitions[2].Height =
-                MarkdownHelperHost.Visibility == Visibility.Visible
-                    ? new GridLength(1, GridUnitType.Star)
-                    : GridLength.Auto;
+        }
+
+        ApplyCenterRowLayout();
+    }
+
+    /// <summary>
+    /// Sizes the data row (0) and the docked Markdown helper row (2) of the centre column.
+    /// </summary>
+    /// <remarks>
+    /// The helper row is never Auto while the helper is shown. An Auto row measures its content
+    /// with unlimited height, so a long document grew the panel past the bottom of the window
+    /// and its editor and preview could not be scrolled to the end. A star row is always
+    /// constrained to the space available, and the splitter between two star rows keeps them
+    /// proportional, so a dragged size also survives the window being resized.
+    /// </remarks>
+    private void ApplyCenterRowLayout()
+    {
+        var dataRow = CenterColumnGrid.RowDefinitions[0];
+        var helperRow = CenterColumnGrid.RowDefinitions[2];
+        var helperVisible = MarkdownHelperHost.Visibility == Visibility.Visible;
+
+        // The panel's own MinHeight would overflow a star row shorter than it and clip the bottom
+        // again; on the row, the grid takes that space from the data row instead.
+        helperRow.MinHeight = helperVisible
+            ? MarkdownHelperHost.MinHeight + MarkdownHelperHost.Margin.Top + MarkdownHelperHost.Margin.Bottom
+            : 0;
+
+        if (!helperVisible)
+        {
+            dataRow.Height = _dataViewVisible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            // Auto collapses to nothing for hidden content; a star row would keep its share.
+            helperRow.Height = GridLength.Auto;
+        }
+        else if (!_dataViewVisible)
+        {
+            dataRow.Height = new GridLength(0);
+            helperRow.Height = new GridLength(1, GridUnitType.Star);
+        }
+        else if (!(dataRow.Height.IsStar && helperRow.Height.IsStar && dataRow.Height.Value > 0))
+        {
+            // Entering the docked layout: the helper takes a third of the column. Once both rows
+            // are star, the splitter adjusts their ratio and repeat calls leave it alone.
+            dataRow.Height = new GridLength(1, GridUnitType.Star);
+            helperRow.Height = new GridLength(0.5, GridUnitType.Star);
         }
     }
 
@@ -5844,13 +5877,7 @@ public partial class MainWindow : Window
         if (!visible && _markdownFocusModeActive)
             ExitMarkdownFocusMode();
 
-        // When the data view is hidden the markdown row must expand/contract to use the space
-        if (!_dataViewVisible)
-        {
-            CenterColumnGrid.RowDefinitions[2].Height = visible
-                ? new GridLength(1, GridUnitType.Star)
-                : GridLength.Auto;
-        }
+        ApplyCenterRowLayout();
     }
 
     private async void OnMarkdownHelperPopOutRequested(object sender, EventArgs e)
