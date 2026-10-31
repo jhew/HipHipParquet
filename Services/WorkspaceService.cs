@@ -268,12 +268,8 @@ public class WorkspaceService
     {
         try
         {
-            var dir = Path.GetDirectoryName(_savedViewsPath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-
             var json = JsonSerializer.Serialize(_savedViews);
-            await File.WriteAllTextAsync(_savedViewsPath, json);
+            await AtomicFile.WriteAllTextAsync(_savedViewsPath, json);
         }
         catch (Exception ex)
         {
@@ -285,12 +281,8 @@ public class WorkspaceService
     {
         try
         {
-            var dir = Path.GetDirectoryName(_recipesPath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-
             var json = JsonSerializer.Serialize(_savedRecipes);
-            await File.WriteAllTextAsync(_recipesPath, json);
+            await AtomicFile.WriteAllTextAsync(_recipesPath, json);
         }
         catch (Exception ex)
         {
@@ -302,16 +294,12 @@ public class WorkspaceService
     {
         try
         {
-            var dir = Path.GetDirectoryName(_notebookQueriesPath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-
             var orderedQueries = _savedNotebookQueries
                 .OrderByDescending(item => item.UpdatedAtUtc)
                 .ToList();
 
             var json = JsonSerializer.Serialize(orderedQueries);
-            await File.WriteAllTextAsync(_notebookQueriesPath, json);
+            await AtomicFile.WriteAllTextAsync(_notebookQueriesPath, json);
         }
         catch (Exception ex)
         {
@@ -323,16 +311,12 @@ public class WorkspaceService
     {
         try
         {
-            var dir = Path.GetDirectoryName(_schemaTemplatesPath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-
             var orderedTemplates = _savedSchemaTemplates
                 .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             var json = JsonSerializer.Serialize(orderedTemplates);
-            await File.WriteAllTextAsync(_schemaTemplatesPath, json);
+            await AtomicFile.WriteAllTextAsync(_schemaTemplatesPath, json);
         }
         catch (Exception ex)
         {
@@ -343,23 +327,13 @@ public class WorkspaceService
     private async Task PersistMarkdownEditorStateAsync()
     {
         await _markdownEditorStateGate.WaitAsync().ConfigureAwait(false);
-        string? tempPath = null;
         try
         {
-            var dir = Path.GetDirectoryName(_markdownEditorStatePath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-
             var json = JsonSerializer.Serialize(_markdownEditorState);
-            tempPath = _markdownEditorStatePath + ".tmp";
-            await File.WriteAllTextAsync(tempPath, json).ConfigureAwait(false);
-            File.Move(tempPath, _markdownEditorStatePath, overwrite: true);
+            await AtomicFile.WriteAllTextAsync(_markdownEditorStatePath, json).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            if (!string.IsNullOrWhiteSpace(tempPath) && File.Exists(tempPath))
-                File.Delete(tempPath);
-
             System.Diagnostics.Debug.WriteLine($"Error persisting markdown editor state: {ex.Message}");
         }
         finally
