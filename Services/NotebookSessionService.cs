@@ -687,9 +687,10 @@ public sealed class NotebookSessionService : IDisposable
         using var command = new DuckDBCommand(sql, connection);
         using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+        // No DESCRIBE here: sql is the user's own and may hold several statements, so prefixing
+        // it could run some of them twice. Save maps these columns from their .NET types.
         var dataTable = new DataTable();
-        for (int i = 0; i < reader.FieldCount; i++)
-            dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
+        DuckDbValueHelper.AddColumns(dataTable, reader, duckDbTypes: null);
 
         while (await reader.ReadAsync(cancellationToken))
         {

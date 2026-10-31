@@ -1,3 +1,4 @@
+using System.Data;
 using System.Data.Common;
 using System.IO;
 
@@ -24,6 +25,55 @@ public static class DuckDbValueHelper
     /// </summary>
     public static Type ResolveColumnType(Type fieldType)
         => typeof(Stream).IsAssignableFrom(fieldType) ? typeof(byte[]) : fieldType;
+
+    /// <summary>
+    /// <see cref="DataColumn.ExtendedProperties"/> key holding the column's DuckDB SQL type as
+    /// loaded, e.g. <c>DECIMAL(18,4)</c> or <c>TIMESTAMP WITH TIME ZONE</c>. Save recreates the
+    /// column with this type; the .NET type alone loses precision, scale and time zone.
+    /// </summary>
+    public const string DuckDbTypeProperty = "DuckDbType";
+
+    /// <summary>
+    /// Returns the DuckDB SQL type of each column <paramref name="selectSql"/> produces, or null
+    /// if it can't be described. <c>DuckDBDataReader.GetDataTypeName</c> is no substitute: it
+    /// reports the type family ("Decimal"), not the declared type ("DECIMAL(18,4)").
+    /// </summary>
+    public static async Task<IReadOnlyList<string>?> DescribeColumnTypesAsync(
+        DbConnection connection, string selectSql, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = $"DESCRIBE {selectSql}";
+            using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            var types = new List<string>();
+            var typeOrdinal = reader.GetOrdinal("column_type");
+            while (await reader.ReadAsync(cancellationToken))
+                types.Add(reader.GetString(typeOrdinal));
+            return types;
+        }
+        catch (DbException)
+        {
+            // Types are a save-time refinement; loading must not fail over them.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Adds a column per reader field, typed for storage via <see cref="ResolveColumnType"/> and
+    /// tagged with its DuckDB type when <paramref name="duckDbTypes"/> matches the reader.
+    /// </summary>
+    public static void AddColumns(DataTable table, DbDataReader reader, IReadOnlyList<string>? duckDbTypes)
+    {
+        var tagTypes = duckDbTypes != null && duckDbTypes.Count == reader.FieldCount;
+        for (int i = 0; i < reader.FieldCount; i++)
+        {
+            var column = table.Columns.Add(reader.GetName(i), ResolveColumnType(reader.GetFieldType(i)));
+            if (tagTypes)
+                column.ExtendedProperties[DuckDbTypeProperty] = duckDbTypes![i];
+        }
+    }
 
     /// <summary>
     /// Reads one field from the current row, copying BLOB streams into a byte array
@@ -63,6 +113,37 @@ public static class DuckDbValueHelper
         Stream stream => ReadAllBytes(stream),
         _ => value
     };
+
+    /// <summary>
+    /// True for STRUCT and MAP values (read as dictionaries) and lists of them. DuckDB.NET can't
+    /// bind these as parameters, so they are sent as JSON and cast back to the column type.
+    /// </summary>
+    public static bool NeedsJsonBinding(Type type)
+        => typeof(System.Collections.IDictionary).IsAssignableFrom(type)
+           || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>)
+               && NeedsJsonBinding(type.GetGenericArguments()[0]));
+
+    /// <summary>JSON text of a nested value, for columns where <see cref="NeedsJsonBinding"/> holds.</summary>
+    public static object ToJsonParameterValue(object? value) => value is null or DBNull
+        ? DBNull.Value
+        : System.Text.Json.JsonSerializer.Serialize(value, NestedJsonOptions);
+
+    private static readonly System.Text.Json.JsonSerializerOptions NestedJsonOptions = new()
+    {
+        // HUGEINT fields inside a STRUCT read as BigInteger, which System.Text.Json can't write.
+        Converters = { new BigIntegerJsonConverter() }
+    };
+
+    private sealed class BigIntegerJsonConverter : System.Text.Json.Serialization.JsonConverter<System.Numerics.BigInteger>
+    {
+        public override System.Numerics.BigInteger Read(
+            ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+            => throw new NotSupportedException();
+
+        public override void Write(
+            System.Text.Json.Utf8JsonWriter writer, System.Numerics.BigInteger value, System.Text.Json.JsonSerializerOptions options)
+            => writer.WriteRawValue(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
 
     /// <summary>
     /// Text form of a value for display, copy, preview and composite keys.
