@@ -113,11 +113,11 @@ jobs:
             ### Requirements
 
             - Windows 10 (build 19041) or later, 64-bit
-            - [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime?runtime=desktop&os=windows&arch=x64) — the installer will prompt if not present
+            - [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64) — install it first; the installer does not check for it
 
             ### Installation
 
-            **Installer:** Download `Setup.exe` and run it — no other steps required.
+            **Installer:** Install the .NET 10 Desktop Runtime if you don't have it, then download `Setup.exe` and run it.
 
             **Portable:** Download the zip, extract to any folder, and run `HipHipParquet.exe`.
           draft: false
