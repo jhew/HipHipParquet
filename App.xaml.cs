@@ -134,7 +134,14 @@ public partial class App : Application
                 return;
 
             var reportPath = System.IO.File.ReadAllText(pointerPath).Trim();
-            if (!string.IsNullOrWhiteSpace(reportPath) && System.IO.File.Exists(reportPath))
+
+            // The pointer is only ever written with an exported HTML report. Shell-executing
+            // anything else it might name (an .exe, a .lnk) is not this command's job.
+            var extension = System.IO.Path.GetExtension(reportPath);
+            var isHtmlReport = extension.Equals(".html", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".htm", StringComparison.OrdinalIgnoreCase);
+
+            if (isHtmlReport && System.IO.File.Exists(reportPath))
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
