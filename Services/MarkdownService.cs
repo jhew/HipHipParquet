@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text;
 using System.Text.RegularExpressions;
 using HipHipParquet.Models;
 using Markdig;
@@ -26,14 +25,8 @@ public sealed partial class MarkdownService
     public async Task<string> LoadFromFileAsync(string filePath, CancellationToken cancellationToken = default)
         => await File.ReadAllTextAsync(filePath, cancellationToken);
 
-    public async Task SaveToFileAsync(string filePath, string content, CancellationToken cancellationToken = default)
-    {
-        var directory = Path.GetDirectoryName(filePath);
-        if (!string.IsNullOrWhiteSpace(directory))
-            Directory.CreateDirectory(directory);
-
-        await File.WriteAllTextAsync(filePath, content ?? string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken);
-    }
+    public Task SaveToFileAsync(string filePath, string content, CancellationToken cancellationToken = default)
+        => AtomicFile.WriteAllTextAsync(filePath, content ?? string.Empty, cancellationToken);
 
     /// <summary>
     /// Renders a standalone preview document. <paramref name="darkTheme"/> selects a palette

@@ -104,6 +104,40 @@ public class MarkdownServiceTests
         Assert.DoesNotContain("javascript:", html, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Each of these decodes to "javascript:" in a browser. The sanitizer used to check a
+    /// decoded copy but emit the raw text, so entities WebUtility doesn't know (&amp;colon;,
+    /// &amp;Tab;) and characters the URL parser strips (tab, newline) got through.
+    /// </summary>
+    [Theory]
+    [InlineData("<a href=\"jav&#x09;ascript:alert(1)\">x</a>", "<a>x</a>")]
+    [InlineData("<a href=\"jav&#10;ascript:alert(1)\">x</a>", "<a>x</a>")]
+    [InlineData("<a href=\"&#x6A;avascript:alert(1)\">x</a>", "<a>x</a>")]
+    [InlineData("<a href=\"&#1;javascript:alert(1)\">x</a>", "<a>x</a>")]
+    // Not decoded, so emitted with the ampersand escaped: an inert relative link.
+    [InlineData("<a href=\"javascript&colon;alert(1)\">x</a>", "<a href=\"javascript&amp;colon;alert(1)\">x</a>")]
+    [InlineData("<a href=\"jav&Tab;ascript:alert(1)\">x</a>", "<a href=\"jav&amp;Tab;ascript:alert(1)\">x</a>")]
+    public void RenderHtmlDocument_Extended_BlocksEncodedJavascriptUrls(string markdown, string expected)
+    {
+        var service = new MarkdownService();
+
+        var html = service.RenderHtmlDocument(markdown, MarkdownFlavorProfile.ExtendedBestEffort);
+
+        Assert.Contains(expected, html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderHtmlDocument_Extended_KeepsOrdinaryLinksIntact()
+    {
+        var service = new MarkdownService();
+
+        var html = service.RenderHtmlDocument(
+            "<a href=\"https://example.com/?a=1&amp;b=2\" title=\"Tom &amp; Jerry\">x</a>",
+            MarkdownFlavorProfile.ExtendedBestEffort);
+
+        Assert.Contains("<a href=\"https://example.com/?a=1&amp;b=2\" title=\"Tom &amp; Jerry\">x</a>", html, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void RenderHtmlDocument_Extended_EmitsDiagramContainer()
     {
