@@ -226,7 +226,8 @@ public static class DataTableEditHelper
         var updated = 0;
         foreach (var target in DeduplicateTargets(targets))
         {
-            if (target.Row[target.ColumnName] == DBNull.Value)
+            // Text edits don't apply to BLOB cells; writing a string into a byte[] column would throw.
+            if (target.Row[target.ColumnName] is DBNull or byte[])
                 continue;
 
             var original = target.Row[target.ColumnName]?.ToString();
@@ -254,7 +255,8 @@ public static class DataTableEditHelper
 
         foreach (var target in DeduplicateTargets(targets))
         {
-            if (target.Row[target.ColumnName] == DBNull.Value)
+            // Text edits don't apply to BLOB cells; writing a string into a byte[] column would throw.
+            if (target.Row[target.ColumnName] is DBNull or byte[])
                 continue;
 
             var original = target.Row[target.ColumnName]?.ToString();
@@ -358,7 +360,7 @@ public static class DataTableEditHelper
         => string.Join("\u001F", columnNames.Select(columnName =>
         {
             var value = row[columnName];
-            return value == DBNull.Value ? "<NULL>" : value?.ToString() ?? string.Empty;
+            return value == DBNull.Value ? "<NULL>" : DuckDbValueHelper.ToComparisonString(value);
         }));
 
     private static string ReplaceWithComparison(string source, string findText, string replaceText, StringComparison comparison)

@@ -4034,12 +4034,16 @@ public partial class MainWindow : Window
         _columnFilters[columnName] = new ColumnFilterState();
 
         var isNumeric = IsNumericType(column.DataType);
+        var isBlob = column.DataType == typeof(byte[]);
+        var displayBinding = new System.Windows.Data.Binding($"[{columnName}]") { TargetNullValue = string.Empty };
+        if (isBlob)
+            displayBinding.Converter = new HipHipParquet.Converters.BlobDisplayConverter();
 
         var gridColumn = new DataGridScrollableTextColumn
         {
             Header = new ColumnHeaderViewModel(columnName, GetTypeIcon(columnInfo?.Type ?? "unknown")),
             HeaderTemplate = (DataTemplate)FindResource("DataColumnHeaderTemplate"),
-            Binding = new System.Windows.Data.Binding($"[{columnName}]") { TargetNullValue = string.Empty },
+            Binding = displayBinding,
             EditingBinding = new System.Windows.Data.Binding($"[{columnName}]")
             {
                 UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.LostFocus
@@ -4049,7 +4053,9 @@ public partial class MainWindow : Window
             MinWidth = 100,
             CanUserSort = true,
             CanUserResize = true,
-            SortMemberPath = columnName
+            SortMemberPath = columnName,
+            // BLOBs are shown as hex; editing them as text would try to store a string in a byte[] column.
+            IsReadOnly = isBlob
         };
 
         if (isNumeric)
@@ -4662,7 +4668,8 @@ public partial class MainWindow : Window
             
             foreach (DataColumn col in _originalData.Columns)
             {
-                if (col.ColumnName is not ("__RowNumber" or "__SourceFile"))
+                // DataView expressions can't Convert byte[] to string, so BLOB columns are not searched.
+                if (col.ColumnName is not ("__RowNumber" or "__SourceFile") && col.DataType != typeof(byte[]))
                     globalConditions.Add($"Convert({EscapeDataViewColumnName(col.ColumnName)}, 'System.String') LIKE '*{escapedGlobalText}*'");
             }
             

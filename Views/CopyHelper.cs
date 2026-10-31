@@ -145,12 +145,12 @@ namespace HipHipParquet.Views
             var cellValue = string.Empty;
             if (cell.Column is DataGridBoundColumn column)
             {
-                var binding = (column as DataGridTextColumn)?.Binding as System.Windows.Data.Binding;
+                var binding = column.Binding as System.Windows.Data.Binding;
                 if (binding != null && cell.Item is DataRowView rowView)
                 {
                     var columnName = binding.Path.Path.Trim('[', ']');
                     var value = rowView[columnName];
-                    cellValue = value?.ToString() ?? string.Empty;
+                    cellValue = HipHipParquet.Services.DuckDbValueHelper.ToDisplayString(value, maxBytes: 0);
                 }
             }
             else if (cell.Column is DataGridTemplateColumn templateColumn &&
@@ -161,7 +161,7 @@ namespace HipHipParquet.Views
                 // Template columns (used for horizontally scrollable cells) carry the
                 // source column name in SortMemberPath rather than a Binding.
                 var value = templateRowView[templateColumn.SortMemberPath];
-                cellValue = value == DBNull.Value ? string.Empty : value?.ToString() ?? string.Empty;
+                cellValue = HipHipParquet.Services.DuckDbValueHelper.ToDisplayString(value, maxBytes: 0);
             }
 
             // escape if needed for CSV (RFC 4180: quote if contains comma, double-quote, LF or CR)
