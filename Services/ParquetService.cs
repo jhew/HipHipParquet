@@ -33,13 +33,7 @@ public class ParquetService : IDisposable
     {
         try
         {
-            // Restrict to signed extensions from the official DuckDB repository only.
-            using var configCmd = new DuckDBCommand(
-                "SET allow_unsigned_extensions = false;", connection);
-            await configCmd.ExecuteNonQueryAsync();
-
-            using var installCmd = new DuckDBCommand("INSTALL spatial; LOAD spatial;", connection);
-            await installCmd.ExecuteNonQueryAsync();
+            await DuckDbExtensionLoader.LoadSpatialAsync(connection);
         }
         catch (Exception ex)
         {

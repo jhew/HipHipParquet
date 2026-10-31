@@ -488,11 +488,7 @@ public sealed class NotebookSessionService : IDisposable
         _excelExtensionAttempted = true;
         try
         {
-            using var configCmd = new DuckDBCommand("SET allow_unsigned_extensions = false;", connection);
-            await configCmd.ExecuteNonQueryAsync();
-
-            using var installCmd = new DuckDBCommand("INSTALL spatial; LOAD spatial;", connection);
-            await installCmd.ExecuteNonQueryAsync();
+            await DuckDbExtensionLoader.LoadSpatialAsync(connection);
         }
         catch (Exception ex)
         {
