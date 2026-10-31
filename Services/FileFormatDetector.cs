@@ -52,10 +52,18 @@ public static class FileFormatDetector
             ".csv" => SupportedFileFormat.Csv,
             ".tsv" or ".tab" => SupportedFileFormat.Tsv,
             ".json" or ".jsonl" or ".ndjson" => SupportedFileFormat.Json,
-            ".xlsx" or ".xls" => SupportedFileFormat.Excel,
+            ".xlsx" => SupportedFileFormat.Excel,
             _ => SupportedFileFormat.Csv // Default to CSV for unknown text files
         };
     }
+
+    /// <summary>
+    /// True for legacy binary Excel workbooks (.xls). The GDAL build in DuckDB's spatial
+    /// extension has an XLSX driver but no XLS driver, so these can't be read at all, and
+    /// falling through to the CSV default would show binary noise.
+    /// </summary>
+    public static bool IsLegacyExcel(string filePath)
+        => Path.GetExtension(filePath).Equals(".xls", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Returns the DuckDB SQL expression to read a file, e.g. "read_csv_auto('/path/file.csv')".
@@ -428,7 +436,7 @@ public static class FileFormatDetector
             ".csv" => false,
             ".tsv" or ".tab" => false,
             ".json" or ".jsonl" or ".ndjson" => false,
-            ".xlsx" or ".xls" => false,
+            ".xlsx" => false,
             _ => true
         };
     }

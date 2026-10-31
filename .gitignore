@@ -134,3 +134,6 @@ local-test-data/
 
 # Local instructions
 .github/
+
+# Local release builds (published to GitHub Releases, not the repo)
+release-assets/

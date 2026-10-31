@@ -1682,6 +1682,17 @@ public partial class MainWindow : Window
     /// </summary>
     private bool ConfirmUnknownExtension(string filePath)
     {
+        if (Services.FileFormatDetector.IsLegacyExcel(filePath))
+        {
+            MessageBox.Show(this,
+                $"'{System.IO.Path.GetFileName(filePath)}' is a legacy Excel workbook (.xls), which Hip Hip Parquet can't read.\n\n" +
+                "Open it in Excel and save it as an Excel Workbook (.xlsx), then open that file instead.",
+                "Unsupported File Type",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return false;
+        }
+
         if (!Services.FileFormatDetector.IsUnknownExtension(filePath))
             return true;
 

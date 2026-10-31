@@ -21,10 +21,20 @@ public class FileFormatDetectorTests
     [InlineData("data.jsonl", SupportedFileFormat.Json)]
     [InlineData("data.ndjson", SupportedFileFormat.Json)]
     [InlineData("data.xlsx", SupportedFileFormat.Excel)]
-    [InlineData("data.xls", SupportedFileFormat.Excel)]
     public void DetectFormat_KnownExtensions_ReturnsCorrectFormat(string file, SupportedFileFormat expected)
     {
         Assert.Equal(expected, FileFormatDetector.DetectFormat(file));
+    }
+
+    [Theory]
+    [InlineData("old.xls", true)]
+    [InlineData("OLD.XLS", true)]
+    [InlineData("new.xlsx", false)]
+    [InlineData("data.csv", false)]
+    public void IsLegacyExcel_FlagsOnlyXls(string file, bool expected)
+    {
+        // The spatial extension's GDAL build has no XLS driver, so .xls is refused up front.
+        Assert.Equal(expected, FileFormatDetector.IsLegacyExcel(file));
     }
 
     [Theory]

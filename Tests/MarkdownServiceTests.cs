@@ -232,6 +232,20 @@ public class MarkdownServiceTests
         Assert.Contains("text-align: right", html, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(MarkdownFlavorProfile.CommonMark)]
+    [InlineData(MarkdownFlavorProfile.GitHubStyle)]
+    [InlineData(MarkdownFlavorProfile.ExtendedBestEffort)]
+    public void RenderHtmlDocument_BlocksRemoteImages(MarkdownFlavorProfile profile)
+    {
+        var service = new MarkdownService();
+
+        var html = service.RenderHtmlDocument("![tracker](https://example.com/pixel.png)", profile);
+
+        // The image markup survives; the browser is what refuses to fetch it.
+        Assert.Contains("<meta http-equiv=\"Content-Security-Policy\" content=\"img-src data:\" />", html, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task SaveToFileAsync_ThenLoadFromFileAsync_RoundTripsContent()
     {
