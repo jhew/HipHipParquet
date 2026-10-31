@@ -689,13 +689,13 @@ public sealed class NotebookSessionService : IDisposable
 
         var dataTable = new DataTable();
         for (int i = 0; i < reader.FieldCount; i++)
-            dataTable.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+            dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
 
         while (await reader.ReadAsync(cancellationToken))
         {
             var row = dataTable.NewRow();
             for (int i = 0; i < reader.FieldCount; i++)
-                row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                row[i] = DuckDbValueHelper.MaterializeValue(reader, i);
             dataTable.Rows.Add(row);
         }
 

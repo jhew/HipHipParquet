@@ -162,13 +162,13 @@ public class ParquetService : IDisposable
 
             var dataTable = new DataTable();
             for (int i = 0; i < reader.FieldCount; i++)
-                dataTable.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+                dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
 
             while (await reader.ReadAsync())
             {
                 var row = dataTable.NewRow();
                 for (int i = 0; i < reader.FieldCount; i++)
-                    row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                    row[i] = DuckDbValueHelper.MaterializeValue(reader, i);
                 dataTable.Rows.Add(row);
             }
 
@@ -213,7 +213,7 @@ public class ParquetService : IDisposable
             // Create columns from reader schema
             for (int i = 0; i < reader.FieldCount; i++)
             {
-                dataTable.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+                dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
             }
             
             // Fill data
@@ -222,7 +222,7 @@ public class ParquetService : IDisposable
                 var row = dataTable.NewRow();
                 for (int i = 0; i < reader.FieldCount; i++)
                 {
-                    row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                    row[i] = DuckDbValueHelper.MaterializeValue(reader, i);
                 }
                 dataTable.Rows.Add(row);
             }
@@ -275,13 +275,13 @@ public class ParquetService : IDisposable
 
             var dataTable = new DataTable();
             for (int i = 0; i < reader.FieldCount; i++)
-                dataTable.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+                dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
 
             while (await reader.ReadAsync())
             {
                 var row = dataTable.NewRow();
                 for (int i = 0; i < reader.FieldCount; i++)
-                    row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                    row[i] = DuckDbValueHelper.MaterializeValue(reader, i);
 
                 dataTable.Rows.Add(row);
             }
@@ -671,13 +671,13 @@ public class ParquetService : IDisposable
 
             var dataTable = new DataTable();
             for (int i = 0; i < reader.FieldCount; i++)
-                dataTable.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+                dataTable.Columns.Add(reader.GetName(i), DuckDbValueHelper.ResolveColumnType(reader.GetFieldType(i)));
 
             while (await reader.ReadAsync(cancellationToken))
             {
                 var row = dataTable.NewRow();
                 for (int i = 0; i < reader.FieldCount; i++)
-                    row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                    row[i] = DuckDbValueHelper.MaterializeValue(reader, i);
                 dataTable.Rows.Add(row);
             }
 
@@ -847,8 +847,7 @@ public class ParquetService : IDisposable
                     {
                         for (int i = 0; i < dataCols.Count; i++)
                         {
-                            var value = row[dataCols[i]];
-                            insertCommand.Parameters[i].Value = (value == DBNull.Value) ? (object)DBNull.Value : value;
+                            insertCommand.Parameters[i].Value = DuckDbValueHelper.ToParameterValue(row[dataCols[i]]);
                         }
                         await insertCommand.ExecuteNonQueryAsync();
                     }
@@ -926,6 +925,7 @@ public class ParquetService : IDisposable
         if (dotNetType == typeof(bool)) return "BOOLEAN";
         if (dotNetType == typeof(DateTime)) return "TIMESTAMP";
         if (dotNetType == typeof(byte[])) return "BLOB";
+        if (typeof(Stream).IsAssignableFrom(dotNetType)) return "BLOB";
         return "VARCHAR"; // Default to VARCHAR for unknown types
     }
 
@@ -1287,7 +1287,7 @@ public class ParquetService : IDisposable
                     var keyParts = new List<string>();
                     for (int i = 0; i < groupByColumns.Count; i++)
                     {
-                        keyParts.Add(reader.IsDBNull(i) ? "(null)" : reader.GetValue(i)?.ToString() ?? "(null)");
+                        keyParts.Add(reader.IsDBNull(i) ? "(null)" : DuckDbValueHelper.ToDisplayString(DuckDbValueHelper.MaterializeValue(reader, i)));
                     }
                     var key = string.Join(" | ", keyParts);
                     var count = Convert.ToInt64(reader["group_count"]);

@@ -136,7 +136,7 @@ public partial class CsvOptionsDialog : Window
             {
                 var row = dt.NewRow();
                 for (int i = 0; i < reader.FieldCount; i++)
-                    row[i] = reader.IsDBNull(i) ? "(null)" : reader.GetValue(i)?.ToString() ?? "";
+                    row[i] = reader.IsDBNull(i) ? "(null)" : DuckDbValueHelper.ToDisplayString(DuckDbValueHelper.MaterializeValue(reader, i));
                 dt.Rows.Add(row);
             }
 
