@@ -46,6 +46,12 @@ public sealed partial class MarkdownService
     /// the control silently falls back to IE7 document mode, where most of this stylesheet is
     /// ignored. And even at the highest available mode, CSS custom properties are unsupported,
     /// so every colour is emitted literally rather than through <c>var()</c>.
+    /// <para>
+    /// The Content-Security-Policy allows only embedded <c>data:</c> images. A document that
+    /// references images on the web would otherwise make the preview fetch them, telling that
+    /// server the reader's IP address and when they opened it; the app promises no outbound
+    /// traffic from what you open. Only images are restricted here, so scripts are unaffected.
+    /// </para>
     /// </remarks>
     public string RenderHtmlDocument(string markdown, MarkdownFlavorProfile profile, bool darkTheme = false)
     {
@@ -72,6 +78,7 @@ public sealed partial class MarkdownService
 <head>
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="img-src data:" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Markdown Preview</title>
     <style>
