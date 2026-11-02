@@ -257,6 +257,21 @@ kbd{font-family:var(--mono);font-size:.86em;background:var(--ground-2);border:1p
   .cap.flip .cap-text{order:0}
 }
 
+/* Check-and-fix walkthrough and the data vs Markdown comparison */
+.pass{padding:64px 0 0;border-top:1px solid var(--line)}
+.pass h3{font-size:clamp(24px,3.2vw,31px);margin-bottom:14px}
+.pass > p{color:var(--ink-2);font-size:16.5px;max-width:68ch}
+.steps{list-style:none;counter-reset:step;padding:0;margin:26px 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.steps li{counter-increment:step;background:var(--card);padding:20px;font-size:14.5px;color:var(--ink-2);line-height:1.5}
+.steps li::before{content:counter(step,decimal-leading-zero);display:block;font-family:var(--mono);font-size:11px;color:var(--oak);margin-bottom:6px}
+.steps li strong{display:block;font-family:var(--display);font-size:15.5px;font-weight:600;color:var(--ink);margin-bottom:4px}
+@media (max-width:900px){.steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.steps{grid-template-columns:1fr}}
+.pass .table-scroll{margin-top:26px}
+table.compare td{vertical-align:top;font-size:14.5px;color:var(--ink-2);line-height:1.5}
+table.compare td:first-child{white-space:nowrap}
+.pass .note{margin-top:18px;font-size:14.5px;color:var(--ink-2);border-left:3px solid var(--oak);padding:4px 0 4px 14px}
+
 /* Screenshots */
 .shot{border:1px solid var(--line-2);border-radius:9px;overflow:hidden;background:var(--card);box-shadow:var(--shadow)}
 .shot-bar{
@@ -379,7 +394,7 @@ footer.site{border-top:1px solid var(--line);padding:34px 0;margin-top:0}
   <div class="wrap nav">
     <a class="brand" href="#top">
       <b>Hip Hip Parquet</b>
-      <span class="ver">v1.13.2</span>
+      <span class="ver">v1.14.0</span>
     </a>
     <nav class="nav-links">
       <a href="#what">What it does</a>
@@ -545,6 +560,41 @@ footer.site{border-top:1px solid var(--line);padding:34px 0;margin-top:0}
         <img src="assets/shot-edit.png" width="757" height="1545" loading="lazy" decoding="async" alt="The data grid's right-click menu: copy plain, with headers, as CSV, as CSV with headers or as a Markdown table; row-scoped copies including Copy Row as JSON; row operations such as Delete Row, Keep Only Selected Rows, Duplicate Row, Insert Blank Row and Delete Duplicate Rows; and cell actions including Set Selected Cells to Null, Trim Whitespace and Replace in Selection.">
       </div>
     </div>
+
+    <!-- CHECK-AND-FIX PASS -->
+    <div class="pass" id="check-and-fix">
+      <h3>Checking and fixing a file, start to finish</h3>
+      <p>The four parts above are one loop. Here is a typical pass over a file you've been handed.</p>
+      <ol class="steps">
+        <li><strong>Open it</strong>The File Summary card shows rows, columns, size and completeness straight away.</li>
+        <li><strong>Score it</strong>Quality Review rates the data out of 100. Start with the findings marked Needs Review.</li>
+        <li><strong>Check your own rules</strong>Notebook Actions find nulls, duplicates on the columns you choose, and regex mismatches. A schema template saved from a known-good file reports missing columns and changed types.</li>
+        <li><strong>Fix it in the grid</strong>Delete duplicate rows, trim whitespace, set to null, replace in a selection, or edit a cell. For bigger changes, load a SQL result as the working set.</li>
+        <li><strong>Check again</strong>Quality Review shows <em>Refresh recommended</em> once the data has changed. Refresh to confirm the findings have gone.</li>
+        <li><strong>Save</strong><kbd>Ctrl+S</kbd> writes back to the original file, keeping column types. Save As keeps the original untouched.</li>
+      </ol>
+    </div>
+
+    <!-- DATA VS MARKDOWN -->
+    <div class="pass" id="data-vs-markdown">
+      <h3>Data files and Markdown files are handled differently</h3>
+      <p>Everything above applies to data files. Markdown documents open in the Markdown helper, a text editor for writing <em>about</em> your data: findings, a data dictionary, a README to send with a file. It doesn't check or change the data you have open, and the quality tools don't look at Markdown.</p>
+      <div class="table-scroll">
+        <table class="matrix compare">
+          <thead>
+            <tr><th></th><th>Data file — Parquet, CSV, JSON, Excel</th><th>Markdown file — .md</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Opens in</td><td>The grid, with the Query Hub and Quality Review alongside</td><td>The Markdown helper, docked beside the grid or in its own window</td></tr>
+            <tr><td>Checking</td><td>Quality score and findings, Notebook Actions, schema templates</td><td>A live preview shows how it will look. Nothing checks the text for mistakes.</td></tr>
+            <tr><td>Fixing</td><td>Row and cell operations in the grid, or a SQL result loaded as the working set</td><td>Edit the text</td></tr>
+            <tr><td>Undo</td><td><kbd>Ctrl+Z</kbd> in the grid undoes the last data edit</td><td><kbd>Ctrl+Z</kbd> in the editor undoes typing</td></tr>
+            <tr><td>Saving</td><td><kbd>Ctrl+S</kbd>, Save As or Export As</td><td>The helper's own Save and Save As buttons</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note"><kbd>Ctrl+S</kbd> always saves the data file, even while you're typing in the docked Markdown helper. Use the helper's Save button for the document. To bring data into a document, select cells and choose <em>Copy as Markdown Table</em>.</p>
+    </div>
   </div>
 </section>
 
@@ -570,7 +620,7 @@ footer.site{border-top:1px solid var(--line);padding:34px 0;margin-top:0}
           <tr><td>.csv · .tsv · .tab</td><td class="rw"><span class="yes">✓ Yes</span></td><td class="rw"><span class="yes">✓ Yes</span></td></tr>
           <tr><td>.json · .jsonl · .ndjson</td><td class="rw"><span class="yes">✓ Yes</span></td><td class="rw"><span class="yes">✓ Yes</span></td></tr>
           <tr><td>.xlsx</td><td class="rw"><span class="yes">✓ Yes</span></td><td class="rw"><span class="yes">✓ Yes</span></td></tr>
-          <tr><td>.xls</td><td class="rw"><span class="yes">✓ Yes</span></td><td class="rw"><span class="no">— Read only</span></td></tr>
+          <tr><td>.xls (legacy Excel)</td><td class="rw"><span class="no">— No</span></td><td class="rw"><span class="no">— No</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -603,7 +653,7 @@ footer.site{border-top:1px solid var(--line);padding:34px 0;margin-top:0}
       </div>
       <div class="extra">
         <h4>Markdown helper</h4>
-        <p>An editor with live preview, embedded beside the grid or popped out to its own window. Your notes stay next to the data.</p>
+        <p>Write up what you found, with live preview, beside the grid or in its own window. It edits Markdown, not your data &mdash; <a href="#data-vs-markdown">see how they differ</a>.</p>
       </div>
       <div class="extra">
         <h4>Fluent theming</h4>
@@ -630,7 +680,7 @@ footer.site{border-top:1px solid var(--line);padding:34px 0;margin-top:0}
     </div>
     <div class="keys">
       <div class="key"><kbd>Ctrl + O</kbd><span>Open file</span></div>
-      <div class="key"><kbd>Ctrl + S</kbd><span>Save</span></div>
+      <div class="key"><kbd>Ctrl + S</kbd><span>Save data file</span></div>
       <div class="key"><kbd>Ctrl + Z</kbd><span>Undo last edit</span></div>
       <div class="key"><kbd>Ctrl + F</kbd><span>Global search</span></div>
       <div class="key"><kbd>Ctrl + G</kbd><span>Go to row</span></div>
@@ -698,26 +748,26 @@ footer.site{border-top:1px solid var(--line);padding:34px 0;margin-top:0}
 <section class="band" id="download">
   <div class="wrap">
     <div class="sec-head">
-      <span class="eyebrow">Download · v1.13.2</span>
+      <span class="eyebrow">Download · v1.14.0</span>
       <h2>Two ways in</h2>
     </div>
     <div class="dl-grid">
       <div class="dl-card pick">
         <h3>Installer</h3>
-        <p>Download and run it. There is no second step.</p>
-        <p class="file">HipHipParquet-1.13.2-Setup.exe</p>
+        <p>Install the <a href="https://dotnet.microsoft.com/download/dotnet/10.0">.NET 10 Desktop Runtime</a> if you don't have it, then download and run the installer.</p>
+        <p class="file">HipHipParquet-1.14.0-Setup.exe</p>
         <a class="btn btn-primary" href="https://github.com/jhew/HipHipParquet/releases/latest">Download installer</a>
       </div>
       <div class="dl-card">
         <h3>Portable</h3>
         <p>Extract anywhere and run <code style="font-family:var(--mono);font-size:13px">HipHipParquet.exe</code>. Nothing is written to the registry, no admin rights needed.</p>
-        <p class="file">HipHipParquet-1.13.2-Portable.zip</p>
+        <p class="file">HipHipParquet-1.14.0-Portable.zip</p>
         <a class="btn btn-ghost" href="https://github.com/jhew/HipHipParquet/releases/latest">Download portable zip</a>
       </div>
     </div>
     <div class="reqs">
       <span><b>OS</b> &nbsp;Windows 10 build 19041 or later, 64-bit</span>
-      <span><b>Runtime</b> &nbsp;.NET 8 Desktop Runtime</span>
+      <span><b>Runtime</b> &nbsp;.NET 10 Desktop Runtime</span>
       <span><b>Licence</b> &nbsp;MIT</span>
       <span><b>Price</b> &nbsp;Free</span>
     </div>
@@ -746,7 +796,7 @@ footer.site{border-top:1px solid var(--line);padding:34px 0;margin-top:0}
       </details>
       <details>
         <summary>Do I need to install anything else?</summary>
-        <p>The .NET 8 Desktop Runtime, if it isn't already on the machine. The installer page links to it directly.</p>
+        <p>The <a href="https://dotnet.microsoft.com/download/dotnet/10.0">.NET 10 Desktop Runtime</a> (x64), if it isn't already on the machine. The installer doesn't check for it, so install it first. The Markdown preview also needs the Microsoft Edge WebView2 Runtime, which Windows 11 and most up-to-date Windows 10 machines already have.</p>
       </details>
       <details>
         <summary>Is it really free? What's the catch?</summary>
