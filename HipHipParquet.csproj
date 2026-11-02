@@ -25,9 +25,9 @@
         <ApplicationIcon>Assets\app.ico</ApplicationIcon>
 
         <!-- Version — keep in sync with installer\HipHipParquet.iss MyAppVersion -->
-        <Version>1.13.2</Version>
-        <AssemblyVersion>1.13.2.0</AssemblyVersion>
-        <FileVersion>1.13.2.0</FileVersion>
+        <Version>1.14.0</Version>
+        <AssemblyVersion>1.14.0.0</AssemblyVersion>
+        <FileVersion>1.14.0.0</FileVersion>
 
         <!-- NU1510 is a false positive: CodePages is required by FileFormatDetector for Windows-1252 support -->
         <NoWarn>$(NoWarn);NU1510</NoWarn>
