@@ -22,6 +22,8 @@ public partial class MarkdownHelperPanel : UserControl
     public MarkdownEditorViewModel ViewModel { get; }
     public event EventHandler? PopOutRequested;
     public event EventHandler? FocusModeToggleRequested;
+    /// <summary>Raised by the header's hide button; MainWindow hides the docked helper.</summary>
+    public event EventHandler? HideRequested;
 
     public MarkdownHelperPanel()
     {
@@ -308,4 +310,5 @@ public partial class MarkdownHelperPanel : UserControl
 
     private void OnFocusModeClick(object sender, RoutedEventArgs e) => FocusModeToggleRequested?.Invoke(this, EventArgs.Empty);
     private void OnPopOutClick(object sender, RoutedEventArgs e) => PopOutRequested?.Invoke(this, EventArgs.Empty);
+    private void OnHideClick(object sender, RoutedEventArgs e) => HideRequested?.Invoke(this, EventArgs.Empty);
 }

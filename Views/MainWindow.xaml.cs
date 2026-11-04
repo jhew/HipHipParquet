@@ -25,6 +25,8 @@ public partial class MainWindow : Window
 {
     private const double MaxQualityPaneWidthCap = 1300;
     private const string RowNumberColumnName = "__RowNumber";
+    /// <summary>Row the last plain or Ctrl click on a "#" cell landed on; Shift+click extends from it.</summary>
+    private object? _rowNumberSelectionAnchor;
     private const string SourceFileColumnName = "__SourceFile";
     private const string DuckDbFilenameColumnName = "filename";
     public static readonly RoutedUICommand GoToRowCommand = new("Go to Row", "GoToRow", typeof(MainWindow));
@@ -266,7 +268,6 @@ public partial class MainWindow : Window
         NotebookSourcesList.ItemsSource = _notebookSources;
         NotebookBlocksList.ItemsSource = _notebookBlocks;
         NotebookSourceHintText.Text = "Open a source to start building local notebook steps.";
-        NotebookLastCheckText.Text = "Trust checks run locally against the active source or query result.";
 
         NotebookQueryTextBox.TextChanged += (_, _) => UpdateNotebookUiState();
         SavedNotebookQueriesComboBox.SelectionChanged += (_, _) => UpdateNotebookUiState();
@@ -1712,53 +1713,65 @@ public partial class MainWindow : Window
     private void OnToggleSchemaPaneClick(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem menuItem)
+            SetSchemaPaneVisible(menuItem.IsChecked);
+    }
+
+    private void OnHideSchemaPaneClick(object sender, RoutedEventArgs e) => SetSchemaPaneVisible(false);
+
+    /// <summary>Shows or hides the Schema Explorer and keeps its View menu check in step.</summary>
+    private void SetSchemaPaneVisible(bool visible)
+    {
+        ToggleSchemaPaneMenuItem.IsChecked = visible;
+
+        if (visible)
         {
-            if (menuItem.IsChecked)
-            {
-                // Show schema pane
-                SchemaPane.Visibility = Visibility.Visible;
-                SchemaSplitter.Visibility = Visibility.Visible;
-                MainContentGrid.ColumnDefinitions[0].Width = new GridLength(250);
-                MainContentGrid.ColumnDefinitions[0].MinWidth = 200;
-                MainContentGrid.ColumnDefinitions[1].Width = new GridLength(5);
-            }
-            else
-            {
-                // Hide schema pane completely
-                SchemaPane.Visibility = Visibility.Collapsed;
-                SchemaSplitter.Visibility = Visibility.Collapsed;
-                MainContentGrid.ColumnDefinitions[0].MinWidth = 0;
-                MainContentGrid.ColumnDefinitions[0].Width = new GridLength(0);
-                MainContentGrid.ColumnDefinitions[1].Width = new GridLength(0);
-            }
+            SchemaPane.Visibility = Visibility.Visible;
+            SchemaSplitter.Visibility = Visibility.Visible;
+            SchemaPaneColumn.Width = new GridLength(250);
+            SchemaPaneColumn.MinWidth = 200;
+            SchemaSplitterColumn.Width = new GridLength(5);
+        }
+        else
+        {
+            SchemaPane.Visibility = Visibility.Collapsed;
+            SchemaSplitter.Visibility = Visibility.Collapsed;
+            SchemaPaneColumn.MinWidth = 0;
+            SchemaPaneColumn.Width = new GridLength(0);
+            SchemaSplitterColumn.Width = new GridLength(0);
         }
     }
-    
+
     private void OnToggleQualityPanelClick(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem menuItem)
+            SetQualityPaneVisible(menuItem.IsChecked);
+    }
+
+    private void OnHideQualityPanelRequested(object? sender, EventArgs e) => SetQualityPaneVisible(false);
+
+    /// <summary>Shows or hides the Quality Review panel and keeps its View menu check in step.</summary>
+    private void SetQualityPaneVisible(bool visible)
+    {
+        ToggleQualityPanelMenuItem.IsChecked = visible;
+
+        if (visible)
         {
-            if (menuItem.IsChecked)
-            {
-                // Show Quality panel
-                QualityPanelShell.Visibility = Visibility.Visible;
-                QualityReviewPanel.Visibility = Visibility.Visible;
-                QualitySplitter.Visibility = Visibility.Visible;
-                QualitySplitterColumn.Width = new GridLength(5);
-                QualityPaneColumn.MinWidth = 300;
-                QualityPaneColumn.Width = new GridLength(420);
-                ClampQualityPaneWidth();
-            }
-            else
-            {
-                // Hide Quality panel
-                QualityPanelShell.Visibility = Visibility.Collapsed;
-                QualityReviewPanel.Visibility = Visibility.Collapsed;
-                QualitySplitter.Visibility = Visibility.Collapsed;
-                QualitySplitterColumn.Width = new GridLength(0);
-                QualityPaneColumn.MinWidth = 0;
-                QualityPaneColumn.Width = new GridLength(0);
-            }
+            QualityPanelShell.Visibility = Visibility.Visible;
+            QualityReviewPanel.Visibility = Visibility.Visible;
+            QualitySplitter.Visibility = Visibility.Visible;
+            QualitySplitterColumn.Width = new GridLength(5);
+            QualityPaneColumn.MinWidth = 300;
+            QualityPaneColumn.Width = new GridLength(420);
+            ClampQualityPaneWidth();
+        }
+        else
+        {
+            QualityPanelShell.Visibility = Visibility.Collapsed;
+            QualityReviewPanel.Visibility = Visibility.Collapsed;
+            QualitySplitter.Visibility = Visibility.Collapsed;
+            QualitySplitterColumn.Width = new GridLength(0);
+            QualityPaneColumn.MinWidth = 0;
+            QualityPaneColumn.Width = new GridLength(0);
         }
     }
 
@@ -2928,6 +2941,7 @@ public partial class MainWindow : Window
         }
 
         filterState.AllValues = [.. allValues.OrderBy(value => value == BlankDisplayValue ? string.Empty : value)];
+        filterState.LoadedForRowFilter = null; // list came from loaded rows; the dropdown reloads it
         filterState.SelectedValues = selectedValues;
         filterState.IsActive = selectedValues.Count != filterState.AllValues.Count;
         UpdateFilterIndicator(context.ColumnName);
@@ -3880,9 +3894,55 @@ public partial class MainWindow : Window
         cellStyle.Setters.Add(new Setter(Control.BackgroundProperty, ThemeBrushes.Pane));
         cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, ThemeBrushes.TextSecondary));
         cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+        cellStyle.Setters.Add(new EventSetter(UIElement.PreviewMouseLeftButtonDownEvent,
+            new MouseButtonEventHandler(OnRowNumberCellMouseLeftButtonDown)));
         col.CellStyle = cellStyle;
 
         return col;
+    }
+
+    /// <summary>
+    /// A click on a "#" cell selects the whole row, as the row header does: Ctrl toggles the row,
+    /// Shift selects the range from the last row clicked.
+    /// </summary>
+    private void OnRowNumberCellMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not DataGridCell cell || cell.DataContext is not { } item || item == System.Windows.Data.CollectionView.NewItemPlaceholder)
+            return;
+
+        var modifiers = Keyboard.Modifiers;
+        var anchorIndex = _rowNumberSelectionAnchor == null ? -1 : DataGrid.Items.IndexOf(_rowNumberSelectionAnchor);
+
+        if (modifiers.HasFlag(ModifierKeys.Shift) && anchorIndex >= 0)
+        {
+            var index = DataGrid.Items.IndexOf(item);
+            if (!modifiers.HasFlag(ModifierKeys.Control))
+            {
+                DataGrid.UnselectAllCells();
+                DataGrid.UnselectAll();
+            }
+            for (int i = Math.Min(anchorIndex, index); i <= Math.Max(anchorIndex, index); i++)
+                DataGrid.SelectedItems.Add(DataGrid.Items[i]);
+        }
+        else if (modifiers.HasFlag(ModifierKeys.Control))
+        {
+            if (DataGrid.SelectedItems.Contains(item))
+                DataGrid.SelectedItems.Remove(item);
+            else
+                DataGrid.SelectedItems.Add(item);
+            _rowNumberSelectionAnchor = item;
+        }
+        else
+        {
+            DataGrid.UnselectAllCells();
+            DataGrid.UnselectAll();
+            DataGrid.SelectedItems.Add(item);
+            _rowNumberSelectionAnchor = item;
+        }
+
+        DataGrid.CurrentCell = new DataGridCellInfo(item, cell.Column);
+        DataGrid.Focus();
+        e.Handled = true;
     }
 
     private void OnGoToRowButtonClick(object sender, RoutedEventArgs e)
@@ -4181,14 +4241,19 @@ public partial class MainWindow : Window
         if (sender is not Button button || button.Tag is not string columnName) return;
         if (!_columnFilters.TryGetValue(columnName, out var filterState)) return;
 
-        // Lazy-load distinct values on first open from full dataset (async)
-        if (!filterState.IsLoaded)
+        // Load distinct values from the rows the other filters leave; reuse them only while
+        // those filters are unchanged since the last load.
+        var rowFilter = BuildDropdownRowFilter(columnName);
+        var rowFilterKey = DescribeRowFilter(rowFilter);
+        if (!filterState.IsLoaded || filterState.LoadedForRowFilter != rowFilterKey)
         {
             button.IsEnabled = false;
             button.Content = "✓";  // Show loading indicator
             try
             {
-                await CollectDistinctValuesAsync(columnName, filterState);
+                await CollectDistinctValuesAsync(columnName, filterState, rowFilter);
+                if (filterState.IsLoaded)
+                    filterState.LoadedForRowFilter = rowFilterKey;
             }
             finally
             {
@@ -4200,24 +4265,43 @@ public partial class MainWindow : Window
         ShowFilterPopup(button, columnName, filterState);
     }
 
-    private async Task CollectDistinctValuesAsync(string columnName, ColumnFilterState state)
+    /// <summary>
+    /// The current filters minus <paramref name="columnName"/>'s own, so its dropdown lists the
+    /// values left by the other columns' selections and the global search.
+    /// </summary>
+    private GridQueryState BuildDropdownRowFilter(string columnName)
     {
-        if (state.IsLoaded) return;
+        var queryState = BuildCurrentQueryState();
+        queryState.ColumnFilters.Remove(columnName);
+        return queryState;
+    }
 
+    private static string DescribeRowFilter(GridQueryState queryState)
+        => string.Join("\u001F", queryState.ColumnFilters
+               .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+               .Select(kvp => kvp.Key + "\u001E" + string.Join("\u001E", kvp.Value.Order(StringComparer.Ordinal))))
+           + "\u001D" + queryState.GlobalSearch;
+
+    private async Task CollectDistinctValuesAsync(string columnName, ColumnFilterState state, GridQueryState rowFilter)
+    {
         if (!string.IsNullOrWhiteSpace(_activeNotebookSourceAlias))
         {
             try
             {
-                var (values, totalDistinct, truncated) = await GetNotebookSession().GetDistinctValuesAsync(
+                var (values, gridTexts, totalDistinct, truncated) = await GetNotebookSession().GetDistinctValuesAsync(
                     _activeNotebookSourceAlias,
                     columnName,
-                    MaxDistinctValues);
+                    MaxDistinctValues,
+                    rowFilter);
 
                 state.AllValues = values;
+                state.GridTexts = gridTexts;
+                state.KeysAreDuckDbText = true;
                 state.IsTruncated = truncated;
                 state.TotalDistinctCount = totalDistinct;
 
-                if (state.SelectedValues.Count == 0)
+                // An unfiltered column starts with everything it now lists checked.
+                if (!state.IsActive)
                     state.SelectedValues = new HashSet<string>(values);
 
                 state.IsLoaded = true;
@@ -4234,19 +4318,22 @@ public partial class MainWindow : Window
             try
             {
                 // Single-file path: query distinct values via DuckDB over the full dataset
-                var (values, totalDistinct, truncated) = await _parquetService!.GetDistinctValuesAsync(
+                var (values, gridTexts, totalDistinct, truncated) = await _parquetService!.GetDistinctValuesAsync(
                     filePath: _currentFilePath,
                     columnName: columnName,
                     csvOptions: _activeCsvOptions,
                     jsonOptions: _activeJsonOptions,
                     maxValues: MaxDistinctValues,
+                    rowFilter: rowFilter,
                     cancellationToken: default);
 
                 state.AllValues = values;
+                state.GridTexts = gridTexts;
+                state.KeysAreDuckDbText = true;
                 state.IsTruncated = truncated;
                 state.TotalDistinctCount = totalDistinct;
 
-                if (state.SelectedValues.Count == 0)
+                if (!state.IsActive)
                     state.SelectedValues = new HashSet<string>(values);
 
                 state.IsLoaded = true;
@@ -4258,13 +4345,17 @@ public partial class MainWindow : Window
         }
         else if (_originalData != null && _originalData.Columns.Contains(columnName))
         {
-            // Fallback for multi-file loads: compute distincts from the in-memory batch
+            // Fallback for multi-file loads: compute distincts from the in-memory rows the other filters leave
             var seen = new HashSet<string>(StringComparer.Ordinal);
             bool hasBlank = false;
 
-            foreach (DataRow row in _originalData.Rows)
+            var rows = new DataView(_originalData);
+            try { rows.RowFilter = BuildRowFilterExpression(excludeColumn: columnName); }
+            catch { rows.RowFilter = string.Empty; }
+
+            foreach (DataRowView rowView in rows)
             {
-                var raw = row[columnName];
+                var raw = rowView.Row[columnName];
                 if (raw == DBNull.Value || string.IsNullOrWhiteSpace(raw?.ToString()))
                 {
                     hasBlank = true;
@@ -4281,12 +4372,40 @@ public partial class MainWindow : Window
             state.AllValues = sorted;
             state.IsTruncated = seen.Count > sorted.Count - (hasBlank ? 1 : 0);
             state.TotalDistinctCount = seen.Count + (hasBlank ? 1 : 0);
+            state.GridTexts = new();
+            state.KeysAreDuckDbText = false;
 
-            if (state.SelectedValues.Count == 0)
+            if (!state.IsActive)
                 state.SelectedValues = new HashSet<string>(sorted);
 
             state.IsLoaded = true;
         }
+    }
+
+    /// <summary>
+    /// Whether a filter's keys are DuckDB VARCHAR text. A loaded state knows; a state restored
+    /// from a snapshot or saved view hasn't loaded yet, so it follows the source that will load it.
+    /// </summary>
+    private bool UsesDuckDbFilterKeys(ColumnFilterState state)
+        => state.IsLoaded
+            ? state.KeysAreDuckDbText
+            : !string.IsNullOrWhiteSpace(_activeNotebookSourceAlias) || !string.IsNullOrEmpty(_currentFilePath);
+
+    /// <summary>
+    /// The text the grid shows, and the in-memory RowFilter compares, for a filter key. Keys from
+    /// the distinct query carry it exactly; restored keys that haven't loaded yet are parsed.
+    /// </summary>
+    private string ToGridFilterText(string key, string columnName, ColumnFilterState state)
+    {
+        if (key == BlankDisplayValue || !UsesDuckDbFilterKeys(state))
+            return key;
+
+        if (state.GridTexts.TryGetValue(key, out var gridText))
+            return gridText;
+
+        var table = _dataView?.Table ?? _originalData;
+        var column = table != null && table.Columns.Contains(columnName) ? table.Columns[columnName] : null;
+        return FilterValueText.ToDataViewText(key, column);
     }
 
     private void ShowFilterPopup(Button anchor, string columnName, ColumnFilterState filterState)
@@ -4400,9 +4519,10 @@ public partial class MainWindow : Window
         var checkBoxes = new List<CheckBox>();
         foreach (var value in filterState.AllValues)
         {
+            // Tag keeps the key the filter matches on; the label is the value as the grid shows it.
             var cb = new CheckBox
             {
-                Content = new TextBlock { Text = value, TextWrapping = TextWrapping.NoWrap },
+                Content = new TextBlock { Text = ToGridFilterText(value, columnName, filterState), TextWrapping = TextWrapping.NoWrap },
                 IsChecked = filterState.SelectedValues.Contains(value),
                 Margin = new Thickness(0, 1, 0, 1),
                 FontSize = 12,
@@ -4446,7 +4566,7 @@ public partial class MainWindow : Window
             var searchText = searchBox.Text?.Trim() ?? string.Empty;
             foreach (var cb in checkBoxes)
             {
-                var val = cb.Tag?.ToString() ?? string.Empty;
+                var val = (cb.Content as TextBlock)?.Text ?? cb.Tag?.ToString() ?? string.Empty;
                 cb.Visibility = string.IsNullOrEmpty(searchText) ||
                     val.Contains(searchText, StringComparison.OrdinalIgnoreCase)
                     ? Visibility.Visible : Visibility.Collapsed;
@@ -4662,14 +4782,23 @@ public partial class MainWindow : Window
         }
 
         if (_dataView == null) return;
-        
+
+        ApplyRowFilter(BuildRowFilterExpression());
+    }
+
+    /// <summary>
+    /// The DataView RowFilter for the active column filters and global search. Leaving out
+    /// <paramref name="excludeColumn"/> gives the rows that column's dropdown lists values from.
+    /// </summary>
+    private string BuildRowFilterExpression(string? excludeColumn = null)
+    {
         var filters = new List<string>();
-        
+
         // Add column-specific value filters
         foreach (var kvp in _columnFilters)
         {
-            if (!kvp.Value.IsActive) continue;
-            
+            if (!kvp.Value.IsActive || kvp.Key == excludeColumn) continue;
+
             var columnName = kvp.Key;
             var selected = kvp.Value.SelectedValues;
             
@@ -4683,7 +4812,13 @@ public partial class MainWindow : Window
             var conditions = new List<string>();
             bool includeBlank = selected.Contains(BlankDisplayValue);
 
-            var nonBlankSelected = selected.Where(v => v != BlankDisplayValue).ToList();
+            // Keys may be DuckDB text ("10.00000", "true"); Convert(col, 'System.String') yields .NET
+            // text ("10", "True"), so compare in the grid's form or nothing matches.
+            var nonBlankSelected = selected
+                .Where(v => v != BlankDisplayValue)
+                .Select(v => ToGridFilterText(v, columnName, kvp.Value))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
             if (nonBlankSelected.Count > 0)
             {
                 // Use IN (...) to produce a single condition instead of one OR per value
@@ -4723,9 +4858,16 @@ public partial class MainWindow : Window
             }
         }
         
+        return filters.Count > 0 ? string.Join(" AND ", filters) : string.Empty;
+    }
+
+    private void ApplyRowFilter(string rowFilter)
+    {
+        if (_dataView == null) return;
+
         try
         {
-            _dataView.RowFilter = filters.Count > 0 ? string.Join(" AND ", filters) : string.Empty;
+            _dataView.RowFilter = rowFilter;
             
             var columnCount = _columnFilters.Count(kvp => kvp.Value.IsActive);
             var hasGlobal = !string.IsNullOrWhiteSpace(GlobalSearchBox.Text);
@@ -5878,6 +6020,8 @@ public partial class MainWindow : Window
         ToggleMarkdownHelperEmbedded(mi.IsChecked);
     }
 
+    private void OnMarkdownHelperHideRequested(object? sender, EventArgs e) => ToggleMarkdownHelperEmbedded(false);
+
     private void ToggleMarkdownHelperEmbedded(bool visible)
     {
         _markdownHelperEmbedded = visible;
@@ -6296,6 +6440,18 @@ internal class ColumnFilterState
     public HashSet<string> SelectedValues { get; set; } = new();
     public bool IsActive { get; set; }
     public bool IsLoaded { get; set; }
+    /// <summary>The other columns' filters <see cref="AllValues"/> was loaded under; a change reloads it.</summary>
+    public string? LoadedForRowFilter { get; set; }
     public bool IsTruncated { get; set; }
     public int TotalDistinctCount { get; set; }
+
+    /// <summary>
+    /// True when <see cref="AllValues"/> came from DuckDB's <c>CAST(col AS VARCHAR)</c>, which
+    /// differs from .NET's text for numbers, booleans and dates (10.00000 vs 10, true vs True).
+    /// False when they were read from the in-memory DataTable and already use .NET text.
+    /// </summary>
+    public bool KeysAreDuckDbText { get; set; }
+
+    /// <summary>The grid's text for each DuckDB key in <see cref="AllValues"/>, from the loaded value.</summary>
+    public Dictionary<string, string> GridTexts { get; set; } = new();
 }

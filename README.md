@@ -22,6 +22,7 @@ A free Windows desktop app that opens Parquet, CSV, JSON and Excel files, runs S
 - [Requirements](#requirements)
 - [Install](#install)
 - [Supported formats](#supported-formats)
+- [Checking and fixing a file](#checking-and-fixing-a-file)
 - [What it does](#what-it-does)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Network access](#network-access)
@@ -79,6 +80,36 @@ Once installed, **Help › Check for Updates** downloads new versions and verifi
 Legacy Excel workbooks (`.xls`) aren't supported. Open them in Excel and save as `.xlsx` first.
 
 Excel files are read and written through DuckDB's spatial extension, which is downloaded the first time you open or export an Excel file. See [Network access](#network-access). Columns that Excel can't hold natively — UUIDs, times, intervals, very large integers, lists and structs — are written to `.xlsx` as text.
+
+---
+
+## Checking and fixing a file
+
+A typical pass over a file you've been handed:
+
+1. **Open it.** The File Summary card shows rows, columns, size and completeness straight away.
+2. **Score it.** Quality Review rates the data out of 100 and lists findings by severity. Start with the ones marked Needs Review.
+3. **Check your own rules.** In the Query Hub, **Notebook Actions** check for nulls and empty values, duplicate rows on the columns you choose, and values that don't match a regular expression. To check that a file has the columns and types you expect, save a schema template from a known-good file and validate new files against it. Missing columns, changed types and columns that have become nullable are reported.
+4. **Fix it in the grid.** For example: **Delete Duplicate Rows**, **Trim Whitespace**, **Set to Null** or **Replace in Selection**, or edit a cell directly. Ctrl+Z undoes the last edit. For changes too large to make by hand, write a SQL query and use **Load Current Scope as Working Set** to make its result the editable data.
+5. **Check again.** A **Refresh recommended** badge appears on Quality Review once you've changed the data. Refresh it to confirm the findings have gone.
+6. **Save.** Ctrl+S writes back to the original file, keeping each column's type where the format allows. Use **Save As** to keep the original untouched, and export the HTML report if someone else needs to see the results.
+
+### Data files and Markdown files are handled differently
+
+Everything above applies to data files. Markdown files (`.md`) are a separate thing: they open in the [Markdown Helper](#markdown-helper), a text editor for writing about your data. The helper doesn't check or change the data file you have open, and the quality tools don't look at Markdown.
+
+| | Data file (Parquet, CSV, JSON, Excel) | Markdown file (`.md`) |
+| --- | --- | --- |
+| **Opens in** | The grid, with the Query Hub and Quality Review alongside | The Markdown Helper, docked beside the grid or in its own window |
+| **Checking** | Quality Review score and findings, Notebook Actions, schema templates | A live preview shows how the document will look. Nothing checks the text for mistakes. |
+| **Fixing** | Row and cell operations in the grid, or a SQL query loaded as the working set | Edit the text |
+| **Undo** | Ctrl+Z in the grid undoes the last data edit | Ctrl+Z in the editor undoes typing |
+| **Saving** | Ctrl+S, Save As or Export As | The helper's own **Save** and **Save As** buttons |
+
+> [!NOTE]
+> Ctrl+S always saves the **data file**, even while you are typing in the docked Markdown Helper. Save a Markdown document with the helper's **Save** button.
+
+The two meet when you write up what you found. Select cells in the grid and use **Copy as Markdown Table** to paste them into a document, then keep your notes, data dictionary or hand-over README open beside the data they describe.
 
 ---
 
@@ -165,12 +196,16 @@ Copy a selection as plain text, with headers, as CSV, as TSV, as a Markdown tabl
 
 ### Markdown Helper
 
-A Markdown editor with a live preview, docked beside the grid or popped out into its own window, so your notes stay next to the data.
+A Markdown editor with a live preview, docked beside the grid or popped out into its own window. Use it to write about the data you have open: notes on what Quality Review found, a data dictionary, or a README to send with a file.
+
+It works only on Markdown documents. It doesn't read, check or change the data file in the grid. See [Data files and Markdown files are handled differently](#data-files-and-markdown-files-are-handled-differently).
 
 - Preview renders with a choice of profile: CommonMark, GitHub-style, or Extended.
 - [Mermaid](https://mermaid.js.org) diagrams render in the preview. The Mermaid library ships with the app and is never fetched from the network.
 - Images on the web are never loaded in the preview, so opening a document can't tell a remote server that you read it. Images embedded in the document as data still show.
-- New, Open, Save and Save As. Unsaved drafts carry across when you switch between docked and pop-out modes.
+- New, Open, Save and Save As, from the helper's own toolbar. Ctrl+S saves the data file, not the Markdown document.
+- Unsaved drafts carry across when you switch between docked and pop-out modes.
+- **Copy as Markdown Table** in the grid's right-click menu turns a selection into a table you can paste straight in.
 
 ---
 
@@ -178,7 +213,7 @@ A Markdown editor with a live preview, docked beside the grid or popped out into
 
 | Shortcut | Action |
 | --- | --- |
-| Ctrl+S | Save |
+| Ctrl+S | Save the data file |
 | Ctrl+Z | Undo last edit |
 | Ctrl+F | Focus global search |
 | Ctrl+G | Go to row |

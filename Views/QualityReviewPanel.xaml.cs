@@ -11,10 +11,15 @@ namespace HipHipParquet.Views;
 /// </summary>
 public partial class QualityReviewPanel : UserControl
 {
+    /// <summary>Raised by the header's hide button; MainWindow hides the pane.</summary>
+    public event EventHandler? HideRequested;
+
     public QualityReviewPanel()
     {
         InitializeComponent();
     }
+
+    private void OnHideClick(object sender, RoutedEventArgs e) => HideRequested?.Invoke(this, EventArgs.Empty);
 
     /// <summary>
     /// Sets the ViewModel as the DataContext. Called from MainWindow.

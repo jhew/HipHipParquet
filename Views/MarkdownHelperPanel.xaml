@@ -38,6 +38,16 @@
                     <Button Style="{StaticResource MarkdownToolButton}" Click="OnFocusModeClick" Content="{Binding FocusModeButtonLabel}"/>
                     <Button Style="{StaticResource MarkdownToolButton}" Margin="0" Click="OnPopOutClick" Content="Pop out"
                             ToolTip="Move the helper into its own window"/>
+                    <Button Content="▾"
+                            Width="24"
+                            Height="24"
+                            Margin="8,0,0,0"
+                            Padding="0"
+                            FontWeight="Bold"
+                            VerticalAlignment="Center"
+                            ToolTip="Hide Markdown Helper"
+                            AutomationProperties.Name="Hide Markdown Helper"
+                            Click="OnHideClick"/>
                 </StackPanel>
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="Markdown Helper" Style="{StaticResource MarkdownHeaderTitle}"/>

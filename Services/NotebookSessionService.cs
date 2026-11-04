@@ -173,15 +173,20 @@ public sealed class NotebookSessionService : IDisposable
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task<(List<string> Values, int TotalDistinct, bool Truncated)> GetDistinctValuesAsync(
+    public async Task<(List<string> Values, Dictionary<string, string> GridTexts, int TotalDistinct, bool Truncated)> GetDistinctValuesAsync(
         string sourceAlias,
         string columnName,
         int maxValues = 500,
+        GridQueryState? rowFilter = null,
         CancellationToken cancellationToken = default)
     {
         var connection = await EnsureConnectionAsync();
         var escapedAlias = ParquetService.EscapeDuckDbIdentifier(sourceAlias);
         var escapedColumn = ParquetService.EscapeDuckDbIdentifier(columnName);
+
+        // Only rows passing the other filters count, so a dropdown lists what they leave.
+        if (rowFilter != null)
+            escapedAlias = $"(SELECT * FROM {escapedAlias}{BuildSqlWhereClause(rowFilter)}) AS filtered";
 
         var nullSql = $"SELECT COUNT(*) FROM {escapedAlias} WHERE {escapedColumn} IS NULL OR TRIM(CAST({escapedColumn} AS VARCHAR)) = ''";
         var hasNulls = await ExecuteScalarLongAsync(connection, nullSql, cancellationToken) > 0;
@@ -190,16 +195,10 @@ public sealed class NotebookSessionService : IDisposable
         var nonNullDistinct = await ExecuteScalarLongAsync(connection, countSql, cancellationToken);
         var valueLimit = hasNulls ? Math.Max(1, maxValues - 1) : maxValues;
 
-        var valuesSql = $"SELECT DISTINCT CAST({escapedColumn} AS VARCHAR) AS value_text FROM {escapedAlias} WHERE {escapedColumn} IS NOT NULL AND TRIM(CAST({escapedColumn} AS VARCHAR)) <> '' ORDER BY 1 LIMIT {valueLimit}";
+        var valuesSql = $"SELECT DISTINCT {escapedColumn}, CAST({escapedColumn} AS VARCHAR) AS value_text FROM {escapedAlias} WHERE {escapedColumn} IS NOT NULL AND TRIM(CAST({escapedColumn} AS VARCHAR)) <> '' ORDER BY 2 LIMIT {valueLimit}";
         using var valuesCommand = new DuckDBCommand(valuesSql, connection);
         using var reader = await valuesCommand.ExecuteReaderAsync(cancellationToken);
-
-        var values = new List<string>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            if (!reader.IsDBNull(0))
-                values.Add(reader.GetString(0));
-        }
+        var (values, gridTexts) = await DuckDbValueHelper.ReadFilterValuesAsync(reader, cancellationToken);
 
         if (hasNulls)
             values.Insert(0, "(Blank)");
@@ -207,7 +206,7 @@ public sealed class NotebookSessionService : IDisposable
         var totalDistinctLong = nonNullDistinct + (hasNulls ? 1L : 0L);
         var totalDistinct = totalDistinctLong > int.MaxValue ? int.MaxValue : (int)totalDistinctLong;
         var truncated = values.Count >= maxValues && totalDistinct > maxValues;
-        return (values, totalDistinct, truncated);
+        return (values, gridTexts, totalDistinct, truncated);
     }
 
     public async Task<long> GetFilteredRowCountAsync(
