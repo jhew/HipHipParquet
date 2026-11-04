@@ -326,6 +326,7 @@ public partial class MainWindow : Window
         NotebookHubCollapsedBar.Visibility = hasSources && _queryHubEnabled && !_queryHubExpanded ? Visibility.Visible : Visibility.Collapsed;
         ToggleQueryHubMenuItem.IsChecked = _queryHubEnabled;
         RunNotebookQueryButton.IsEnabled = hasSources && !string.IsNullOrWhiteSpace(NotebookQueryTextBox.Text);
+        RunNotebookSelectionButton.IsEnabled = RunNotebookQueryButton.IsEnabled;
         SaveNotebookQueryButton.IsEnabled = !string.IsNullOrWhiteSpace(NotebookQueryTextBox.Text);
         LoadSavedNotebookQueryButton.IsEnabled = SavedNotebookQueriesComboBox.SelectedItem is NotebookQueryDocument;
         DeleteSavedNotebookQueryButton.IsEnabled = SavedNotebookQueriesComboBox.SelectedItem is NotebookQueryDocument;
@@ -340,11 +341,14 @@ public partial class MainWindow : Window
 
         PreviewPreviousPageButton.IsEnabled = hasActiveSource && _isPreviewMode && _previewRowOffset > 0;
         PreviewNextPageButton.IsEnabled = hasActiveSource && _isPreviewMode && (_previewRowOffset + _currentRowLimit) < _previewFilteredRowCount;
-        MaterializeWorkingSetButton.Content = _isPreviewMode ? "Load Current Scope as Working Set" : "Working Set Loaded";
-        MaterializeWorkingSetButton.IsEnabled = hasActiveSource && _isPreviewMode;
-        NotebookQueryLabelText.Text = hasActiveSource
-            ? $"Run local DuckDB SQL over opened notebook aliases. Active source: {_activeNotebookSourceAlias}."
-            : "Run local DuckDB SQL over any opened notebook source alias.";
+        // A source with unsaved Query Hub changes stays read-only in the grid until they're saved or discarded.
+        var activeHasHubChanges = hasActiveSource && FindNotebookSource(_activeNotebookSourceAlias)?.HasUnsavedChanges == true;
+        MaterializeWorkingSetButton.Content = _isPreviewMode ? "Load as Working Set" : "Working Set Loaded";
+        MaterializeWorkingSetButton.IsEnabled = hasActiveSource && _isPreviewMode && !activeHasHubChanges;
+        MaterializeWorkingSetButton.ToolTip = activeHasHubChanges
+            ? "Save or discard the Query Hub changes first"
+            : "Load the current scope into the grid for editing";
+        UpdateQueryHubPendingBar();
 
         if (!hasSources)
         {
@@ -364,7 +368,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_isPreviewMode)
+        if (activeHasHubChanges)
+            SetNotebookModeBadge("Unsaved Query Hub Changes - Read-Only", "Brush.WarningBg", "Brush.WarningText");
+        else if (_isPreviewMode)
             SetNotebookModeBadge("Read-Only Preview", "Brush.WarningBg", "Brush.WarningText");
         else
             SetNotebookModeBadge("Editable Working Set", "Brush.SuccessBg", "Brush.SuccessText");
@@ -503,7 +509,8 @@ public partial class MainWindow : Window
 
         ConfigureQualityContextForSource(source, sourceFiles, autoAnalyze);
 
-        if (source.RowCount > RowLimitBatch)
+        // Unsaved Query Hub changes show read-only, so grid edits can't race the Hub's copy.
+        if (source.RowCount > RowLimitBatch || source.HasUnsavedChanges)
         {
             await LoadNotebookPreviewAsync(source, parquetPartsSuffix, unknownExtension, resetPaging: true);
             return;
@@ -921,36 +928,6 @@ public partial class MainWindow : Window
         StatusText.Text = "Cleared notebook blocks";
     }
 
-    private async void OnRunNotebookQueryClick(object sender, RoutedEventArgs e)
-    {
-        if (_notebookSources.Count == 0)
-        {
-            StatusText.Text = "Open a source before running notebook queries";
-            return;
-        }
-
-        try
-        {
-            ShowLoading("Running DuckDB query...");
-            var sql = NotebookQueryTextBox.Text;
-            var resultSource = await GetNotebookSession().ExecuteReadOnlyQueryAsync(sql, preferredAlias: "query_result");
-            _notebookSources.Add(resultSource);
-            AddNotebookBlock(NotebookBlockKind.Query, "DuckDB Query", $"Created `{resultSource.Alias}` from the current SQL.", resultSource.Alias, sql);
-            AddNotebookBlock(NotebookBlockKind.Result, resultSource.DisplayName, $"{resultSource.RowCount:N0} rows available in `{resultSource.Alias}`.", resultSource.Alias);
-            await ActivateNotebookSourceAsync(resultSource, autoAnalyze: false);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, $"Query failed: {UserFacingError.Describe(ex)}", "Query Hub", MessageBoxButton.OK, MessageBoxImage.Warning);
-            StatusText.Text = "Notebook query failed";
-        }
-        finally
-        {
-            UpdateNotebookUiState();
-            HideLoading();
-        }
-    }
-
     private async void OnSaveNotebookQueryClick(object sender, RoutedEventArgs e)
     {
         var sql = NotebookQueryTextBox.Text?.Trim() ?? string.Empty;
@@ -1325,7 +1302,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!_hasUnsavedChanges)
+        var hubUnsaved = _notebookSession?.GetSourcesWithUnsavedChanges() ?? [];
+        if (!_hasUnsavedChanges && hubUnsaved.Count == 0)
         {
             await EmbeddedMarkdownHelper.PersistDraftAsync();
             SaveWorkspaceState();
@@ -1340,11 +1318,30 @@ public partial class MainWindow : Window
         // Cancel initially so we can run async save without deadlocking.
         e.Cancel = true;
 
-        var result = MessageBox.Show(this, 
-            "You have unsaved changes. Do you want to save before closing?",
-            "Unsaved Changes",
-            MessageBoxButton.YesNoCancel,
-            MessageBoxImage.Warning);
+        if (hubUnsaved.Count > 0)
+        {
+            var hubChoice = MessageBox.Show(this,
+                $"The Query Hub has unsaved changes to {string.Join(", ", hubUnsaved.Select(s => s.Alias))}.\n\n" +
+                "Save them to their files before closing?",
+                "Unsaved Query Hub Changes",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Warning);
+
+            if (hubChoice == MessageBoxResult.Cancel)
+                return;
+
+            if (hubChoice == MessageBoxResult.Yes &&
+                (await SaveHubChangesAsync(hubUnsaved, confirm: false)).Count < hubUnsaved.Count)
+                return; // a save failed or was cancelled — keep the window open
+        }
+
+        var result = !_hasUnsavedChanges
+            ? MessageBoxResult.No
+            : MessageBox.Show(this,
+                "You have unsaved changes. Do you want to save before closing?",
+                "Unsaved Changes",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Warning);
 
         if (result == MessageBoxResult.Cancel)
             return;
@@ -3455,6 +3452,16 @@ public partial class MainWindow : Window
     
     private async void OnSaveClick(object sender, RoutedEventArgs e)
     {
+        // Ctrl+S reaches here even when the Save menu item is disabled. A preview holds one page
+        // of the source, so saving it would overwrite the file with that page.
+        if (_isPreviewMode)
+        {
+            StatusText.Text = FindNotebookSource(_activeNotebookSourceAlias)?.HasUnsavedChanges == true
+                ? "Use Save in the Query Hub to write its changes to the file"
+                : "This is a read-only preview; load it as a working set to edit and save";
+            return;
+        }
+
         if (string.IsNullOrEmpty(_currentFilePath) || _originalData == null)
         {
             OnSaveAsClick(sender, e);
@@ -3521,7 +3528,8 @@ public partial class MainWindow : Window
             _pendingEditCount = 0;
             UpdateWindowTitle();
             UpdatePendingChangesTray();
-            
+            await ReloadHubCopyAfterGridSaveAsync(filePath);
+
             StatusText.Text = $"Saved {System.IO.Path.GetFileName(filePath)} — {_originalData.Rows.Count:N0} rows";
 
             if (showConfirmation)

@@ -379,68 +379,260 @@
                             Visibility="Collapsed">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="280"/>
-                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="260"/>
+                                <ColumnDefinition Width="14"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
 
-                            <StackPanel Grid.Column="0">
-                                <DockPanel LastChildFill="False">
-                                    <TextBlock Text="Query Hub" Style="{StaticResource PaneTitle}"/>
-                                    <Button Content="▴"
-                                            Width="24"
-                                            Height="24"
-                                            Margin="8,0,0,0"
-                                            Padding="0"
-                                            FontWeight="Bold"
-                                            ToolTip="Collapse Query Hub"
-                                            AutomationProperties.Name="Collapse Query Hub"
-                                            Click="OnCollapseQueryHubClick"
-                                            DockPanel.Dock="Right"/>
-                                </DockPanel>
+                            <!-- Header -->
+                            <DockPanel Grid.Row="0" Grid.ColumnSpan="3" LastChildFill="True" Margin="0,0,0,8">
+                                <Button Content="▴"
+                                        Width="24"
+                                        Height="24"
+                                        Margin="8,0,0,0"
+                                        Padding="0"
+                                        FontWeight="Bold"
+                                        ToolTip="Collapse Query Hub"
+                                        AutomationProperties.Name="Collapse Query Hub"
+                                        Click="OnCollapseQueryHubClick"
+                                        DockPanel.Dock="Right"/>
+                                <TextBlock Text="Query Hub" Style="{StaticResource PaneTitle}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                <Border x:Name="NotebookModeBadge"
+                                        CornerRadius="10"
+                                        Padding="8,3"
+                                        Background="{DynamicResource Brush.InfoBg}"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,8,0">
+                                    <TextBlock x:Name="NotebookModeBadgeText"
+                                               Text="Ready"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Brush.InfoText}"/>
+                                </Border>
+                                <TextBlock x:Name="NotebookActiveSourceText"
+                                           VerticalAlignment="Center"
+                                           FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource Brush.TextPrimary}"
+                                           Text="No active source"/>
+                            </DockPanel>
+
+                            <!-- Sources and their columns -->
+                            <StackPanel Grid.Row="1" Grid.Column="0">
+                                <TextBlock Text="Sources" FontWeight="SemiBold"/>
                                 <TextBlock x:Name="NotebookSourceHintText"
-                                           Margin="0,4,0,8"
+                                           Margin="0,2,0,4"
+                                           FontSize="11"
                                            Foreground="{DynamicResource Brush.TextSecondary}"
                                            Text="Open a source to start building local notebook steps."
                                            TextWrapping="Wrap"/>
-
-                                <TextBlock Text="Sources" FontWeight="SemiBold"/>
                                 <ListBox x:Name="NotebookSourcesList"
-                                         Height="92"
-                                         Margin="0,4,0,10"
-                                         DisplayMemberPath="SourceLabel"
-                                         SelectionChanged="OnNotebookSourceSelectionChanged"/>
+                                         Height="250"
+                                         HorizontalContentAlignment="Stretch"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         AutomationProperties.Name="Query Hub sources"
+                                         SelectionChanged="OnNotebookSourceSelectionChanged">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,2,0,4">
+                                                <StackPanel.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Insert Name in Editor" Click="OnInsertSourceNameClick"/>
+                                                        <Separator/>
+                                                        <MenuItem Header="Save to File" Click="OnSaveHubSourceClick"
+                                                                  IsEnabled="{Binding HasUnsavedChanges}"/>
+                                                        <MenuItem Header="Save As..." Click="OnSaveHubSourceAsClick"/>
+                                                        <MenuItem Header="Discard Changes" Click="OnDiscardHubSourceClick"
+                                                                  IsEnabled="{Binding HasUnsavedChanges}"/>
+                                                    </ContextMenu>
+                                                </StackPanel.ContextMenu>
+                                                <DockPanel LastChildFill="True">
+                                                    <TextBlock DockPanel.Dock="Right"
+                                                               Text="{Binding RowCount, StringFormat={}{0:N0} rows}"
+                                                               FontSize="11"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource Brush.TextSecondary}"/>
+                                                    <TextBlock Text="{Binding Alias}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                               ToolTip="{Binding SourceLabel}"/>
+                                                </DockPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                               Foreground="{DynamicResource Brush.TextMuted}"/>
+                                                    <TextBlock Text="  ● unsaved changes" FontSize="11" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource Brush.WarningText}"
+                                                               Visibility="{Binding HasUnsavedChanges, Converter={StaticResource BoolToVis}}"/>
+                                                </StackPanel>
+                                                <Expander Header="Columns" FontSize="11" Margin="0,2,0,0" Padding="0">
+                                                    <ItemsControl ItemsSource="{Binding Columns}" Margin="12,2,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Button Click="OnInsertColumnNameClick"
+                                                                        Tag="{Binding Name}"
+                                                                        Background="Transparent"
+                                                                        BorderThickness="0"
+                                                                        Padding="2,1"
+                                                                        HorizontalContentAlignment="Stretch"
+                                                                        Cursor="Hand"
+                                                                        ToolTip="Insert this column name in the editor">
+                                                                    <DockPanel LastChildFill="True">
+                                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Type}" FontSize="10" Margin="8,0,0,0"
+                                                                                   Foreground="{DynamicResource Brush.TextMuted}"/>
+                                                                        <TextBlock Text="{Binding Name}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                                    </DockPanel>
+                                                                </Button>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Expander>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+
+                            <!-- Editor and history -->
+                            <StackPanel Grid.Row="1" Grid.Column="2">
+                                <WrapPanel VerticalAlignment="Center">
+                                    <Button x:Name="RunNotebookQueryButton"
+                                            Content="▶ Run"
+                                            Padding="14,5"
+                                            Margin="0,0,6,4"
+                                            Background="{DynamicResource Brush.Accent}"
+                                            Foreground="{DynamicResource Brush.OnAccent}"
+                                            ToolTip="Run the whole script (Ctrl+Enter)"
+                                            Click="OnRunNotebookQueryClick"/>
+                                    <Button x:Name="RunNotebookSelectionButton"
+                                            Content="Run Selection"
+                                            Padding="12,5"
+                                            Margin="0,0,16,4"
+                                            ToolTip="Run only the selected text (Ctrl+Shift+Enter)"
+                                            Click="OnRunNotebookSelectionClick"/>
+                                    <TextBlock Text="Saved"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource Brush.TextSecondary}"
+                                               Margin="0,0,6,4"/>
+                                    <ComboBox x:Name="SavedNotebookQueriesComboBox"
+                                              AutomationProperties.Name="Saved query"
+                                              Width="200"
+                                              Margin="0,0,8,4"
+                                              DisplayMemberPath="Name"/>
+                                    <Menu VerticalAlignment="Center"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          Margin="0,0,0,4">
+                                        <MenuItem Header="Actions ▾"
+                                                  Padding="10,4"
+                                                  Background="{DynamicResource Brush.Card}"
+                                                  BorderBrush="{DynamicResource Brush.Border}"
+                                                  BorderThickness="1">
+                                            <MenuItem x:Name="SaveNotebookQueryButton"
+                                                      Header="Save Current Query"
+                                                      Click="OnSaveNotebookQueryClick"/>
+                                            <MenuItem x:Name="LoadSavedNotebookQueryButton"
+                                                      Header="Load Selected Saved Query"
+                                                      Click="OnLoadSavedNotebookQueryClick"/>
+                                            <MenuItem x:Name="DeleteSavedNotebookQueryButton"
+                                                      Header="Delete Selected Saved Query"
+                                                      Click="OnDeleteSavedNotebookQueryClick"/>
+                                            <Separator/>
+                                            <MenuItem x:Name="NotebookExportButton"
+                                                      Header="Export Current Scope..."
+                                                      Click="OnNotebookExportClick"/>
+                                            <Separator/>
+                                            <MenuItem x:Name="NullEmptyCheckButton"
+                                                      Header="Run Null / Empty Check"
+                                                      Click="OnNotebookNullEmptyCheckClick"/>
+                                            <MenuItem x:Name="DuplicateCheckButton"
+                                                      Header="Run Duplicate Check"
+                                                      Click="OnNotebookDuplicateCheckClick"/>
+                                            <MenuItem x:Name="RegexCheckButton"
+                                                      Header="Run Regex Check"
+                                                      Click="OnNotebookRegexCheckClick"/>
+                                            <Separator/>
+                                            <MenuItem x:Name="SaveSchemaTemplateButton"
+                                                      Header="Save Schema Template"
+                                                      Click="OnSaveSchemaTemplateClick"/>
+                                            <MenuItem x:Name="ValidateSchemaTemplateButton"
+                                                      Header="Validate Selected Template"
+                                                      Click="OnValidateSchemaTemplateClick"/>
+                                        </MenuItem>
+                                    </Menu>
+                                    <TextBlock Text="Schema Template"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource Brush.TextSecondary}"
+                                               Margin="12,0,6,4"/>
+                                    <ComboBox x:Name="SchemaTemplatesComboBox"
+                                              AutomationProperties.Name="Schema template"
+                                              Width="180"
+                                              Margin="0,0,0,4"
+                                              DisplayMemberPath="Name"/>
+                                </WrapPanel>
+
+                                <TextBox x:Name="NotebookQueryTextBox"
+                                         AutomationProperties.Name="DuckDB SQL script"
+                                         Margin="0,4,0,2"
+                                         Height="150"
+                                         AcceptsReturn="True"
+                                         AcceptsTab="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         FontFamily="Consolas"
+                                         TextWrapping="NoWrap"
+                                         PreviewKeyDown="OnNotebookQueryPreviewKeyDown"/>
+                                <TextBlock x:Name="NotebookQueryLabelText"
+                                           Margin="0,0,0,8"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource Brush.TextSecondary}"
+                                           Text="SELECT, INSERT, UPDATE, DELETE, and CREATE/ALTER/DROP TABLE or VIEW. Separate statements with ;"/>
 
                                 <DockPanel LastChildFill="False">
-                                    <TextBlock Text="Notebook Blocks" FontWeight="SemiBold"/>
+                                    <TextBlock Text="History" FontWeight="SemiBold"/>
                                     <Button x:Name="ClearNotebookBlocksButton"
                                             Content="Clear"
                                             Margin="8,0,0,0"
                                             Padding="6,1"
                                             FontSize="11"
                                             Click="OnClearNotebookBlocksClick"
-                                            ToolTip="Clear all notebook blocks"
+                                            ToolTip="Clear the history"
                                             DockPanel.Dock="Right"/>
                                 </DockPanel>
                                 <ListBox x:Name="NotebookBlocksList"
-                                         Height="122"
-                                         Margin="0,4,0,0"
+                                         Height="104"
+                                         Margin="0,4,0,8"
+                                         HorizontalContentAlignment="Stretch"
+                                         AutomationProperties.Name="Query Hub history"
                                          SelectionChanged="OnNotebookBlockSelectionChanged">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid Margin="0,1,0,1">
+                                            <Grid Margin="0,1,0,1" ToolTip="{Binding Sql}">
                                                 <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-
                                                 <TextBlock Grid.Column="0"
-                                                           Text="{Binding TimelineLabel}"
+                                                           Text="{Binding TimeLabel}"
+                                                           Foreground="{DynamicResource Brush.TextMuted}"
+                                                           FontSize="11"
                                                            VerticalAlignment="Center"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           ToolTip="{Binding TimelineLabel}"/>
-
-                                                <Button Grid.Column="1"
+                                                           Margin="0,0,8,0"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding Title}"
+                                                           FontWeight="SemiBold"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,8,0"/>
+                                                <TextBlock Grid.Column="2"
+                                                           Text="{Binding Summary}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <Button Grid.Column="3"
                                                         Content="X"
                                                         Margin="8,0,0,0"
                                                         Padding="4,0"
@@ -448,150 +640,11 @@
                                                         MinHeight="20"
                                                         Tag="{Binding}"
                                                         Click="OnRemoveNotebookBlockClick"
-                                                        ToolTip="Remove this block"/>
+                                                        ToolTip="Remove from history"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
-                            </StackPanel>
-
-                            <StackPanel Grid.Column="2">
-                                <WrapPanel VerticalAlignment="Center">
-                                    <Border x:Name="NotebookModeBadge"
-                                            CornerRadius="10"
-                                            Padding="8,3"
-                                            Background="{DynamicResource Brush.InfoBg}"
-                                            Margin="0,0,8,0">
-                                        <TextBlock x:Name="NotebookModeBadgeText"
-                                                   Text="Ready"
-                                                   FontSize="11"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource Brush.InfoText}"/>
-                                    </Border>
-                                    <TextBlock x:Name="NotebookActiveSourceText"
-                                               VerticalAlignment="Center"
-                                               FontWeight="SemiBold"
-                                               Foreground="{DynamicResource Brush.TextPrimary}"
-                                               Text="No active source"/>
-                                </WrapPanel>
-
-                                <TextBlock x:Name="NotebookQueryLabelText"
-                                           Margin="0,8,0,0"
-                                           Foreground="{DynamicResource Brush.TextSecondary}"
-                                           Text="Run local DuckDB SQL over any opened notebook source alias."/>
-
-                                <TextBox x:Name="NotebookQueryTextBox"
-                                         AutomationProperties.Name="DuckDB SQL query"
-                                         Margin="0,6,0,8"
-                                         Height="112"
-                                         AcceptsReturn="True"
-                                         VerticalScrollBarVisibility="Auto"
-                                         HorizontalScrollBarVisibility="Auto"
-                                         FontFamily="Consolas"
-                                         TextWrapping="NoWrap"/>
-
-                                <Border Margin="0,2,0,8"
-                                    Padding="10"
-                                    Background="{DynamicResource Brush.Pane}"
-                                    BorderBrush="{DynamicResource Brush.Border}"
-                                    BorderThickness="1"
-                                    CornerRadius="8">
-                                    <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <Button x:Name="RunNotebookQueryButton"
-                                        Grid.Row="0"
-                                        Grid.Column="0"
-                                        Content="Run Query"
-                                        Padding="14,6"
-                                        Margin="0,0,8,8"
-                                        Click="OnRunNotebookQueryClick"/>
-
-                                    <Button x:Name="MaterializeWorkingSetButton"
-                                        Grid.Row="0"
-                                        Grid.Column="1"
-                                        Content="Load as Working Set"
-                                        Padding="14,6"
-                                        Margin="0,0,8,8"
-                                        Click="OnMaterializeWorkingSetClick"/>
-
-                                    <Menu Grid.Row="0"
-                                          Grid.Column="2"
-                                          VerticalAlignment="Center"
-                                          Background="Transparent"
-                                          BorderThickness="0"
-                                          Margin="0,0,0,8">
-                                        <MenuItem Header="Notebook Actions ▾"
-                                              Padding="10,4"
-                                              Background="{DynamicResource Brush.Card}"
-                                              BorderBrush="{DynamicResource Brush.Border}"
-                                              BorderThickness="1">
-                                        <MenuItem x:Name="SaveNotebookQueryButton"
-                                              Header="Save Current Query"
-                                              Click="OnSaveNotebookQueryClick"/>
-                                        <MenuItem x:Name="LoadSavedNotebookQueryButton"
-                                              Header="Load Selected Saved Query"
-                                              Click="OnLoadSavedNotebookQueryClick"/>
-                                        <MenuItem x:Name="DeleteSavedNotebookQueryButton"
-                                              Header="Delete Selected Saved Query"
-                                              Click="OnDeleteSavedNotebookQueryClick"/>
-                                        <Separator/>
-                                        <MenuItem x:Name="NotebookExportButton"
-                                              Header="Export Current Scope..."
-                                              Click="OnNotebookExportClick"/>
-                                        <Separator/>
-                                        <MenuItem x:Name="NullEmptyCheckButton"
-                                              Header="Run Null / Empty Check"
-                                              Click="OnNotebookNullEmptyCheckClick"/>
-                                        <MenuItem x:Name="DuplicateCheckButton"
-                                              Header="Run Duplicate Check"
-                                              Click="OnNotebookDuplicateCheckClick"/>
-                                        <MenuItem x:Name="RegexCheckButton"
-                                              Header="Run Regex Check"
-                                              Click="OnNotebookRegexCheckClick"/>
-                                        <Separator/>
-                                        <MenuItem x:Name="SaveSchemaTemplateButton"
-                                              Header="Save Schema Template"
-                                              Click="OnSaveSchemaTemplateClick"/>
-                                        <MenuItem x:Name="ValidateSchemaTemplateButton"
-                                              Header="Validate Selected Template"
-                                              Click="OnValidateSchemaTemplateClick"/>
-                                        </MenuItem>
-                                    </Menu>
-
-                                    <StackPanel Grid.Row="1"
-                                            Grid.Column="0"
-                                            Grid.ColumnSpan="3"
-                                            Orientation="Horizontal"
-                                            VerticalAlignment="Center">
-                                        <TextBlock Text="Saved Query"
-                                               VerticalAlignment="Center"
-                                               Foreground="{DynamicResource Brush.TextSecondary}"
-                                               Margin="0,0,8,0"/>
-                                        <ComboBox x:Name="SavedNotebookQueriesComboBox"
-                                                  AutomationProperties.Name="Saved query"
-                                              Width="250"
-                                              Margin="0,0,16,0"
-                                              DisplayMemberPath="Name"/>
-                                        <TextBlock Text="Schema Template"
-                                               VerticalAlignment="Center"
-                                               Foreground="{DynamicResource Brush.TextSecondary}"
-                                               Margin="0,0,8,0"/>
-                                        <ComboBox x:Name="SchemaTemplatesComboBox"
-                                                  AutomationProperties.Name="Schema template"
-                                              Width="250"
-                                              DisplayMemberPath="Name"/>
-                                    </StackPanel>
-                                    </Grid>
-                                </Border>
 
                                 <WrapPanel VerticalAlignment="Center">
                                     <Button x:Name="PreviewPreviousPageButton"
@@ -602,8 +655,13 @@
                                     <Button x:Name="PreviewNextPageButton"
                                             Content="Next Page"
                                             Padding="12,5"
-                                            Margin="0,0,12,0"
+                                            Margin="0,0,8,0"
                                             Click="OnPreviewNextPageClick"/>
+                                    <Button x:Name="MaterializeWorkingSetButton"
+                                            Content="Load as Working Set"
+                                            Padding="12,5"
+                                            Margin="0,0,12,0"
+                                            Click="OnMaterializeWorkingSetClick"/>
                                     <TextBlock x:Name="PreviewPageStatusText"
                                                VerticalAlignment="Center"
                                                Foreground="{DynamicResource Brush.TextSecondary}"
@@ -615,6 +673,45 @@
                                            Foreground="{DynamicResource Brush.TextSecondary}"
                                            TextWrapping="Wrap"/>
                             </StackPanel>
+
+                            <!-- Unsaved changes -->
+                            <Border x:Name="QueryHubPendingBar"
+                                    Grid.Row="2"
+                                    Grid.ColumnSpan="3"
+                                    Margin="0,10,0,0"
+                                    Padding="10,6"
+                                    CornerRadius="6"
+                                    Background="{DynamicResource Brush.WarningBg}"
+                                    BorderBrush="{DynamicResource Brush.WarningBorder}"
+                                    BorderThickness="1"
+                                    Visibility="Collapsed">
+                                <DockPanel LastChildFill="True">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                        <Button x:Name="SaveHubChangesButton"
+                                                Content="Save"
+                                                Padding="12,3"
+                                                Margin="8,0,0,0"
+                                                ToolTip="Write the changed sources back to their files"
+                                                Click="OnSaveHubChangesClick"/>
+                                        <Button x:Name="UndoHubChangeButton"
+                                                Content="Undo"
+                                                Padding="12,3"
+                                                Margin="8,0,0,0"
+                                                Click="OnUndoHubChangeClick"/>
+                                        <Button x:Name="DiscardHubChangesButton"
+                                                Content="Discard"
+                                                Padding="12,3"
+                                                Margin="8,0,0,0"
+                                                ToolTip="Return the changed sources to their saved files"
+                                                Click="OnDiscardHubChangesClick"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="QueryHubPendingText"
+                                               VerticalAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Brush.WarningText}"/>
+                                </DockPanel>
+                            </Border>
                         </Grid>
                     </Border>
 

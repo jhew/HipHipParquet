@@ -89,8 +89,8 @@ A typical pass over a file you've been handed:
 
 1. **Open it.** The File Summary card shows rows, columns, size and completeness straight away.
 2. **Score it.** Quality Review rates the data out of 100 and lists findings by severity. Start with the ones marked Needs Review.
-3. **Check your own rules.** In the Query Hub, **Notebook Actions** check for nulls and empty values, duplicate rows on the columns you choose, and values that don't match a regular expression. To check that a file has the columns and types you expect, save a schema template from a known-good file and validate new files against it. Missing columns, changed types and columns that have become nullable are reported.
-4. **Fix it in the grid.** For example: **Delete Duplicate Rows**, **Trim Whitespace**, **Set to Null** or **Replace in Selection**, or edit a cell directly. Ctrl+Z undoes the last edit. For changes too large to make by hand, write a SQL query and use **Load Current Scope as Working Set** to make its result the editable data.
+3. **Check your own rules.** In the Query Hub, the **Actions** menu checks for nulls and empty values, duplicate rows on the columns you choose, and values that don't match a regular expression. To check that a file has the columns and types you expect, save a schema template from a known-good file and validate new files against it. Missing columns, changed types and columns that have become nullable are reported.
+4. **Fix it in the grid.** For example: **Delete Duplicate Rows**, **Trim Whitespace**, **Set to Null** or **Replace in Selection**, or edit a cell directly. Ctrl+Z undoes the last edit. For changes too large to make by hand, run SQL in the Query Hub: `UPDATE`, `DELETE` and `INSERT` change the data, and the Hub's **Save** writes it back to the file.
 5. **Check again.** A **Refresh recommended** badge appears on Quality Review once you've changed the data. Refresh it to confirm the findings have gone.
 6. **Save.** Ctrl+S writes back to the original file, keeping each column's type where the format allows. Use **Save As** to keep the original untouched, and export the HTML report if someone else needs to see the results.
 
@@ -101,9 +101,9 @@ Everything above applies to data files. Markdown files (`.md`) are a separate th
 | | Data file (Parquet, CSV, JSON, Excel) | Markdown file (`.md`) |
 | --- | --- | --- |
 | **Opens in** | The grid, with the Query Hub and Quality Review alongside | The Markdown Helper, docked beside the grid or in its own window |
-| **Checking** | Quality Review score and findings, Notebook Actions, schema templates | A live preview shows how the document will look. Nothing checks the text for mistakes. |
-| **Fixing** | Row and cell operations in the grid, or a SQL query loaded as the working set | Edit the text |
-| **Undo** | Ctrl+Z in the grid undoes the last data edit | Ctrl+Z in the editor undoes typing |
+| **Checking** | Quality Review score and findings, Query Hub checks, schema templates | A live preview shows how the document will look. Nothing checks the text for mistakes. |
+| **Fixing** | Row and cell operations in the grid, or SQL statements in the Query Hub | Edit the text |
+| **Undo** | Ctrl+Z in the grid undoes the last data edit; the Query Hub's **Undo** reverts its last statement | Ctrl+Z in the editor undoes typing |
 | **Saving** | Ctrl+S, Save As or Export As | The helper's own **Save** and **Save As** buttons |
 
 > [!NOTE]
@@ -129,12 +129,15 @@ On startup the app restores your last workspace: the file, pane sizes and visibi
 
 ### Ask it a question in SQL — the Query Hub
 
-The Query Hub sits above the grid and runs [DuckDB](https://duckdb.org) SQL against your local files. Register one or more files as named aliases and query or join across them with standard SQL. There is no import step and no database to run.
+The Query Hub sits above the grid and runs [DuckDB](https://duckdb.org) SQL against your local files. Every file you open becomes a named alias, and you can query or join across them with standard SQL. There is no import step and no database to run.
 
-- Query results open as a **Read-Only Preview**. Use **Load Current Scope as Working Set** to make them the editable data in the grid.
+- **Change data, not just read it.** Besides `SELECT`, the Hub runs `INSERT`, `UPDATE`, `DELETE`, `MERGE` and `TRUNCATE`, and `CREATE`, `ALTER` and `DROP` for tables and views. Separate statements with `;` to run a script; if any statement fails, none of the script is applied.
+- **Your files change only when you save.** Statements change a copy of the file held in the session. A bar lists the sources with unsaved changes, with **Save** to write them back, **Undo** to revert the last statement, and **Discard** to return to the saved file. A source with unsaved Query Hub changes is read-only in the grid until you save or discard them. `DROP` removes a source from the session, never the file.
+- Press **Ctrl+Enter** to run the whole script or **Ctrl+Shift+Enter** to run the selection. Expand a source to see its columns, and click one to insert its name.
+- Query results open as a **Read-Only Preview**. Use **Load as Working Set** to make them the editable data in the grid, or right-click a source and choose **Save As** to write it to a file.
 - Save frequently used queries by name and load them again later.
-- Each transformation and query step is recorded as a notebook block that you can remove individually or clear in bulk.
-- **Notebook Actions** run one-click checks for nulls and empty values, duplicates, and regex pattern matches.
+- The **History** list records each statement, its result and each save; select an entry to reopen its source and SQL.
+- The **Actions** menu runs one-click checks for nulls and empty values, duplicates, and regex pattern matches.
 - **Schema templates**: save the schema of a known-good file, then validate incoming files against it.
 - Collapse the Query Hub to a slim bar when you need the grid space.
 
