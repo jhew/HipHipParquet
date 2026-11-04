@@ -25,6 +25,8 @@ public partial class MainWindow : Window
 {
     private const double MaxQualityPaneWidthCap = 1300;
     private const string RowNumberColumnName = "__RowNumber";
+    /// <summary>Row the last plain or Ctrl click on a "#" cell landed on; Shift+click extends from it.</summary>
+    private object? _rowNumberSelectionAnchor;
     private const string SourceFileColumnName = "__SourceFile";
     private const string DuckDbFilenameColumnName = "filename";
     public static readonly RoutedUICommand GoToRowCommand = new("Go to Row", "GoToRow", typeof(MainWindow));
@@ -3881,9 +3883,55 @@ public partial class MainWindow : Window
         cellStyle.Setters.Add(new Setter(Control.BackgroundProperty, ThemeBrushes.Pane));
         cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, ThemeBrushes.TextSecondary));
         cellStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+        cellStyle.Setters.Add(new EventSetter(UIElement.PreviewMouseLeftButtonDownEvent,
+            new MouseButtonEventHandler(OnRowNumberCellMouseLeftButtonDown)));
         col.CellStyle = cellStyle;
 
         return col;
+    }
+
+    /// <summary>
+    /// A click on a "#" cell selects the whole row, as the row header does: Ctrl toggles the row,
+    /// Shift selects the range from the last row clicked.
+    /// </summary>
+    private void OnRowNumberCellMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not DataGridCell cell || cell.DataContext is not { } item || item == System.Windows.Data.CollectionView.NewItemPlaceholder)
+            return;
+
+        var modifiers = Keyboard.Modifiers;
+        var anchorIndex = _rowNumberSelectionAnchor == null ? -1 : DataGrid.Items.IndexOf(_rowNumberSelectionAnchor);
+
+        if (modifiers.HasFlag(ModifierKeys.Shift) && anchorIndex >= 0)
+        {
+            var index = DataGrid.Items.IndexOf(item);
+            if (!modifiers.HasFlag(ModifierKeys.Control))
+            {
+                DataGrid.UnselectAllCells();
+                DataGrid.UnselectAll();
+            }
+            for (int i = Math.Min(anchorIndex, index); i <= Math.Max(anchorIndex, index); i++)
+                DataGrid.SelectedItems.Add(DataGrid.Items[i]);
+        }
+        else if (modifiers.HasFlag(ModifierKeys.Control))
+        {
+            if (DataGrid.SelectedItems.Contains(item))
+                DataGrid.SelectedItems.Remove(item);
+            else
+                DataGrid.SelectedItems.Add(item);
+            _rowNumberSelectionAnchor = item;
+        }
+        else
+        {
+            DataGrid.UnselectAllCells();
+            DataGrid.UnselectAll();
+            DataGrid.SelectedItems.Add(item);
+            _rowNumberSelectionAnchor = item;
+        }
+
+        DataGrid.CurrentCell = new DataGridCellInfo(item, cell.Column);
+        DataGrid.Focus();
+        e.Handled = true;
     }
 
     private void OnGoToRowButtonClick(object sender, RoutedEventArgs e)
