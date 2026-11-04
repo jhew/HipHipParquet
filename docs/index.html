@@ -511,9 +511,10 @@ footer.site{border-top:1px solid var(--line);padding:34px 0;margin-top:0}
     <div class="cap flip">
       <div class="cap-text">
         <h3>Ask it a real question, in SQL</h3>
-        <p>The Query Hub sits above the grid and runs DuckDB against your opened files. Register them as named aliases and join across them. Results open as a read-only preview; <em>Load Current Scope as Working Set</em> promotes them to the thing you're editing. Queries you run often get saved by name, and every step lands as a notebook block you can reopen or clear.</p>
+        <p>The Query Hub sits above the grid and runs DuckDB against your opened files. Each file is a named alias you can query, join, and change: <code>UPDATE</code>, <code>DELETE</code>, <code>INSERT</code>, and <code>CREATE</code>, <code>ALTER</code> or <code>DROP</code> for tables. Changes land in a session copy, with undo one statement at a time, and reach the file only when you save. Queries you run often get saved by name, and every statement lands in a history you can reopen or clear.</p>
         <ul class="spec">
           <li><code>DuckDB</code><span>standard SQL over local files — no import step, no database to run</span></li>
+          <li><code>save · undo</code><span>change data in a session copy; undo a statement, discard, or save it back to the file</span></li>
           <li><code>aliases</code><span>register several files at once and query across them together</span></li>
           <li><code>one click</code><span>checks for nulls and empties, duplicates, and regex pattern matches</span></li>
           <li><code>templates</code><span>save a schema from a known-good file and validate incoming files against it</span></li>

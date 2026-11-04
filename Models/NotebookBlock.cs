@@ -6,7 +6,9 @@ public enum NotebookBlockKind
     Query,
     Result,
     Validation,
-    Export
+    Export,
+    /// <summary>A Query Hub statement that changed, created or dropped a table or view.</summary>
+    Change
 }
 
 public class NotebookBlock
@@ -18,6 +20,8 @@ public class NotebookBlock
     public string? SourceAlias { get; set; }
     public string? Sql { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    public string TimeLabel => CreatedAtUtc.ToLocalTime().ToString("HH:mm");
 
     public string TimelineLabel
         => $"{CreatedAtUtc.ToLocalTime():HH:mm} [{Kind}] {Title} - {Summary}";

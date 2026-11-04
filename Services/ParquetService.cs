@@ -855,44 +855,12 @@ public class ParquetService : IDisposable
                 throw;
             }
             
-            // Export to a temporary sibling file, then atomically replace the target.
-            var exportFormat = FileFormatDetector.GetDuckDbExportFormat(format);
-            var exportOptions = FileFormatDetector.GetDuckDbExportOptions(format);
-            var resolvedFilePath = Path.GetFullPath(filePath);
-            var dir = Path.GetDirectoryName(resolvedFilePath)!;
-            var tempFileName = $".~{Path.GetFileNameWithoutExtension(resolvedFilePath)}-{Guid.NewGuid():N}{Path.GetExtension(resolvedFilePath)}";
-            var tempFilePath = Path.Combine(dir, tempFileName);
-            var normalizedTempPath = tempFilePath.Replace("\\", "/");
-            var escapedTempPath = normalizedTempPath.Replace("'", "''");
             var exportSource = format == SupportedFileFormat.Excel
-                ? $"(SELECT {BuildExcelColumnList(dataCols, columnTypes)} FROM {tempTableName})"
+                ? $"(SELECT {BuildExcelColumnList(dataCols.Select(c => c.ColumnName).ToList(), columnTypes)} FROM {tempTableName})"
                 : tempTableName;
-            var exportSql = $"COPY {exportSource} TO '{escapedTempPath}' (FORMAT {exportFormat}{exportOptions})";
-            _logger.LogDebug("Exporting to {Format}: {SQL}", formatName, exportSql);
-            
-            using (var exportCommand = new DuckDBCommand(exportSql, _connection))
-            {
-                await exportCommand.ExecuteNonQueryAsync();
-            }
+            _logger.LogDebug("Exporting {Format} from {Source}", formatName, exportSource);
+            await CopyToFileAtomicallyAsync(_connection, exportSource, filePath);
 
-            // Validate the temp file was written successfully before replacing
-            if (!File.Exists(tempFilePath) || new FileInfo(tempFilePath).Length == 0)
-            {
-                try { File.Delete(tempFilePath); } catch { /* best-effort cleanup */ }
-                throw new IOException("Export produced an empty or missing file.");
-            }
-
-            // Atomic replace: move temp file over the original
-            try
-            {
-                File.Move(tempFilePath, resolvedFilePath, overwrite: true);
-            }
-            catch
-            {
-                try { File.Delete(tempFilePath); } catch { /* best-effort cleanup */ }
-                throw;
-            }
-            
             // Clean up temporary table
             var dropSql = $"DROP TABLE {tempTableName}";
             using (var dropCommand = new DuckDBCommand(dropSql, _connection))
@@ -952,10 +920,49 @@ public class ParquetService : IDisposable
     /// structs), so anything it can't write natively goes out as text. Wide decimals go out as
     /// DOUBLE instead, since Excel stores every number as one anyway.
     /// </summary>
-    private static string BuildExcelColumnList(IReadOnlyList<DataColumn> columns, IReadOnlyList<string> columnTypes)
-        => string.Join(", ", columns.Select((col, i) =>
+    /// <summary>
+    /// Writes <paramref name="exportSource"/> (a table name or a parenthesized query) to
+    /// <paramref name="filePath"/> in the format its extension names. It goes to a temporary
+    /// sibling file first, which then replaces the target, so a failed write leaves the file intact.
+    /// </summary>
+    internal static async Task CopyToFileAtomicallyAsync(
+        DuckDBConnection connection, string exportSource, string filePath, CancellationToken cancellationToken = default)
+    {
+        var format = FileFormatDetector.DetectFormat(filePath);
+        var exportFormat = FileFormatDetector.GetDuckDbExportFormat(format);
+        var exportOptions = FileFormatDetector.GetDuckDbExportOptions(format);
+        var resolvedFilePath = Path.GetFullPath(filePath);
+        var dir = Path.GetDirectoryName(resolvedFilePath)!;
+        var tempFileName = $".~{Path.GetFileNameWithoutExtension(resolvedFilePath)}-{Guid.NewGuid():N}{Path.GetExtension(resolvedFilePath)}";
+        var tempFilePath = Path.Combine(dir, tempFileName);
+        var escapedTempPath = tempFilePath.Replace("\\", "/").Replace("'", "''");
+
+        using (var exportCommand = new DuckDBCommand($"COPY {exportSource} TO '{escapedTempPath}' (FORMAT {exportFormat}{exportOptions})", connection))
+            await exportCommand.ExecuteNonQueryAsync(cancellationToken);
+
+        // Validate the temp file was written successfully before replacing
+        if (!File.Exists(tempFilePath) || new FileInfo(tempFilePath).Length == 0)
         {
-            var name = EscapeDuckDbIdentifier(col.ColumnName);
+            try { File.Delete(tempFilePath); } catch { /* best-effort cleanup */ }
+            throw new IOException("Export produced an empty or missing file.");
+        }
+
+        // Atomic replace: move temp file over the original
+        try
+        {
+            File.Move(tempFilePath, resolvedFilePath, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tempFilePath); } catch { /* best-effort cleanup */ }
+            throw;
+        }
+    }
+
+    internal static string BuildExcelColumnList(IReadOnlyList<string> columnNames, IReadOnlyList<string> columnTypes)
+        => string.Join(", ", columnNames.Select((columnName, i) =>
+        {
+            var name = EscapeDuckDbIdentifier(columnName);
             var type = columnTypes[i];
             if (ExcelNativeTypes.Contains(type))
                 return name;

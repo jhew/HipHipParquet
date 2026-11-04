@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace HipHipParquet.Services;
 
-public sealed class NotebookSessionService : IDisposable
+public sealed partial class NotebookSessionService : IDisposable
 {
     private readonly ILogger<NotebookSessionService> _logger;
     private readonly Dictionary<string, NotebookSource> _sources = new(StringComparer.OrdinalIgnoreCase);
@@ -75,9 +75,11 @@ public sealed class NotebookSessionService : IDisposable
             readerExpr = BuildParquetReaderExpression(filePaths);
         }
 
+        // Sources live in the main schema, where a user's CREATE TABLE also lands, so a created
+        // table can't silently shadow (or be shadowed by) an opened file of the same name.
         await ExecuteNonQueryAsync(
             connection,
-            $"CREATE OR REPLACE TEMP VIEW {ParquetService.EscapeDuckDbIdentifier(alias)} AS SELECT * FROM {readerExpr}");
+            $"CREATE OR REPLACE VIEW {ParquetService.EscapeDuckDbIdentifier(alias)} AS SELECT * FROM {readerExpr}");
 
         var columns = knownColumns?.ToList() ?? await DescribeSourceAsync(alias);
         var rowCount = knownRowCount ?? await GetSourceRowCountAsync(alias);
@@ -93,7 +95,8 @@ public sealed class NotebookSessionService : IDisposable
             CsvOptions = csvOptions,
             JsonOptions = jsonOptions,
             RowCount = rowCount,
-            Columns = columns
+            Columns = columns,
+            ReaderExpression = readerExpr
         };
 
         _sources[alias] = source;
@@ -109,7 +112,7 @@ public sealed class NotebookSessionService : IDisposable
 
         await ExecuteNonQueryAsync(
             connection,
-            $"CREATE OR REPLACE TEMP TABLE {escapedAlias} AS {normalizedSql}");
+            $"CREATE OR REPLACE TABLE {escapedAlias} AS {normalizedSql}");
 
         var columns = await DescribeSourceAsync(alias);
         var rowCount = await GetSourceRowCountAsync(alias);
