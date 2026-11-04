@@ -164,6 +164,48 @@ public static class DuckDbValueHelper
         _ => ToDisplayString(value)
     };
 
+    /// <summary>
+    /// Text a column filter matches on: what <c>Convert(col, 'System.String')</c> yields in a
+    /// DataView RowFilter, which is also what the grid shows. DuckDB's VARCHAR cast can differ,
+    /// e.g. a DECIMAL(38,5) 10 casts to "10.00000" but reads into .NET as 10m ("10").
+    /// Returns null for nested and BLOB values, whose .NET text is just a type name.
+    /// </summary>
+    public static string? ToFilterText(object? value, IFormatProvider? provider = null)
+    {
+        provider ??= System.Globalization.CultureInfo.CurrentCulture;
+        return value switch
+        {
+            IConvertible convertible => convertible.ToString(provider),
+            IFormattable formattable => formattable.ToString(null, provider),
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Reads rows of (typed value, VARCHAR cast) into filter keys and their grid text. Keys are
+    /// DuckDB's VARCHAR text, which the SQL filters and saved views compare on; the grid text is
+    /// taken from the value as DuckDB.NET loads it, so it matches the in-memory filter exactly.
+    /// </summary>
+    public static async Task<(List<string> Keys, Dictionary<string, string> GridTexts)> ReadFilterValuesAsync(
+        DbDataReader reader, CancellationToken cancellationToken = default)
+    {
+        var keys = new List<string>();
+        var gridTexts = new Dictionary<string, string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (reader.IsDBNull(1))
+                continue;
+
+            var key = reader.GetString(1);
+            if (gridTexts.ContainsKey(key))
+                continue;
+
+            gridTexts[key] = ToFilterText(MaterializeValue(reader, 0)) ?? key;
+            keys.Add(key);
+        }
+        return (keys, gridTexts);
+    }
+
     public static string FormatHex(byte[] bytes, int maxBytes = MaxDisplayBytes)
     {
         if (bytes.Length == 0)

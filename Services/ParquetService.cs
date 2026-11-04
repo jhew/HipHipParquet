@@ -541,14 +541,17 @@ public class ParquetService : IDisposable
 
     /// <summary>
     /// Gets distinct values for a column from the full dataset (not just loaded rows).
-    /// Returns up to maxValues results, with total distinct count and a truncation flag.
+    /// Returns up to maxValues results as DuckDB VARCHAR text, the grid text of each,
+    /// the total distinct count and a truncation flag. When <paramref name="rowFilter"/> is given,
+    /// only rows passing it count, so a dropdown lists what the other filters leave.
     /// </summary>
-    public async Task<(List<string> Values, int TotalDistinct, bool Truncated)> GetDistinctValuesAsync(
+    public async Task<(List<string> Values, Dictionary<string, string> GridTexts, int TotalDistinct, bool Truncated)> GetDistinctValuesAsync(
         string filePath,
         string columnName,
         CsvImportOptions? csvOptions = null,
         JsonImportOptions? jsonOptions = null,
         int maxValues = 500,
+        GridQueryState? rowFilter = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -564,6 +567,8 @@ public class ParquetService : IDisposable
                 await EnsureExcelExtensionAsync(connection);
 
             var readerExpr = FileFormatDetector.GetDuckDbReaderExpression(normalizedPath, format, csvOptions, jsonOptions);
+            if (rowFilter != null)
+                readerExpr = $"(SELECT * FROM {readerExpr}{BuildSqlWhereClause(rowFilter)}) AS filtered";
 
             var escapedColId = columnName.Replace("\"", "\"\"");
 
@@ -584,15 +589,10 @@ public class ParquetService : IDisposable
             var valueLimit = hasNulls ? Math.Max(1, maxValues - 1) : maxValues;
 
             // Get distinct non-blank values
-            var valuesSql = $"SELECT DISTINCT CAST(\"{escapedColId}\" AS VARCHAR) FROM {readerExpr} WHERE \"{escapedColId}\" IS NOT NULL AND TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) <> '' ORDER BY 1 LIMIT {valueLimit}";
-            var values = new List<string>();
+            var valuesSql = $"SELECT DISTINCT \"{escapedColId}\", CAST(\"{escapedColId}\" AS VARCHAR) FROM {readerExpr} WHERE \"{escapedColId}\" IS NOT NULL AND TRIM(CAST(\"{escapedColId}\" AS VARCHAR)) <> '' ORDER BY 2 LIMIT {valueLimit}";
             using var valuesCmd = new DuckDBCommand(valuesSql, connection);
             using var reader = await valuesCmd.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                if (!reader.IsDBNull(0))
-                    values.Add(reader.GetString(0));
-            }
+            var (values, gridTexts) = await DuckDbValueHelper.ReadFilterValuesAsync(reader, cancellationToken);
 
             if (hasNulls)
                 values.Insert(0, "(Blank)");
@@ -602,7 +602,7 @@ public class ParquetService : IDisposable
             var truncated = values.Count >= maxValues && totalDistinct > maxValues;
 
             _logger.LogDebug("Distinct values for {Column}: {Count}/{Total} (truncated: {Truncated})", columnName, values.Count, totalDistinct, truncated);
-            return (values, totalDistinct, truncated);
+            return (values, gridTexts, totalDistinct, truncated);
         }
         catch (Exception ex)
         {
