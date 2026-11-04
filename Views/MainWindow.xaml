@@ -270,7 +270,19 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <StackPanel Grid.Row="0" Margin="12,10,12,6">
-                        <TextBlock Text="Schema Explorer" Style="{StaticResource PaneTitle}"/>
+                        <DockPanel LastChildFill="False">
+                            <TextBlock Text="Schema Explorer" Style="{StaticResource PaneTitle}"/>
+                            <Button Content="◂"
+                                    Width="24"
+                                    Height="24"
+                                    Margin="8,0,0,0"
+                                    Padding="0"
+                                    FontWeight="Bold"
+                                    ToolTip="Hide Schema Explorer"
+                                    AutomationProperties.Name="Hide Schema Explorer"
+                                    Click="OnHideSchemaPaneClick"
+                                    DockPanel.Dock="Right"/>
+                        </DockPanel>
                         <TextBlock Text="Browse and search inferred column structure" Margin="0,2,0,8" Style="{StaticResource PaneSubtitle}"/>
                         <Grid>
                             <TextBox x:Name="SchemaSearchBox"
@@ -348,7 +360,7 @@
                 
                 <GridSplitter x:Name="MarkdownHelperSplitter" Grid.Row="1" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="{DynamicResource Brush.Border}" Visibility="Collapsed"/>
                 <Border x:Name="MarkdownHelperHost" Grid.Row="2" Margin="12,4,12,10" Style="{StaticResource PaneChrome}" Visibility="Collapsed" MinHeight="220">
-                    <local:MarkdownHelperPanel x:Name="EmbeddedMarkdownHelper" PopOutRequested="OnMarkdownHelperPopOutRequested" FocusModeToggleRequested="OnMarkdownHelperFocusModeToggleRequested"/>
+                    <local:MarkdownHelperPanel x:Name="EmbeddedMarkdownHelper" PopOutRequested="OnMarkdownHelperPopOutRequested" FocusModeToggleRequested="OnMarkdownHelperFocusModeToggleRequested" HideRequested="OnMarkdownHelperHideRequested"/>
                 </Border>
 
                 <!-- Data Grid -->
@@ -757,7 +769,7 @@
 
             <!-- Quality Review Panel -->
             <Border x:Name="QualityPanelShell" Grid.Column="4" Margin="4,10,8,10" Style="{StaticResource PaneChrome}" Padding="0">
-                <views:QualityReviewPanel x:Name="QualityReviewPanel" Visibility="Visible"/>
+                <views:QualityReviewPanel x:Name="QualityReviewPanel" Visibility="Visible" HideRequested="OnHideQualityPanelRequested"/>
             </Border>
         </Grid>
 

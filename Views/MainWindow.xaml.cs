@@ -268,7 +268,6 @@ public partial class MainWindow : Window
         NotebookSourcesList.ItemsSource = _notebookSources;
         NotebookBlocksList.ItemsSource = _notebookBlocks;
         NotebookSourceHintText.Text = "Open a source to start building local notebook steps.";
-        NotebookLastCheckText.Text = "Trust checks run locally against the active source or query result.";
 
         NotebookQueryTextBox.TextChanged += (_, _) => UpdateNotebookUiState();
         SavedNotebookQueriesComboBox.SelectionChanged += (_, _) => UpdateNotebookUiState();
@@ -1714,53 +1713,65 @@ public partial class MainWindow : Window
     private void OnToggleSchemaPaneClick(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem menuItem)
+            SetSchemaPaneVisible(menuItem.IsChecked);
+    }
+
+    private void OnHideSchemaPaneClick(object sender, RoutedEventArgs e) => SetSchemaPaneVisible(false);
+
+    /// <summary>Shows or hides the Schema Explorer and keeps its View menu check in step.</summary>
+    private void SetSchemaPaneVisible(bool visible)
+    {
+        ToggleSchemaPaneMenuItem.IsChecked = visible;
+
+        if (visible)
         {
-            if (menuItem.IsChecked)
-            {
-                // Show schema pane
-                SchemaPane.Visibility = Visibility.Visible;
-                SchemaSplitter.Visibility = Visibility.Visible;
-                MainContentGrid.ColumnDefinitions[0].Width = new GridLength(250);
-                MainContentGrid.ColumnDefinitions[0].MinWidth = 200;
-                MainContentGrid.ColumnDefinitions[1].Width = new GridLength(5);
-            }
-            else
-            {
-                // Hide schema pane completely
-                SchemaPane.Visibility = Visibility.Collapsed;
-                SchemaSplitter.Visibility = Visibility.Collapsed;
-                MainContentGrid.ColumnDefinitions[0].MinWidth = 0;
-                MainContentGrid.ColumnDefinitions[0].Width = new GridLength(0);
-                MainContentGrid.ColumnDefinitions[1].Width = new GridLength(0);
-            }
+            SchemaPane.Visibility = Visibility.Visible;
+            SchemaSplitter.Visibility = Visibility.Visible;
+            SchemaPaneColumn.Width = new GridLength(250);
+            SchemaPaneColumn.MinWidth = 200;
+            SchemaSplitterColumn.Width = new GridLength(5);
+        }
+        else
+        {
+            SchemaPane.Visibility = Visibility.Collapsed;
+            SchemaSplitter.Visibility = Visibility.Collapsed;
+            SchemaPaneColumn.MinWidth = 0;
+            SchemaPaneColumn.Width = new GridLength(0);
+            SchemaSplitterColumn.Width = new GridLength(0);
         }
     }
-    
+
     private void OnToggleQualityPanelClick(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem menuItem)
+            SetQualityPaneVisible(menuItem.IsChecked);
+    }
+
+    private void OnHideQualityPanelRequested(object? sender, EventArgs e) => SetQualityPaneVisible(false);
+
+    /// <summary>Shows or hides the Quality Review panel and keeps its View menu check in step.</summary>
+    private void SetQualityPaneVisible(bool visible)
+    {
+        ToggleQualityPanelMenuItem.IsChecked = visible;
+
+        if (visible)
         {
-            if (menuItem.IsChecked)
-            {
-                // Show Quality panel
-                QualityPanelShell.Visibility = Visibility.Visible;
-                QualityReviewPanel.Visibility = Visibility.Visible;
-                QualitySplitter.Visibility = Visibility.Visible;
-                QualitySplitterColumn.Width = new GridLength(5);
-                QualityPaneColumn.MinWidth = 300;
-                QualityPaneColumn.Width = new GridLength(420);
-                ClampQualityPaneWidth();
-            }
-            else
-            {
-                // Hide Quality panel
-                QualityPanelShell.Visibility = Visibility.Collapsed;
-                QualityReviewPanel.Visibility = Visibility.Collapsed;
-                QualitySplitter.Visibility = Visibility.Collapsed;
-                QualitySplitterColumn.Width = new GridLength(0);
-                QualityPaneColumn.MinWidth = 0;
-                QualityPaneColumn.Width = new GridLength(0);
-            }
+            QualityPanelShell.Visibility = Visibility.Visible;
+            QualityReviewPanel.Visibility = Visibility.Visible;
+            QualitySplitter.Visibility = Visibility.Visible;
+            QualitySplitterColumn.Width = new GridLength(5);
+            QualityPaneColumn.MinWidth = 300;
+            QualityPaneColumn.Width = new GridLength(420);
+            ClampQualityPaneWidth();
+        }
+        else
+        {
+            QualityPanelShell.Visibility = Visibility.Collapsed;
+            QualityReviewPanel.Visibility = Visibility.Collapsed;
+            QualitySplitter.Visibility = Visibility.Collapsed;
+            QualitySplitterColumn.Width = new GridLength(0);
+            QualityPaneColumn.MinWidth = 0;
+            QualityPaneColumn.Width = new GridLength(0);
         }
     }
 
@@ -6008,6 +6019,8 @@ public partial class MainWindow : Window
 
         ToggleMarkdownHelperEmbedded(mi.IsChecked);
     }
+
+    private void OnMarkdownHelperHideRequested(object? sender, EventArgs e) => ToggleMarkdownHelperEmbedded(false);
 
     private void ToggleMarkdownHelperEmbedded(bool visible)
     {

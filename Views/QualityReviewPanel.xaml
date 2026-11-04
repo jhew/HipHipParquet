@@ -119,10 +119,23 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <StackPanel Grid.Row="0" Margin="0,0,0,6">
-                    <TextBlock Text="Quality Review" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource Brush.TextPrimary}"/>
-                    <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{DynamicResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
+                <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                    <Button Content="▸"
+                            Width="24"
+                            Height="24"
+                            Margin="8,0,0,0"
+                            Padding="0"
+                            FontWeight="Bold"
+                            VerticalAlignment="Top"
+                            ToolTip="Hide Quality Review"
+                            AutomationProperties.Name="Hide Quality Review"
+                            Click="OnHideClick"
+                            DockPanel.Dock="Right"/>
+                    <StackPanel>
+                        <TextBlock Text="Quality Review" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource Brush.TextPrimary}"/>
+                        <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="{DynamicResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </DockPanel>
                 <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Border Background="{DynamicResource Brush.WarningBg}" CornerRadius="12" Padding="8,3" Margin="0,0,8,0"
                             Visibility="{Binding IsProfileStale, Converter={StaticResource BoolToVis}}">
