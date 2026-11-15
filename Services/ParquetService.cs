@@ -1203,7 +1203,9 @@ public class ParquetService : IDisposable
         {
             var lowerBound = profile.Q1.Value - 1.5 * profile.IQR.Value;
             var upperBound = profile.Q3.Value + 1.5 * profile.IQR.Value;
-            var outlierSql = $"SELECT COUNT(*) FROM {src} WHERE {col} IS NOT NULL AND ({col}::DOUBLE < {lowerBound} OR {col}::DOUBLE > {upperBound})";
+            var lower = lowerBound.ToString("R", CultureInfo.InvariantCulture);
+            var upper = upperBound.ToString("R", CultureInfo.InvariantCulture);
+            var outlierSql = $"SELECT COUNT(*) FROM {src} WHERE {col} IS NOT NULL AND ({col}::DOUBLE < {lower} OR {col}::DOUBLE > {upper})";
             using var outlierCmd = new DuckDBCommand(outlierSql, connection);
             profile.OutlierCount = Convert.ToInt64(await outlierCmd.ExecuteScalarAsync());
         }
@@ -1218,7 +1220,7 @@ public class ParquetService : IDisposable
             MIN(LENGTH({col})) AS min_len,
             MAX(LENGTH({col})) AS max_len,
             AVG(LENGTH({col}))::DOUBLE AS avg_len,
-            SUM(CASE WHEN {col} = '' THEN 1 ELSE 0 END) AS empty_count
+            SUM(CASE WHEN {col} = '' THEN 1 ELSE 0 END)::BIGINT AS empty_count
             FROM {src}
             WHERE {col} IS NOT NULL";
 
@@ -1236,8 +1238,8 @@ public class ParquetService : IDisposable
     private async Task ProfileBooleanColumnAsync(DuckDBConnection connection, string src, string col, ColumnProfile profile)
     {
         var sql = $@"SELECT 
-            SUM(CASE WHEN {col} = TRUE THEN 1 ELSE 0 END) AS true_count,
-            SUM(CASE WHEN {col} = FALSE THEN 1 ELSE 0 END) AS false_count
+            SUM(CASE WHEN {col} = TRUE THEN 1 ELSE 0 END)::BIGINT AS true_count,
+            SUM(CASE WHEN {col} = FALSE THEN 1 ELSE 0 END)::BIGINT AS false_count
             FROM {src}
             WHERE {col} IS NOT NULL";
 
@@ -1314,11 +1316,16 @@ public class ParquetService : IDisposable
         var range = profile.Max.Value - profile.Min.Value;
         var bucketSize = range / buckets;
 
-        var sql = $@"SELECT 
-            WIDTH_BUCKET({col}::DOUBLE, {profile.Min.Value}, {profile.Max.Value + 0.001}, {buckets}) AS bucket,
+        // DuckDB has no WIDTH_BUCKET. Buckets are 1-based and equal width; the maximum lands in the
+        // last bucket. Numbers are formatted invariantly so a comma-decimal locale can't break the SQL,
+        // and NaN/infinity are skipped because FLOOR of them can't be cast to an integer.
+        var min = profile.Min.Value.ToString("R", CultureInfo.InvariantCulture);
+        var width = bucketSize.ToString("R", CultureInfo.InvariantCulture);
+        var sql = $@"SELECT
+            LEAST(GREATEST(FLOOR(({col}::DOUBLE - {min}) / {width})::BIGINT + 1, 1), {buckets}) AS bucket,
             COUNT(*) AS cnt
             FROM {src}
-            WHERE {col} IS NOT NULL
+            WHERE {col} IS NOT NULL AND isfinite({col}::DOUBLE)
             GROUP BY bucket
             ORDER BY bucket";
 
