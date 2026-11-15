@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+PackageIdentifier: jhew.HipHipParquet
+PackageVersion: 1.15.0
+PackageLocale: en-US
+Publisher: jhew
+PublisherUrl: https://github.com/jhew
+PublisherSupportUrl: https://github.com/jhew/HipHipParquet/issues
+PackageName: Hip Hip Parquet
+PackageUrl: https://hiphipparquet.com
+License: MIT
+LicenseUrl: https://github.com/jhew/HipHipParquet/blob/main/LICENSE
+ShortDescription: Open, query, score and fix Parquet, CSV, JSON and Excel files locally.
+Description: |-
+  A free Windows desktop app that opens Parquet, CSV, JSON and Excel files, runs SQL
+  across them with DuckDB, scores their quality, and lets you fix problems in the grid
+  and save back, all on your own machine with no account and no service behind it.
+Tags:
+- csv
+- data-quality
+- duckdb
+- excel
+- json
+- parquet
+- sql
+ReleaseNotesUrl: https://github.com/jhew/HipHipParquet/releases/tag/v1.15.0
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0

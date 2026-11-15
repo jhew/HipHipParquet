@@ -62,6 +62,8 @@ Get-FileHash .\HipHipParquet-<version>-Setup.exe -Algorithm SHA256
 
 Compare the result with the matching line in `SHA256SUMS.txt`.
 
+The installer adds **Open in Hip Hip Parquet** to the File Explorer right-click menu for Parquet, CSV, TSV, JSON and Excel files, and lists the app under **Open with**. It only becomes the default app for `.parquet` and `.pqt`, and only when no other app has claimed them. Untick **File Explorer** during setup to skip all of this.
+
 Once installed, **Help › Check for Updates** downloads new versions and verifies the checksum and Authenticode signature before running the installer.
 
 ---
