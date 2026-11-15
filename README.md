@@ -93,6 +93,7 @@ A typical pass over a file you've been handed:
 4. **Fix it in the grid.** For example: **Delete Duplicate Rows**, **Trim Whitespace**, **Set to Null** or **Replace in Selection**, or edit a cell directly. Ctrl+Z undoes the last edit. For changes too large to make by hand, run SQL in the Query Hub: `UPDATE`, `DELETE` and `INSERT` change the data, and the Hub's **Save** writes it back to the file.
 5. **Check again.** A **Refresh recommended** badge appears on Quality Review once you've changed the data. Refresh it to confirm the findings have gone.
 6. **Save.** Ctrl+S writes back to the original file, keeping each column's type where the format allows. Use **Save As** to keep the original untouched, and export the HTML report if someone else needs to see the results.
+7. **Keep the recipe.** **File › Recipe** lists every change you made. Export it as a SQL or Python script to run the same cleanup on next week's file. See [Recipes](#recipes).
 
 ### Data files and Markdown files are handled differently
 
@@ -181,6 +182,19 @@ An opened file is editable. Double-click a cell or start typing. A pending-chang
 - **Export Current Scope** and **Export Selected Rows** write out only what you're looking at.
 
 ![The grid's right-click menu with copy, row and cell operations](docs/assets/shot-edit.png)
+
+### Recipes
+
+Every change you make is recorded as a step in the session's recipe. Open it from **File › Recipe**. Undo, Discard and Save keep it in step with the data, so the list shows only changes that are still in effect.
+
+| Change | Recorded as |
+| --- | --- |
+| **Trim Whitespace**, **Replace in Selection** or **Set to Null** when the selection covers every row of each column, in a working set that holds the whole file (one loaded with no filters applied) | A rule, such as *Trim whitespace in customer_name*. Trim and Replace become rules only for text columns. |
+| **Delete Duplicate Rows** on a working set that holds the whole file | A rule: delete duplicates on the chosen columns, keeping the first |
+| `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `CREATE`, `ALTER` and `DROP` run in the Query Hub | The statement, as you wrote it |
+| Anything done to picked cells or rows: a typed edit, Fill Down, deleting or inserting rows, or an action on part of a column | A hand edit. It's listed but not exported, because those rows won't be the same in another file. |
+
+**Export SQL** writes a DuckDB script that reads the files, applies each step and writes `<name>.cleaned.<ext>` next to the original. Run it with `duckdb -f recipe.sql`. **Export Python** writes a script that runs the same SQL through the `duckdb` package and returns the results as Polars DataFrames. Both scripts are plain text, so you can read them, edit the file paths and keep them with your project. Neither needs Hip Hip Parquet.
 
 ### Copy out in the format you need
 
