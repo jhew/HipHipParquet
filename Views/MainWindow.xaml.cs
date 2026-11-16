@@ -56,6 +56,14 @@ public partial class MainWindow : Window
     private readonly List<EditUndoSnapshot> _undoHistory = [];
     private const int MaxUndoHistory = 20;
 
+    // ── Recipe: every change as a step that can be exported and replayed ──
+    private readonly RecipeLog _recipe = new();
+    /// <summary>Query Hub alias of the source the grid's working set came from.</summary>
+    private string? _workingSetAlias;
+    /// <summary>True when the working set holds every row of an opened file, so a grid
+    /// action that covers a whole column can be recorded as a rule for that file.</summary>
+    private bool _workingSetIsWholeFile;
+
     // ── Column filter state (Fabric Lakehouse-style dropdowns) ────────────
     private readonly Dictionary<string, ColumnFilterState> _columnFilters = new();
     private const int MaxDistinctValues = 500;
@@ -764,6 +772,9 @@ public partial class MainWindow : Window
             DataGrid.IsReadOnly = false;
             UpdateEditMenuState();
             UpdateContextMenuState();
+
+            _workingSetAlias = source.Alias;
+            _workingSetIsWholeFile = preserveOriginalSaveTarget && source.Kind == NotebookSourceKind.File;
 
             if (preserveOriginalSaveTarget)
             {
@@ -2468,7 +2479,11 @@ public partial class MainWindow : Window
             mutation: () => DataTableEditHelper.DeleteDuplicateRows(_originalData, chosenColumns, RowNumberColumnName),
             successMessageFactory: deletedCount => deletedCount == 1 ? "Deleted 1 duplicate row" : $"Deleted {deletedCount:N0} duplicate rows",
             structuralChange: true,
-            clearSelection: true);
+            clearSelection: true,
+            // Duplicates are judged over every loaded row, so this is a rule whenever those rows are the whole file.
+            recipeSteps: _workingSetIsWholeFile && _workingSetAlias != null
+                ? [RecipeExporter.CreateDedupeRule(_workingSetAlias, chosenColumns)]
+                : [CreateManualRecipeStep($"Deleted duplicate rows on {string.Join(", ", chosenColumns)}")]);
     }
 
     private void CommitPendingGridEdits()
@@ -2509,13 +2524,22 @@ public partial class MainWindow : Window
         return null;
     }
 
-    private void ExecuteUndoableMutation(string actionDescription, Func<int> mutation, Func<int, string> successMessageFactory, bool structuralChange, bool clearSelection)
+    private void ExecuteUndoableMutation(
+        string actionDescription,
+        Func<int> mutation,
+        Func<int, string> successMessageFactory,
+        bool structuralChange,
+        bool clearSelection,
+        IReadOnlyList<RecipeStep>? recipeSteps = null)
     {
         if (_originalData == null)
         {
             StatusText.Text = "No data loaded";
             return;
         }
+
+        // Decided before the mutation: it can change which rows a selection covers.
+        recipeSteps ??= [CreateManualRecipeStep(actionDescription)];
 
         PushUndoSnapshot(actionDescription);
 
@@ -2527,6 +2551,13 @@ public partial class MainWindow : Window
                 DiscardLatestUndoSnapshot();
                 StatusText.Text = "No changes were made";
                 return;
+            }
+
+            if (_undoHistory.Count > 0 && recipeSteps.Count > 0)
+            {
+                _undoHistory[^1].RecipeStepId = recipeSteps[0].Id;
+                foreach (var step in recipeSteps)
+                    _recipe.Add(step);
             }
 
             FinalizeDataMutation(actionDescription, affectedCount, successMessageFactory(affectedCount), structuralChange, clearSelection);
@@ -2611,6 +2642,8 @@ public partial class MainWindow : Window
         _undoHistory.RemoveAt(_undoHistory.Count - 1);
 
         RestoreDataTableSnapshot(snapshot);
+        if (snapshot.RecipeStepId is Guid stepId)
+            _recipe.RemoveGridStepAndLater(stepId);
         StatusText.Text = $"Undid: {snapshot.ActionDescription}";
         UpdateUndoUi();
     }
@@ -2651,6 +2684,60 @@ public partial class MainWindow : Window
     {
         _undoHistory.Clear();
         UpdateUndoUi();
+
+        // Every caller replaces the grid's table, so its unsaved edits are gone. A working-set
+        // load sets the new table's source again afterwards.
+        _recipe.RemoveUnsaved(RecipeStepOrigin.Grid);
+        _workingSetAlias = null;
+        _workingSetIsWholeFile = false;
+    }
+
+    private RecipeStep CreateManualRecipeStep(string description)
+        => RecipeExporter.CreateManualStep(_workingSetAlias ?? "grid", description);
+
+    /// <summary>
+    /// The columns of <paramref name="targets"/> that the action covers in full, when the working
+    /// set is a whole file; null when any column is only partly selected, so the action is a hand
+    /// edit. <paramref name="textOnly"/> also requires every column to be VARCHAR in the file.
+    /// </summary>
+    private List<string>? GetWholeColumnsForRule(IReadOnlyCollection<DataTableCellTarget> targets, bool textOnly)
+    {
+        if (!_workingSetIsWholeFile || _workingSetAlias == null || _originalData == null || targets.Count == 0)
+            return null;
+
+        var rowCount = _originalData.Rows.Count;
+        var columns = new List<string>();
+        foreach (var group in targets.GroupBy(target => target.ColumnName, StringComparer.Ordinal))
+        {
+            if (group.Select(target => target.Row).Distinct().Count() != rowCount)
+                return null;
+            if (textOnly && !IsTextColumnInSource(group.Key))
+                return null;
+            columns.Add(group.Key);
+        }
+
+        return columns;
+    }
+
+    private bool IsTextColumnInSource(string columnName)
+    {
+        var source = _workingSetAlias == null ? null : FindNotebookSource(_workingSetAlias);
+        var type = source?.Columns.FirstOrDefault(column => string.Equals(column.Name, columnName, StringComparison.Ordinal))?.Type;
+        return type != null && type.StartsWith("VARCHAR", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>One rule per fully covered column, or a single manual step when the action is a hand edit.</summary>
+    private IReadOnlyList<RecipeStep> BuildCellRecipeSteps(
+        IReadOnlyCollection<DataTableCellTarget> targets,
+        bool textOnly,
+        string manualDescription,
+        Func<string, string, RecipeStep> createRule)
+    {
+        var columns = GetWholeColumnsForRule(targets, textOnly);
+        if (columns == null)
+            return [CreateManualRecipeStep(manualDescription)];
+
+        return columns.Select(column => createRule(_workingSetAlias!, column)).ToList();
     }
 
     private void UpdateEditMenuState()
@@ -2960,7 +3047,8 @@ public partial class MainWindow : Window
             mutation: () => DataTableEditHelper.SetCellsToNull(targets),
             successMessageFactory: count => count == 1 ? "Set 1 cell to null" : $"Set {count:N0} cells to null",
             structuralChange: false,
-            clearSelection: false);
+            clearSelection: false,
+            recipeSteps: BuildCellRecipeSteps(targets, textOnly: false, "Set selected cells to null", RecipeExporter.CreateSetNullRule));
     }
 
     private void FillDownSelectedCells()
@@ -2994,7 +3082,8 @@ public partial class MainWindow : Window
             mutation: () => DataTableEditHelper.TrimWhitespace(targets),
             successMessageFactory: count => count == 1 ? "Trimmed whitespace in 1 cell" : $"Trimmed whitespace in {count:N0} cells",
             structuralChange: false,
-            clearSelection: false);
+            clearSelection: false,
+            recipeSteps: BuildCellRecipeSteps(targets, textOnly: true, "Trimmed whitespace in selected cells", RecipeExporter.CreateTrimRule));
     }
 
     private void ReplaceInSelection()
@@ -3015,7 +3104,9 @@ public partial class MainWindow : Window
             mutation: () => DataTableEditHelper.ReplaceInCells(targets, options.FindText, options.ReplaceText, options.MatchCase),
             successMessageFactory: count => count == 1 ? "Replaced text in 1 cell" : $"Replaced text in {count:N0} cells",
             structuralChange: false,
-            clearSelection: false);
+            clearSelection: false,
+            recipeSteps: BuildCellRecipeSteps(targets, textOnly: true, $"Replaced \"{options.FindText}\" in selected cells",
+                (alias, column) => RecipeExporter.CreateReplaceRule(alias, column, options.FindText, options.ReplaceText, options.MatchCase)));
     }
 
     private void CopyRowsToClipboard(string delimiter, bool includeHeaders)
@@ -3523,7 +3614,8 @@ public partial class MainWindow : Window
             
             // Save the file
             await _parquetService.SaveFileAsync(filePath, _originalData);
-            
+
+            _recipe.MarkSaved(RecipeStepOrigin.Grid);
             _hasUnsavedChanges = false;
             _pendingEditCount = 0;
             UpdateWindowTitle();
@@ -3557,6 +3649,8 @@ public partial class MainWindow : Window
     {
         if (e.EditAction == DataGridEditAction.Commit)
         {
+            var editedColumn = GetBoundColumnName(e.Column);
+            _recipe.Add(CreateManualRecipeStep(string.IsNullOrWhiteSpace(editedColumn) ? "Edited a cell" : $"Edited a cell in {editedColumn}"));
             _hasUnsavedChanges = true;
             _pendingEditCount++;
             UpdateWindowTitle();
@@ -6422,7 +6516,11 @@ public partial class MainWindow : Window
         bool WasUnsaved,
         int PendingEditCount,
         long TotalRowCount,
-        bool WasQualityReviewStale);
+        bool WasQualityReviewStale)
+    {
+        /// <summary>The first recipe step the edit recorded; undo removes it and later grid steps.</summary>
+        public Guid? RecipeStepId { get; set; }
+    }
 
     private readonly record struct CurrentCellContext(
         DataRow Row,

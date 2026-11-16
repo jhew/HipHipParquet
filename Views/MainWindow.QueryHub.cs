@@ -81,6 +81,9 @@ public partial class MainWindow
 
         foreach (var statement in result.Statements)
         {
+            if (statement.Statement.IsWrite && statement.Statement.Target != null)
+                _recipe.Add(RecipeExporter.CreateSqlStep(statement.Statement.Target, statement.Statement.Sql, statement.Summary));
+
             var summary = statement.CanUndo ? statement.Summary : $"{statement.Summary} (too large to undo)";
             AddNotebookBlock(
                 statement.Statement.IsWrite ? NotebookBlockKind.Change : NotebookBlockKind.Query,
@@ -246,6 +249,7 @@ public partial class MainWindow
         try
         {
             var undone = await session.UndoLastChangeAsync();
+            _recipe.RemoveLastHubStep(target);
             AddNotebookBlock(NotebookBlockKind.Change, "Undo", undone, target);
             StatusText.Text = $"Undid {undone}";
         }
@@ -332,6 +336,7 @@ public partial class MainWindow
                 _fileWatcher.EnableRaisingEvents = false;
 
             await GetNotebookSession().SaveSourceAsync(source.Alias, path);
+            _recipe.MarkSaved(RecipeStepOrigin.QueryHub, source.Alias);
             AddNotebookBlock(NotebookBlockKind.Export, "Saved", $"{source.Alias} → {fileName}", source.Alias);
             StatusText.Text = $"Saved {source.Alias} to {fileName}";
             return true;
@@ -368,6 +373,7 @@ public partial class MainWindow
             try
             {
                 await session.DiscardChangesAsync(source.Alias);
+                _recipe.RemoveUnsaved(RecipeStepOrigin.QueryHub, source.Alias);
                 AddNotebookBlock(NotebookBlockKind.Change, "Discarded", $"{source.Alias} returned to its saved file", source.Alias);
                 discarded.Add(source.Alias);
             }

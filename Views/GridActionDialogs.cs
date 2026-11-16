@@ -298,7 +298,7 @@ internal static class GridActionDialogs
             : null;
     }
 
-    private static Window CreateDialog(Window owner, string title, Action<StackPanel> populateContent)
+    internal static Window CreateDialog(Window owner, string title, Action<StackPanel> populateContent)
     {
         var contentStack = new StackPanel { Margin = new Thickness(16) };
         populateContent(contentStack);
@@ -321,7 +321,7 @@ internal static class GridActionDialogs
         };
     }
 
-    private static void AppendDialogButtons(Window dialog, params Button[] buttons)
+    internal static void AppendDialogButtons(Window dialog, params Button[] buttons)
     {
         if (dialog.Content is not DockPanel root)
             return;

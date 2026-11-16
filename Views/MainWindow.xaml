@@ -150,6 +150,11 @@
                         <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xEDE1;"/>
                     </MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="_Recipe..." Click="OnShowRecipeClick" ToolTip="The changes made this session, as steps you can export as SQL or Python and run on another file">
+                    <MenuItem.Icon>
+                        <TextBlock Style="{StaticResource MenuIconGlyph}" Text="&#xE9D5;"/>
+                    </MenuItem.Icon>
+                </MenuItem>
                 <Separator/>
                 <MenuItem x:Name="ImportOptionsMenuItem" Header="_Import Options..." Click="OnImportOptionsClick" IsEnabled="False">
                     <MenuItem.Icon>
